@@ -1,31 +1,19 @@
 import './globals.css';
-import { Metadata } from 'next';
 
-export const metadata: Metadata = {
+export const metadata = {
   title: 'Celeiro Roast - Cardápio Virtual',
   description: 'Venha conferir nossas delícias e faça seu pedido!',
-  metadataBase: new URL('https://celeitoroast.netlify.app'),
   openGraph: {
     title: 'Celeiro Roast - Cardápio Virtual',
     description: 'Venha conferir nossas delícias e faça seu pedido!',
-    url: 'https://celeitoroast.netlify.app',
-    siteName: 'Celeiro Roast',
     images: [
       {
-        url: '/opengraph-image.png', // O Next.js vai buscar direto da raiz da pasta app
+        url: 'https://celeitoroast.netlify.app/opengraph-image.png',
         width: 1200,
         height: 630,
         alt: 'Logo Celeiro Roast',
       },
     ],
-    locale: 'pt_BR',
-    type: 'website',
-  },
-  twitter: {
-    card: 'summary_large_image',
-    title: 'Celeiro Roast - Cardápio Virtual',
-    description: 'Venha conferir nossas delícias e faça seu pedido!',
-    images: ['/opengraph-image.png'],
   },
 };
 
