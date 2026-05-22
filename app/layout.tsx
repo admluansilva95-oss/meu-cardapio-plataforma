@@ -1,3 +1,5 @@
+import './globals.css';
+
 export const metadata = {
   title: 'Meu Cardápio Virtual',
   description: 'Venha conferir nossas delícias!',
