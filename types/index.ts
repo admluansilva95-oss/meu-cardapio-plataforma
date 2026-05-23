@@ -27,6 +27,8 @@ export interface Prato {
   /** URL pública no Storage Supabase (`imagens-pratos`) ou CDN */
   imagem: string | null;
   status: PratoStatus;
+  /** Seção na vitrine pública (ex.: Bebidas). Opcional no banco. */
+  categoria?: string | null;
 }
 
 /** Item de carrinho simulado (WhatsApp / preview) */

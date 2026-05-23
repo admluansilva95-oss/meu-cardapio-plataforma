@@ -126,6 +126,7 @@ function mapPratoRow(row: {
   preco: string | number;
   descricao: string | null;
   imagem?: string | null;
+  categoria?: string | null;
   status: string;
 }): Prato | null {
   if (row.status !== "ativo" && row.status !== "pausado") return null;
@@ -136,6 +137,7 @@ function mapPratoRow(row: {
     preco: toNumber(row.preco),
     descricao: row.descricao,
     imagem: row.imagem ?? null,
+    categoria: row.categoria?.trim() || null,
     status: row.status,
   };
 }
@@ -647,7 +649,7 @@ export default function AdminPage() {
         await Promise.all([
           supabase
             .from("pratos")
-            .select("id, restaurante_id, nome, preco, descricao, imagem, status")
+            .select("id, restaurante_id, nome, preco, descricao, imagem, status, categoria")
             .eq("restaurante_id", rest.id)
             .order("criado_em", { ascending: false }),
           supabase
@@ -889,7 +891,7 @@ export default function AdminPage() {
           status: payload.status,
           imagem: imagemFinal,
         })
-        .select("id, restaurante_id, nome, preco, descricao, imagem, status")
+        .select("id, restaurante_id, nome, preco, descricao, imagem, status, categoria")
         .single();
 
       if (error) {

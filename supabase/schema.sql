@@ -47,6 +47,9 @@ comment on table public.pratos is 'Itens do cardápio vinculados a um restaurant
 alter table public.pratos add column if not exists imagem text null;
 comment on column public.pratos.imagem is 'URL pública no Storage (bucket imagens-pratos).';
 
+alter table public.pratos add column if not exists categoria text null;
+comment on column public.pratos.categoria is 'Seção do cardápio na vitrine pública (ex.: Bebidas, Lanches).';
+
 -- -----------------------------------------------------------------------------
 -- pedidos (esteira / Kanban no admin)
 -- -----------------------------------------------------------------------------
