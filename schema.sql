@@ -13,6 +13,7 @@ create table if not exists public.restaurantes (
   id uuid primary key default gen_random_uuid(),
   nome text not null,
   slug text not null unique,
+  owner_id uuid null references auth.users (id) on delete cascade,
   whatsapp text not null,
   -- URL pública do logo (Storage ou CDN); alinhado ao tipo TypeScript `Restaurante`
   logo text null,
@@ -21,6 +22,7 @@ create table if not exists public.restaurantes (
 );
 
 create index if not exists idx_restaurantes_slug on public.restaurantes (slug);
+create index if not exists idx_restaurantes_owner_id on public.restaurantes (owner_id);
 
 comment on table public.restaurantes is 'Tenant do cardápio (um registro por restaurante).';
 comment on column public.restaurantes.slug is 'Identificador único na URL (ex.: casa-do-sabor).';

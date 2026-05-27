@@ -14,7 +14,8 @@
     "lucide-react": "latest",
     "next": "latest",
     "react": "latest",
-    "react-dom": "latest"
+    "react-dom": "latest",
+    "stripe": "^22.1.1"
   },
   "devDependencies": {
     "@types/node": "latest",

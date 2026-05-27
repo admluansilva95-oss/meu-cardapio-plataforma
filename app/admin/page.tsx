@@ -1,7 +1,7 @@
 "use client";
 
 import { Suspense, useCallback, useEffect, useMemo, useState } from "react";
-import { useSearchParams } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import type { Prato, PratoStatus, Restaurante } from "../../types";
 import { createBrowserSupabaseClient } from "@/lib/supabase";
 
@@ -224,23 +224,18 @@ function AdminMissingSlugView() {
       <div className="mx-auto max-w-lg text-center">
         <p className="text-[11px] font-semibold uppercase tracking-[0.28em] text-[#86868b]">Painel</p>
         <h1 className="mt-4 text-2xl font-semibold tracking-tight text-[#1d1d1f] sm:text-3xl">
-          Informe o restaurante
+          Assinatura pendente
         </h1>
         <p className="mt-4 text-[15px] leading-relaxed text-[#6e6e73]">
-          O painel multitenant carrega dados do Supabase pelo{" "}
-          <span className="font-medium text-[#424245]">slug</span> do restaurante. Abra esta página com o parâmetro na
-          URL, por exemplo:
+          Não encontramos um restaurante vinculado à sua conta. Conclua o cadastro e o pagamento
+          no Stripe para liberar o painel.
         </p>
-        <p className="mt-6 rounded-2xl border border-black/[0.06] bg-[#fbfbfd] px-4 py-3 font-mono text-xs text-[#424245] shadow-[0_8px_30px_-20px_rgba(0,0,0,0.12)]">
-          /admin?slug=seu-restaurante
-        </p>
-        <p className="mt-5 text-xs leading-relaxed text-[#86868b]">
-          Em deploy na Vercel você pode definir{" "}
-          <code className="rounded bg-black/[0.04] px-1.5 py-0.5 font-mono text-[11px]">
-            NEXT_PUBLIC_ADMIN_RESTAURANT_SLUG
-          </code>{" "}
-          como padrão quando não houver query string.
-        </p>
+        <a
+          href="/cadastro"
+          className="mt-8 inline-flex rounded-xl bg-[#1d1d1f] px-5 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-black"
+        >
+          Ir para cadastro
+        </a>
       </div>
     </div>
   );
@@ -671,6 +666,7 @@ function ModalPrato(props: {
 }
 
 function AdminPageInner() {
+  const router = useRouter();
   const supabase = useMemo(() => createBrowserSupabaseClient(), []);
   const searchParams = useSearchParams();
 
@@ -692,6 +688,45 @@ function AdminPageInner() {
   const [pratoModalOpen, setPratoModalOpen] = useState(false);
   const [pratoModalMode, setPratoModalMode] = useState<"create" | "edit">("create");
   const [editingPrato, setEditingPrato] = useState<Prato | null>(null);
+  const [resolvingSlug, setResolvingSlug] = useState(false);
+
+  useEffect(() => {
+    if (tenantSlug) return;
+
+    let cancelled = false;
+    setResolvingSlug(true);
+
+    void (async () => {
+      const {
+        data: { user },
+      } = await supabase.auth.getUser();
+      if (!user || cancelled) {
+        setResolvingSlug(false);
+        return;
+      }
+
+      const { data, error } = await supabase
+        .from("restaurantes")
+        .select("slug")
+        .eq("owner_id", user.id)
+        .order("criado_em", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+
+      if (cancelled) return;
+
+      if (!error && data?.slug) {
+        router.replace(`/admin?slug=${encodeURIComponent(data.slug)}`);
+        return;
+      }
+
+      setResolvingSlug(false);
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [tenantSlug, supabase, router]);
 
   const loadData = useCallback(async () => {
     if (!tenantSlug) {
@@ -1045,6 +1080,13 @@ function AdminPageInner() {
   ];
 
   if (!tenantSlug) {
+    if (resolvingSlug) {
+      return (
+        <div className="flex min-h-screen items-center justify-center bg-[#f5f5f7] font-sans text-[#6e6e73] antialiased">
+          <p className="text-sm font-medium">Localizando seu restaurante…</p>
+        </div>
+      );
+    }
     return <AdminMissingSlugView />;
   }
 
