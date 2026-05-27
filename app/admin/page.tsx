@@ -205,18 +205,18 @@ function AdminSidebar(props: {
     { id: "configuracoes", label: "Configurações", hint: "Tenant e integrações" },
   ];
   return (
-    <aside className="flex w-full shrink-0 flex-col border-b border-white/10 bg-zinc-950/70 backdrop-blur-xl lg:h-screen lg:w-64 lg:border-b-0 lg:border-r">
-      <div className="border-b border-white/10 px-5 py-6">
+    <aside className="flex w-full shrink-0 flex-col border-b border-black/[0.06] bg-[#f5f5f7]/90 backdrop-blur-xl lg:h-screen lg:w-64 lg:border-b-0 lg:border-r lg:border-black/[0.06]">
+      <div className="border-b border-black/[0.06] px-5 py-6">
         <div className="flex items-center gap-3">
           <div
-            className="grid h-10 w-10 place-items-center rounded-2xl text-sm font-bold text-white shadow-inner shadow-black/30"
-            style={{ background: `linear-gradient(135deg, ${restaurante.cor_tema}, #0f172a)` }}
+            className="grid h-10 w-10 place-items-center rounded-2xl text-sm font-semibold text-white shadow-sm"
+            style={{ backgroundColor: restaurante.cor_tema }}
           >
             {restaurante.nome.slice(0, 1)}
           </div>
           <div className="min-w-0">
-            <p className="truncate text-sm font-semibold text-white">{restaurante.nome}</p>
-            <p className="truncate text-xs text-zinc-500">Painel admin</p>
+            <p className="truncate text-sm font-semibold tracking-tight text-[#1d1d1f]">{restaurante.nome}</p>
+            <p className="truncate text-xs text-[#86868b]">Painel admin</p>
           </div>
         </div>
       </div>
@@ -229,20 +229,20 @@ function AdminSidebar(props: {
               type="button"
               onClick={() => onTab(it.id)}
               className={[
-                "flex min-w-[8.5rem] flex-col rounded-2xl px-3 py-2.5 text-left transition lg:min-w-0",
+                "flex min-w-[8.5rem] flex-col rounded-xl px-3 py-2.5 text-left transition lg:min-w-0",
                 active
-                  ? "bg-white/10 text-white ring-1 ring-white/15"
-                  : "text-zinc-400 hover:bg-white/5 hover:text-zinc-200",
+                  ? "bg-white text-[#1d1d1f] shadow-[0_1px_3px_rgba(0,0,0,0.08)] ring-1 ring-black/[0.04]"
+                  : "text-[#6e6e73] hover:bg-white/70 hover:text-[#1d1d1f]",
               ].join(" ")}
             >
               <span className="text-sm font-semibold">{it.label}</span>
-              <span className="text-[11px] text-zinc-500">{it.hint}</span>
+              <span className="text-[11px] text-[#86868b]">{it.hint}</span>
             </button>
           );
         })}
       </nav>
-      <div className="hidden border-t border-white/10 p-4 text-[11px] text-zinc-600 lg:block">
-        Slug: <span className="font-mono text-zinc-400">{restaurante.slug}</span>
+      <div className="hidden border-t border-black/[0.06] p-4 text-[11px] text-[#86868b] lg:block">
+        Slug: <span className="font-mono text-[#424245]">{restaurante.slug}</span>
       </div>
     </aside>
   );
@@ -265,42 +265,42 @@ function PedidoCard(props: {
         e.dataTransfer.effectAllowed = "move";
       }}
       onDragEnd={() => onDragEnd?.()}
-      className="cursor-grab rounded-2xl border border-white/10 bg-zinc-900/55 p-4 shadow-[0_18px_50px_-40px_rgba(0,0,0,0.9)] ring-1 ring-white/[0.04] transition hover:border-teal-400/25 hover:ring-teal-500/20 active:cursor-grabbing"
+      className="cursor-grab rounded-2xl border border-black/[0.06] bg-white p-4 shadow-[0_8px_30px_-12px_rgba(0,0,0,0.12)] transition hover:shadow-[0_12px_40px_-12px_rgba(0,0,0,0.16)] active:cursor-grabbing"
     >
       <div className="flex items-start justify-between gap-2">
         <div>
-          <p className="text-[11px] font-semibold uppercase tracking-wide text-teal-300/90">
+          <p className="text-[11px] font-medium uppercase tracking-wide text-[#86868b]">
             {formatPedidoId(pedido.id)}
           </p>
-          <h3 className="mt-1 text-sm font-semibold text-white">{pedido.cliente}</h3>
-          <p className="mt-0.5 text-xs text-zinc-400">{pedido.telefone}</p>
+          <h3 className="mt-1 text-sm font-semibold tracking-tight text-[#1d1d1f]">{pedido.cliente}</h3>
+          <p className="mt-0.5 text-xs text-[#6e6e73]">{pedido.telefone}</p>
         </div>
         <button
           type="button"
           onClick={onCancel}
-          className="rounded-lg px-2 py-1 text-[10px] font-medium text-zinc-600 transition hover:bg-red-500/10 hover:text-red-300"
+          className="rounded-lg px-2 py-1 text-[10px] font-medium text-[#86868b] transition hover:bg-red-50 hover:text-red-600"
         >
           Cancelar
         </button>
       </div>
-      <ul className="mt-3 space-y-1 border-t border-white/5 pt-3 text-xs text-zinc-300">
+      <ul className="mt-3 space-y-1 border-t border-black/[0.06] pt-3 text-xs text-[#424245]">
         {pedido.itens.map((line, idx) => (
           <li key={`${pedido.id}-${idx}-${line}`} className="flex gap-2">
-            <span className="mt-1.5 h-1 w-1 shrink-0 rounded-full bg-teal-400/80" />
+            <span className="mt-1.5 h-1 w-1 shrink-0 rounded-full bg-[#1d1d1f]/25" />
             <span>{line}</span>
           </li>
         ))}
       </ul>
-      <div className="mt-3 flex flex-wrap gap-2 text-[11px] text-zinc-400">
-        <span className="rounded-full bg-white/5 px-2 py-0.5 font-medium text-zinc-200">
+      <div className="mt-3 flex flex-wrap gap-2 text-[11px] text-[#6e6e73]">
+        <span className="rounded-full bg-[#f5f5f7] px-2 py-0.5 font-medium text-[#1d1d1f]">
           Total {formatBRL(pedido.total)}
         </span>
-        <span className="rounded-full bg-white/5 px-2 py-0.5">{pedido.pagamento}</span>
-        <span className="rounded-full bg-white/5 px-2 py-0.5">Motoboy: {pedido.motoboy}</span>
+        <span className="rounded-full bg-[#f5f5f7] px-2 py-0.5">{pedido.pagamento}</span>
+        <span className="rounded-full bg-[#f5f5f7] px-2 py-0.5">Motoboy: {pedido.motoboy}</span>
       </div>
       {pedido.observacoes ? (
-        <p className="mt-2 rounded-xl bg-black/30 px-3 py-2 text-[11px] leading-relaxed text-zinc-400">
-          <span className="font-semibold text-zinc-500">Obs.</span> {pedido.observacoes}
+        <p className="mt-2 rounded-xl bg-[#f5f5f7] px-3 py-2 text-[11px] leading-relaxed text-[#6e6e73]">
+          <span className="font-semibold text-[#86868b]">Obs.</span> {pedido.observacoes}
         </p>
       ) : null}
       <div className="mt-4 flex flex-col gap-2">
@@ -308,19 +308,19 @@ function PedidoCard(props: {
           <button
             type="button"
             onClick={onAdvance}
-            className="w-full rounded-xl bg-gradient-to-r from-teal-400 to-emerald-400 px-3 py-2 text-xs font-semibold text-zinc-950 shadow-lg shadow-teal-500/20 transition hover:brightness-105 active:scale-[0.99]"
+            className="w-full rounded-xl bg-[#1d1d1f] px-3 py-2.5 text-xs font-semibold text-white shadow-sm transition hover:bg-black active:scale-[0.99]"
           >
             Avançar status + WhatsApp
           </button>
         ) : (
-          <p className="rounded-xl border border-dashed border-white/10 px-3 py-2 text-center text-[11px] text-zinc-500">
+          <p className="rounded-xl border border-dashed border-black/[0.08] bg-[#fafafa] px-3 py-2 text-center text-[11px] text-[#86868b]">
             Pedido na etapa final da esteira.
           </p>
         )}
         <button
           type="button"
           onClick={onEdit}
-          className="w-full rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-xs font-semibold text-zinc-100 transition hover:bg-white/10"
+          className="w-full rounded-xl border border-black/[0.08] bg-white px-3 py-2 text-xs font-semibold text-[#1d1d1f] shadow-sm transition hover:bg-[#f5f5f7]"
         >
           Editar detalhes
         </button>
@@ -350,50 +350,50 @@ function ModalPedido(props: {
   if (!open || !pedido) return null;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/60 p-4 sm:items-center">
+    <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/25 p-4 backdrop-blur-sm sm:items-center">
       <div
         role="dialog"
         aria-modal="true"
-        className="w-full max-w-md rounded-3xl border border-white/10 bg-zinc-950 p-6 shadow-2xl shadow-black/60"
+        className="w-full max-w-md rounded-2xl border border-black/[0.06] bg-[#fbfbfd] p-6 shadow-[0_24px_80px_-24px_rgba(0,0,0,0.25)]"
       >
         <div className="flex items-start justify-between gap-3">
           <div>
-            <p className="text-[11px] font-semibold uppercase tracking-wide text-teal-300/90">
+            <p className="text-[11px] font-medium uppercase tracking-wide text-[#86868b]">
               Editar pedido
             </p>
-            <h2 className="mt-1 text-lg font-semibold text-white">
+            <h2 className="mt-1 text-lg font-semibold tracking-tight text-[#1d1d1f]">
               {formatPedidoId(pedido.id)} · {pedido.cliente}
             </h2>
           </div>
           <button
             type="button"
             onClick={onClose}
-            className="rounded-xl border border-white/10 px-2 py-1 text-xs text-zinc-400 hover:bg-white/5"
+            className="rounded-xl border border-black/[0.08] bg-white px-2 py-1 text-xs text-[#6e6e73] shadow-sm transition hover:bg-[#f5f5f7]"
           >
             Fechar
           </button>
         </div>
         <div className="mt-5 space-y-4">
           <div className="space-y-1.5">
-            <label className="text-xs font-medium text-zinc-400" htmlFor="motoboy">
+            <label className="text-xs font-medium text-[#86868b]" htmlFor="motoboy">
               Nome do motoboy
             </label>
             <input
               id="motoboy"
               value={motoboy}
               onChange={(e) => setMotoboy(e.target.value)}
-              className="w-full rounded-xl border border-white/10 bg-black/40 px-3 py-2 text-sm text-white outline-none focus:border-teal-400/40 focus:ring-2 focus:ring-teal-500/20"
+              className="w-full rounded-xl border border-black/[0.08] bg-white px-3 py-2.5 text-sm text-[#1d1d1f] shadow-[0_1px_0_rgba(0,0,0,0.04)] outline-none transition focus:border-[#0071e3]/40 focus:ring-2 focus:ring-[#0071e3]/15"
             />
           </div>
           <div className="space-y-1.5">
-            <label className="text-xs font-medium text-zinc-400" htmlFor="pagamento">
+            <label className="text-xs font-medium text-[#86868b]" htmlFor="pagamento">
               Forma de pagamento
             </label>
             <select
               id="pagamento"
               value={pagamento}
               onChange={(e) => setPagamento(e.target.value as FormaPagamento)}
-              className="w-full rounded-xl border border-white/10 bg-black/40 px-3 py-2 text-sm text-white outline-none focus:border-teal-400/40 focus:ring-2 focus:ring-teal-500/20"
+              className="w-full rounded-xl border border-black/[0.08] bg-white px-3 py-2.5 text-sm text-[#1d1d1f] shadow-[0_1px_0_rgba(0,0,0,0.04)] outline-none transition focus:border-[#0071e3]/40 focus:ring-2 focus:ring-[#0071e3]/15"
             >
               <option value="Pix">Pix</option>
               <option value="Cartão">Cartão</option>
@@ -401,7 +401,7 @@ function ModalPedido(props: {
             </select>
           </div>
           <div className="space-y-1.5">
-            <label className="text-xs font-medium text-zinc-400" htmlFor="obs-extra">
+            <label className="text-xs font-medium text-[#86868b]" htmlFor="obs-extra">
               Observação de última hora
             </label>
             <textarea
@@ -410,7 +410,7 @@ function ModalPedido(props: {
               value={obsExtra}
               onChange={(e) => setObsExtra(e.target.value)}
               placeholder='Ex.: "Trocar refrigerante"'
-              className="w-full resize-none rounded-xl border border-white/10 bg-black/40 px-3 py-2 text-sm text-white outline-none placeholder:text-zinc-600 focus:border-teal-400/40 focus:ring-2 focus:ring-teal-500/20"
+              className="w-full resize-none rounded-xl border border-black/[0.08] bg-white px-3 py-2.5 text-sm text-[#1d1d1f] shadow-[0_1px_0_rgba(0,0,0,0.04)] outline-none transition placeholder:text-[#aeaeb2] focus:border-[#0071e3]/40 focus:ring-2 focus:ring-[#0071e3]/15"
             />
           </div>
         </div>
@@ -418,14 +418,14 @@ function ModalPedido(props: {
           <button
             type="button"
             onClick={onClose}
-            className="rounded-xl border border-white/10 px-4 py-2 text-xs font-semibold text-zinc-300 hover:bg-white/5"
+            className="rounded-xl border border-black/[0.08] bg-white px-4 py-2 text-xs font-semibold text-[#1d1d1f] shadow-sm transition hover:bg-[#f5f5f7]"
           >
             Descartar
           </button>
           <button
             type="button"
             onClick={() => onSave({ motoboy, pagamento, observacaoExtra: obsExtra })}
-            className="rounded-xl bg-teal-400 px-4 py-2 text-xs font-semibold text-zinc-950 hover:bg-teal-300"
+            className="rounded-xl bg-[#0071e3] px-4 py-2 text-xs font-semibold text-white shadow-sm transition hover:bg-[#0077ed]"
           >
             Salvar
           </button>
@@ -439,6 +439,7 @@ const emptyPratoForm = {
   nome: "",
   preco: "",
   descricao: "",
+  categoria: "",
   status: "ativo" as PratoStatus,
 };
 
@@ -454,6 +455,7 @@ function ModalPrato(props: {
     nome: string;
     preco: number;
     descricao: string | null;
+    categoria: string | null;
     status: PratoStatus;
     arquivoImagem: File | null;
     imagemAtual: string | null;
@@ -472,6 +474,7 @@ function ModalPrato(props: {
         nome: initial.nome,
         preco: String(initial.preco).replace(".", ","),
         descricao: initial.descricao ?? "",
+        categoria: initial.categoria?.trim() ?? "",
         status: initial.status,
       });
     } else {
@@ -493,6 +496,7 @@ function ModalPrato(props: {
         nome: form.nome.trim(),
         preco: precoNormalizado,
         descricao: form.descricao.trim() ? form.descricao.trim() : null,
+        categoria: form.categoria.trim() ? form.categoria.trim() : null,
         status: form.status,
         arquivoImagem,
         imagemAtual: mode === "edit" && initial ? (initial.imagem ?? null) : null,
@@ -506,41 +510,53 @@ function ModalPrato(props: {
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/60 p-4 sm:items-center">
-      <div className="w-full max-w-md rounded-3xl border border-white/10 bg-zinc-950 p-6 shadow-2xl">
-        <h2 className="text-lg font-semibold text-white">
+    <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/25 p-4 backdrop-blur-sm sm:items-center">
+      <div className="w-full max-w-md rounded-2xl border border-black/[0.06] bg-[#fbfbfd] p-6 shadow-[0_24px_80px_-24px_rgba(0,0,0,0.25)]">
+        <h2 className="text-lg font-semibold tracking-tight text-[#1d1d1f]">
           {mode === "create" ? "Novo prato" : "Editar prato"}
         </h2>
         <form onSubmit={handleSubmit} className="mt-4 space-y-3">
           <div className="space-y-1">
-            <label className="text-xs text-zinc-400">Nome</label>
+            <label className="text-xs font-medium text-[#86868b]">Nome</label>
             <input
               value={form.nome}
               onChange={(e) => setForm((f) => ({ ...f, nome: e.target.value }))}
-              className="w-full rounded-xl border border-white/10 bg-black/40 px-3 py-2 text-sm text-white"
+              className="w-full rounded-xl border border-black/[0.08] bg-white px-3 py-2.5 text-sm text-[#1d1d1f] shadow-[0_1px_0_rgba(0,0,0,0.04)] outline-none transition focus:border-[#0071e3]/40 focus:ring-2 focus:ring-[#0071e3]/15"
               required
             />
           </div>
           <div className="space-y-1">
-            <label className="text-xs text-zinc-400">Preço (R$)</label>
+            <label className="text-xs font-medium text-[#86868b]">Categoria</label>
+            <input
+              value={form.categoria}
+              onChange={(e) => setForm((f) => ({ ...f, categoria: e.target.value }))}
+              placeholder="Ex.: Entradas, Burgers, Bebidas"
+              className="w-full rounded-xl border border-black/[0.08] bg-white px-3 py-2.5 text-sm text-[#1d1d1f] shadow-[0_1px_0_rgba(0,0,0,0.04)] outline-none transition placeholder:text-[#aeaeb2] focus:border-[#0071e3]/40 focus:ring-2 focus:ring-[#0071e3]/15"
+            />
+            <p className="text-[11px] leading-relaxed text-[#86868b]">
+              Aparece agrupada na vitrine pública. Deixe em branco para ir em &quot;Cardápio&quot;.
+            </p>
+          </div>
+          <div className="space-y-1">
+            <label className="text-xs font-medium text-[#86868b]">Preço (R$)</label>
             <input
               value={form.preco}
               onChange={(e) => setForm((f) => ({ ...f, preco: e.target.value }))}
-              className="w-full rounded-xl border border-white/10 bg-black/40 px-3 py-2 text-sm text-white"
+              className="w-full rounded-xl border border-black/[0.08] bg-white px-3 py-2.5 text-sm text-[#1d1d1f] shadow-[0_1px_0_rgba(0,0,0,0.04)] outline-none transition focus:border-[#0071e3]/40 focus:ring-2 focus:ring-[#0071e3]/15"
               required
             />
           </div>
           <div className="space-y-1">
-            <label className="text-xs text-zinc-400">Descrição</label>
+            <label className="text-xs font-medium text-[#86868b]">Descrição</label>
             <textarea
               value={form.descricao}
               onChange={(e) => setForm((f) => ({ ...f, descricao: e.target.value }))}
               rows={3}
-              className="w-full resize-none rounded-xl border border-white/10 bg-black/40 px-3 py-2 text-sm text-white"
+              className="w-full resize-none rounded-xl border border-black/[0.08] bg-white px-3 py-2.5 text-sm text-[#1d1d1f] shadow-[0_1px_0_rgba(0,0,0,0.04)] outline-none transition focus:border-[#0071e3]/40 focus:ring-2 focus:ring-[#0071e3]/15"
             />
           </div>
           <div className="space-y-1">
-            <label className="text-xs text-zinc-400" htmlFor="prato-imagem-arquivo">
+            <label className="text-xs font-medium text-[#86868b]" htmlFor="prato-imagem-arquivo">
               Foto do prato
             </label>
             <input
@@ -552,25 +568,25 @@ function ModalPrato(props: {
                 const f = e.target.files?.[0] ?? null;
                 setArquivoImagem(f);
               }}
-              className="block w-full text-xs text-zinc-300 file:mr-3 file:rounded-lg file:border-0 file:bg-white/10 file:px-3 file:py-1.5 file:text-xs file:font-medium file:text-zinc-200 hover:file:bg-white/15"
+              className="block w-full text-xs text-[#6e6e73] file:mr-3 file:rounded-lg file:border-0 file:bg-[#f5f5f7] file:px-3 file:py-1.5 file:text-xs file:font-medium file:text-[#1d1d1f] hover:file:bg-[#e8e8ed]"
             />
             {mode === "edit" && initial?.imagem && !arquivoImagem ? (
-              <p className="text-[11px] text-zinc-500">
+              <p className="text-[11px] text-[#86868b]">
                 Imagem atual no cardápio. Envie um arquivo acima para substituir.
               </p>
             ) : null}
             {arquivoImagem ? (
-              <p className="truncate text-[11px] text-zinc-400" title={arquivoImagem.name}>
+              <p className="truncate text-[11px] text-[#6e6e73]" title={arquivoImagem.name}>
                 Selecionado: {arquivoImagem.name}
               </p>
             ) : null}
           </div>
           <div className="space-y-1">
-            <label className="text-xs text-zinc-400">Status</label>
+            <label className="text-xs font-medium text-[#86868b]">Status</label>
             <select
               value={form.status}
               onChange={(e) => setForm((f) => ({ ...f, status: e.target.value as PratoStatus }))}
-              className="w-full rounded-xl border border-white/10 bg-black/40 px-3 py-2 text-sm text-white"
+              className="w-full rounded-xl border border-black/[0.08] bg-white px-3 py-2.5 text-sm text-[#1d1d1f] shadow-[0_1px_0_rgba(0,0,0,0.04)] outline-none transition focus:border-[#0071e3]/40 focus:ring-2 focus:ring-[#0071e3]/15"
             >
               <option value="ativo">Ativo</option>
               <option value="pausado">Pausado</option>
@@ -581,14 +597,14 @@ function ModalPrato(props: {
               type="button"
               onClick={onClose}
               disabled={submitting}
-              className="rounded-xl border border-white/10 px-4 py-2 text-xs text-zinc-300 disabled:opacity-50"
+              className="rounded-xl border border-black/[0.08] bg-white px-4 py-2 text-xs font-medium text-[#1d1d1f] shadow-sm transition hover:bg-[#f5f5f7] disabled:opacity-50"
             >
               Cancelar
             </button>
             <button
               type="submit"
               disabled={submitting}
-              className="rounded-xl bg-teal-400 px-4 py-2 text-xs font-semibold text-zinc-950 disabled:opacity-50"
+              className="rounded-xl bg-[#0071e3] px-4 py-2 text-xs font-semibold text-white shadow-sm transition hover:bg-[#0077ed] disabled:opacity-50"
             >
               {submitting ? "Salvando…" : "Salvar"}
             </button>
@@ -814,6 +830,7 @@ export default function AdminPage() {
     nome: string;
     preco: number;
     descricao: string | null;
+    categoria: string | null;
     status: PratoStatus;
     arquivoImagem: File | null;
     imagemAtual: string | null;
@@ -841,6 +858,7 @@ export default function AdminPage() {
           nome: payload.nome,
           preco: payload.preco,
           descricao: payload.descricao,
+          categoria: payload.categoria,
           status: payload.status,
           imagem: imagemFinal,
         })
@@ -874,6 +892,7 @@ export default function AdminPage() {
                 nome: payload.nome,
                 preco: payload.preco,
                 descricao: payload.descricao,
+                categoria: payload.categoria,
                 status: payload.status,
                 imagem: imagemFinal,
               }
@@ -888,6 +907,7 @@ export default function AdminPage() {
           nome: payload.nome,
           preco: payload.preco,
           descricao: payload.descricao,
+          categoria: payload.categoria,
           status: payload.status,
           imagem: imagemFinal,
         })
@@ -938,31 +958,27 @@ export default function AdminPage() {
     : [];
 
   const colunas: { id: KanbanCol; title: string; accent: string }[] = [
-    { id: "recebidos", title: "Recebidos 📥", accent: "from-sky-500/25 to-transparent" },
-    { id: "cozinha", title: "Na Cozinha 🍳", accent: "from-amber-400/25 to-transparent" },
-    {
-      id: "pronto",
-      title: "Pronto / Saiu para Entrega 🛵",
-      accent: "from-emerald-400/25 to-transparent",
-    },
+    { id: "recebidos", title: "Recebidos", accent: "from-sky-500/10 to-transparent" },
+    { id: "cozinha", title: "Na cozinha", accent: "from-amber-500/10 to-transparent" },
+    { id: "pronto", title: "Pronto / entrega", accent: "from-emerald-500/10 to-transparent" },
   ];
 
   if (loading && !restaurante) {
     return (
-      <div className="flex min-h-screen items-center justify-center bg-[#050508] text-zinc-400">
-        <p className="text-sm">Carregando painel…</p>
+      <div className="flex min-h-screen items-center justify-center bg-[#f5f5f7] font-sans text-[#6e6e73] antialiased">
+        <p className="text-sm font-medium">Carregando painel…</p>
       </div>
     );
   }
 
   if (!restaurante) {
     return (
-      <div className="flex min-h-screen flex-col items-center justify-center gap-4 bg-[#050508] px-6 text-center text-zinc-300">
-        <p className="max-w-md text-sm leading-relaxed text-zinc-400">{fetchError}</p>
+      <div className="flex min-h-screen flex-col items-center justify-center gap-4 bg-[#f5f5f7] px-6 text-center font-sans text-[#424245] antialiased">
+        <p className="max-w-md text-sm leading-relaxed text-[#6e6e73]">{fetchError}</p>
         <button
           type="button"
           onClick={() => void loadData()}
-          className="rounded-xl border border-white/15 px-4 py-2 text-xs font-semibold text-white hover:bg-white/5"
+          className="rounded-xl border border-black/[0.08] bg-white px-4 py-2 text-xs font-semibold text-[#1d1d1f] shadow-sm transition hover:bg-[#fbfbfd]"
         >
           Tentar novamente
         </button>
@@ -971,24 +987,24 @@ export default function AdminPage() {
   }
 
   return (
-    <div className="flex min-h-screen bg-[#050508] text-zinc-100">
+    <div className="flex min-h-screen bg-[#f5f5f7] font-sans text-[#1d1d1f] antialiased">
       <AdminSidebar restaurante={restaurante} tab={tab} onTab={setTab} />
 
       <main className="flex min-h-0 flex-1 flex-col">
-        <header className="border-b border-white/10 bg-zinc-950/80 px-5 py-5 backdrop-blur-xl sm:px-8">
+        <header className="border-b border-black/[0.06] bg-[#fbfbfd]/95 px-5 py-5 backdrop-blur-xl sm:px-8">
           <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
             <div>
-              <h1 className="text-xl font-semibold tracking-tight text-white">
+              <h1 className="text-xl font-semibold tracking-tight text-[#1d1d1f]">
                 {tab === "pedidos"
                   ? "Esteira de pedidos"
                   : tab === "cardapio"
                     ? "Cardápio"
                     : "Configurações"}
               </h1>
-              <p className="mt-1 text-sm text-zinc-500">
-                Tenant: <span className="font-medium text-zinc-300">{restaurante.nome}</span>
+              <p className="mt-1 text-sm text-[#86868b]">
+                Tenant: <span className="font-medium text-[#424245]">{restaurante.nome}</span>
                 {loading ? (
-                  <span className="ml-2 text-xs text-zinc-600">· sincronizando…</span>
+                  <span className="ml-2 text-xs text-[#aeaeb2]">· sincronizando…</span>
                 ) : null}
               </p>
             </div>
@@ -996,7 +1012,7 @@ export default function AdminPage() {
               <button
                 type="button"
                 onClick={openCreatePrato}
-                className="inline-flex items-center justify-center rounded-2xl bg-teal-400 px-4 py-2.5 text-sm font-semibold text-zinc-950 shadow-lg shadow-teal-500/25 transition hover:bg-teal-300"
+                className="inline-flex items-center justify-center rounded-xl bg-[#1d1d1f] px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-black"
               >
                 Novo prato
               </button>
@@ -1005,11 +1021,11 @@ export default function AdminPage() {
         </header>
 
         {fetchError ? (
-          <div className="border-b border-amber-500/20 bg-amber-500/10 px-5 py-3 text-sm text-amber-100 sm:px-8">
+          <div className="border-b border-amber-200/80 bg-amber-50 px-5 py-3 text-sm text-amber-900 sm:px-8">
             {fetchError}
             <button
               type="button"
-              className="ml-3 text-xs font-semibold underline"
+              className="ml-3 text-xs font-semibold text-amber-800 underline decoration-amber-800/30 underline-offset-2"
               onClick={() => setFetchError(null)}
             >
               dispensar
@@ -1036,18 +1052,18 @@ export default function AdminPage() {
                     void atualizarColunaPedido(id, col.id);
                   }}
                   className={[
-                    "flex min-h-[420px] flex-col rounded-3xl border bg-gradient-to-b from-white/[0.04] to-transparent p-4 shadow-inner shadow-black/40 transition",
+                    "flex min-h-[420px] flex-col rounded-2xl border border-black/[0.06] bg-white p-4 shadow-[0_8px_30px_-16px_rgba(0,0,0,0.12)] transition",
                     dragOverCol === col.id
-                      ? "border-teal-400/50 ring-2 ring-teal-500/25"
-                      : "border-white/10",
+                      ? "ring-2 ring-[#0071e3]/25 border-[#0071e3]/30"
+                      : "",
                   ].join(" ")}
                 >
                   <div
-                    className={`mb-4 rounded-2xl bg-gradient-to-r ${col.accent} px-3 py-3 ring-1 ring-white/10`}
+                    className={`mb-4 rounded-xl bg-gradient-to-r ${col.accent} px-3 py-3 ring-1 ring-black/[0.04]`}
                   >
                     <div className="flex items-center justify-between gap-2">
-                      <h2 className="text-sm font-semibold text-white">{col.title}</h2>
-                      <span className="rounded-full bg-black/40 px-2 py-0.5 text-[11px] text-zinc-400">
+                      <h2 className="text-sm font-semibold tracking-tight text-[#1d1d1f]">{col.title}</h2>
+                      <span className="rounded-full bg-[#f5f5f7] px-2 py-0.5 text-[11px] font-medium text-[#6e6e73]">
                         {porColuna[col.id].length}
                       </span>
                     </div>
@@ -1065,7 +1081,7 @@ export default function AdminPage() {
                       />
                     ))}
                     {porColuna[col.id].length === 0 ? (
-                      <p className="rounded-2xl border border-dashed border-white/10 px-4 py-10 text-center text-xs text-zinc-500">
+                      <p className="rounded-2xl border border-dashed border-black/[0.08] bg-[#fafafa] px-4 py-10 text-center text-xs text-[#86868b]">
                         Nenhum pedido nesta coluna. Arraste um card de outra coluna ou crie pedidos no
                         Supabase.
                       </p>
@@ -1077,41 +1093,47 @@ export default function AdminPage() {
           ) : null}
 
           {tab === "cardapio" ? (
-            <div className="overflow-hidden rounded-3xl border border-white/10 bg-zinc-950/60 shadow-xl">
-              <div className="flex flex-wrap items-center justify-between gap-3 border-b border-white/10 px-5 py-4">
+            <div className="overflow-hidden rounded-2xl border border-black/[0.06] bg-white shadow-[0_8px_30px_-16px_rgba(0,0,0,0.12)]">
+              <div className="flex flex-wrap items-center justify-between gap-3 border-b border-black/[0.06] px-5 py-4">
                 <div>
-                  <h2 className="text-sm font-semibold text-white">Pratos</h2>
-                  <p className="text-xs text-zinc-500">
-                    Dados ao vivo do Supabase (slug <span className="font-mono">{TENANT_SLUG}</span>
+                  <h2 className="text-sm font-semibold tracking-tight text-[#1d1d1f]">Pratos</h2>
+                  <p className="text-xs text-[#86868b]">
+                    Dados ao vivo do Supabase (slug <span className="font-mono text-[#424245]">{TENANT_SLUG}</span>
                     ).
                   </p>
                 </div>
-                <span className="rounded-full bg-white/5 px-3 py-1 text-xs text-zinc-400">
+                <span className="rounded-full bg-[#f5f5f7] px-3 py-1 text-xs font-medium text-[#6e6e73]">
                   {pratosRows.length} {pratosRows.length === 1 ? "item" : "itens"}
                 </span>
               </div>
               <div className="overflow-x-auto">
-                <table className="min-w-full divide-y divide-white/10 text-left text-sm">
-                  <thead className="bg-white/[0.03] text-xs font-semibold uppercase tracking-wide text-zinc-500">
+                <table className="min-w-full divide-y divide-black/[0.06] text-left text-sm">
+                  <thead className="bg-[#fafafa] text-[11px] font-semibold uppercase tracking-wide text-[#86868b]">
                     <tr>
-                      <th className="px-5 py-3">Nome</th>
-                      <th className="px-5 py-3">Preço</th>
-                      <th className="px-5 py-3">Status</th>
-                      <th className="px-5 py-3 text-right">Ações</th>
+                      <th className="px-5 py-3 font-medium">Nome</th>
+                      <th className="px-5 py-3 font-medium">Categoria</th>
+                      <th className="px-5 py-3 font-medium">Preço</th>
+                      <th className="px-5 py-3 font-medium">Status</th>
+                      <th className="px-5 py-3 text-right font-medium">Ações</th>
                     </tr>
                   </thead>
-                  <tbody className="divide-y divide-white/10">
+                  <tbody className="divide-y divide-black/[0.06]">
                     {pratosRows.map((prato) => (
-                      <tr key={prato.id} className="hover:bg-white/[0.02]">
+                      <tr key={prato.id} className="transition hover:bg-[#fafafa]/80">
                         <td className="px-5 py-3">
-                          <div className="font-medium text-white">{prato.nome}</div>
+                          <div className="font-medium text-[#1d1d1f]">{prato.nome}</div>
                           {prato.descricao ? (
-                            <div className="mt-0.5 line-clamp-2 text-xs text-zinc-500">
+                            <div className="mt-0.5 line-clamp-2 text-xs text-[#86868b]">
                               {prato.descricao}
                             </div>
                           ) : null}
                         </td>
-                        <td className="whitespace-nowrap px-5 py-3 text-zinc-300">
+                        <td className="whitespace-nowrap px-5 py-3 text-[#424245]">
+                          {prato.categoria?.trim() ? prato.categoria : (
+                            <span className="text-[#aeaeb2]">—</span>
+                          )}
+                        </td>
+                        <td className="whitespace-nowrap px-5 py-3 text-[#424245]">
                           {formatBRL(prato.preco)}
                         </td>
                         <td className="px-5 py-3">
@@ -1119,8 +1141,8 @@ export default function AdminPage() {
                             className={[
                               "inline-flex rounded-full px-2.5 py-0.5 text-xs font-medium",
                               prato.status === "ativo"
-                                ? "bg-emerald-500/15 text-emerald-300 ring-1 ring-emerald-400/20"
-                                : "bg-amber-500/15 text-amber-200 ring-1 ring-amber-400/20",
+                                ? "bg-emerald-50 text-emerald-800 ring-1 ring-emerald-200/60"
+                                : "bg-amber-50 text-amber-900 ring-1 ring-amber-200/60",
                             ].join(" ")}
                           >
                             {prato.status === "ativo" ? "Ativo" : "Pausado"}
@@ -1130,14 +1152,14 @@ export default function AdminPage() {
                           <button
                             type="button"
                             onClick={() => openEditPrato(prato)}
-                            className="mr-2 rounded-lg px-2 py-1 text-xs font-semibold text-teal-300 hover:bg-teal-500/10"
+                            className="mr-2 rounded-lg px-2 py-1 text-xs font-semibold text-[#0071e3] transition hover:bg-[#0071e3]/8"
                           >
                             Editar
                           </button>
                           <button
                             type="button"
                             onClick={() => void handleDeletePrato(prato)}
-                            className="rounded-lg px-2 py-1 text-xs font-semibold text-red-300 hover:bg-red-500/10"
+                            className="rounded-lg px-2 py-1 text-xs font-semibold text-red-600 transition hover:bg-red-50"
                           >
                             Excluir
                           </button>
@@ -1151,25 +1173,25 @@ export default function AdminPage() {
           ) : null}
 
           {tab === "configuracoes" ? (
-            <section className="max-w-2xl rounded-3xl border border-white/10 bg-zinc-950/60 p-6 shadow-xl">
-              <h2 className="text-sm font-semibold text-white">Configurações do tenant</h2>
-              <p className="mt-3 text-sm leading-relaxed text-zinc-400">
+            <section className="max-w-2xl rounded-2xl border border-black/[0.06] bg-white p-6 shadow-[0_8px_30px_-16px_rgba(0,0,0,0.12)]">
+              <h2 className="text-sm font-semibold tracking-tight text-[#1d1d1f]">Configurações do tenant</h2>
+              <p className="mt-3 text-sm leading-relaxed text-[#6e6e73]">
                 Marca, horários de funcionamento, taxa de entrega e integrações (Supabase, WhatsApp
                 Business, etc.) ficam centralizados aqui. Os dados exibidos na barra lateral e na
                 esteira devem refletir o registro carregado do backend por{" "}
-                <code className="rounded bg-white/5 px-1 font-mono text-xs text-zinc-300">slug</code>{" "}
+                <code className="rounded-md bg-[#f5f5f7] px-1.5 py-0.5 font-mono text-xs text-[#424245]">slug</code>{" "}
                 ou sessão autenticada.
               </p>
-              <dl className="mt-6 grid gap-3 text-sm text-zinc-400 sm:grid-cols-2">
-                <div className="rounded-2xl border border-white/10 bg-black/30 p-4">
-                  <dt className="text-xs uppercase tracking-wide text-zinc-500">WhatsApp cadastro</dt>
-                  <dd className="mt-1 font-medium text-zinc-200">{restaurante.whatsapp}</dd>
+              <dl className="mt-6 grid gap-3 text-sm text-[#424245] sm:grid-cols-2">
+                <div className="rounded-xl border border-black/[0.06] bg-[#fafafa] p-4">
+                  <dt className="text-xs font-medium uppercase tracking-wide text-[#86868b]">WhatsApp cadastro</dt>
+                  <dd className="mt-1 font-medium text-[#1d1d1f]">{restaurante.whatsapp}</dd>
                 </div>
-                <div className="rounded-2xl border border-white/10 bg-black/30 p-4">
-                  <dt className="text-xs uppercase tracking-wide text-zinc-500">Cor do tema</dt>
-                  <dd className="mt-1 flex items-center gap-2 font-medium text-zinc-200">
+                <div className="rounded-xl border border-black/[0.06] bg-[#fafafa] p-4">
+                  <dt className="text-xs font-medium uppercase tracking-wide text-[#86868b]">Cor do tema</dt>
+                  <dd className="mt-1 flex items-center gap-2 font-medium text-[#1d1d1f]">
                     <span
-                      className="h-4 w-4 rounded-full ring-2 ring-white/20"
+                      className="h-4 w-4 rounded-full ring-2 ring-black/[0.06]"
                       style={{ backgroundColor: restaurante.cor_tema }}
                     />
                     {restaurante.cor_tema}
