@@ -9,6 +9,7 @@ function LoginForm() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const priceId = searchParams.get("priceId") ?? "";
+  const signupPending = searchParams.get("signup") === "1";
 
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -71,6 +72,13 @@ function LoginForm() {
               : "Acesse o painel do seu cardápio digital."}
           </p>
         </div>
+
+        {signupPending ? (
+          <p className="mb-4 rounded-2xl border border-teal-500/30 bg-teal-500/10 px-4 py-3 text-center text-sm text-teal-100">
+            Conta criada. Confirme o e-mail se o Supabase pediu, faça login abaixo e conclua o
+            pagamento.
+          </p>
+        ) : null}
 
         <div className="rounded-3xl border border-white/10 bg-white/[0.035] p-8 backdrop-blur-2xl">
           <form onSubmit={handleSubmit} className="space-y-5">

@@ -1,22 +1,29 @@
 "use client";
 
 import Link from "next/link";
-import { useSearchParams } from "next/navigation";
-import { Suspense, useEffect, useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
+import { Suspense, useEffect, useMemo, useState } from "react";
 import { startSubscriptionCheckout } from "@/lib/billing/start-checkout";
-import { normalizeSlugInput, slugify } from "@/lib/billing/slug";
-import { getPlanByPriceId } from "@/lib/plans";
+import { isValidSlug, normalizeSlugInput, slugify } from "@/lib/billing/slug";
+import { getPlanByPriceId, PLANS } from "@/lib/plans";
 import { createBrowserSupabaseClient } from "@/lib/supabase";
 
 function CadastroForm() {
+  const router = useRouter();
   const searchParams = useSearchParams();
-  const priceId =
-    searchParams.get("priceId") ??
-    process.env.NEXT_PUBLIC_STRIPE_PRICE_ESSENCIAL ??
-    "";
   const canceled = searchParams.get("canceled") === "1";
 
-  const plan = getPlanByPriceId(priceId);
+  const plan = useMemo(() => {
+    const fromQuery = searchParams.get("priceId");
+    if (fromQuery) {
+      return getPlanByPriceId(fromQuery) ?? PLANS[0];
+    }
+    const fromEnv = process.env.NEXT_PUBLIC_STRIPE_PRICE_ESSENCIAL?.trim();
+    if (fromEnv) {
+      return getPlanByPriceId(fromEnv) ?? PLANS[0];
+    }
+    return PLANS[0];
+  }, [searchParams]);
 
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -39,13 +46,14 @@ function CadastroForm() {
     setLoading(true);
     setErrorMessage(null);
 
-    if (!plan) {
-      setErrorMessage("Plano inválido. Volte à página de preços e tente novamente.");
+    const normalizedSlug = normalizeSlugInput(slug);
+    if (!isValidSlug(normalizedSlug)) {
+      setErrorMessage(
+        "Endereço do cardápio inválido. Use letras, números e hífens (mínimo 3 caracteres)."
+      );
       setLoading(false);
       return;
     }
-
-    const normalizedSlug = normalizeSlugInput(slug);
 
     try {
       const supabase = createBrowserSupabaseClient();
@@ -62,9 +70,11 @@ function CadastroForm() {
 
       const session = data.session;
       if (!session?.user) {
-        setErrorMessage(
-          "Conta criada. Confirme seu e-mail se necessário, faça login e conclua o pagamento."
-        );
+        const loginParams = new URLSearchParams({
+          priceId: plan.priceId,
+          signup: "1",
+        });
+        router.push(`/login?${loginParams.toString()}`);
         return;
       }
 
@@ -199,7 +209,7 @@ function CadastroForm() {
             </div>
             <button
               type="submit"
-              disabled={loading || !plan}
+              disabled={loading}
               className="w-full rounded-2xl bg-gradient-to-r from-teal-400 via-emerald-400 to-cyan-400 py-3.5 text-sm font-semibold text-zinc-950 disabled:opacity-60"
             >
               {loading ? "Redirecionando ao pagamento…" : "Criar conta e pagar no Stripe"}
@@ -215,7 +225,7 @@ function CadastroForm() {
           <p className="mt-6 text-center text-sm text-zinc-500">
             Já tem conta?{" "}
             <Link
-              href={priceId ? `/login?priceId=${encodeURIComponent(priceId)}` : "/login"}
+              href={`/login?priceId=${encodeURIComponent(plan.priceId)}`}
               className="text-teal-300 hover:underline"
             >
               Entrar
