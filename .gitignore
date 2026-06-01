@@ -2,3 +2,9 @@ node_modules
 .next
 .env.local
 .env*.local
+
+# TypeScript incremental (não versionar)
+*.tsbuildinfo
+
+# macOS
+.DS_Store
