@@ -140,6 +140,77 @@ export async function handleInvoicePaymentSucceeded(
   return result.ok ? { ok: true } : { ok: false, error: result.error };
 }
 
+/**
+ * Falha de cobrança na fatura: sincroniza `assinaturas` para `past_due` / `unpaid`
+ * (ou outro status retornado pelo Stripe), para o middleware bloquear `/admin` quando aplicável.
+ */
+export async function handleInvoicePaymentFailed(
+  stripe: Stripe,
+  admin: SupabaseClient,
+  invoice: Stripe.Invoice
+): Promise<DispatchResult> {
+  const subscriptionId = extractSubscriptionIdFromInvoice(invoice);
+
+  if (!subscriptionId) {
+    return { ok: true };
+  }
+
+  let subscription: Stripe.Subscription;
+  try {
+    subscription = await stripe.subscriptions.retrieve(subscriptionId);
+  } catch (err) {
+    console.error(
+      "[webhook/stripe] invoice.payment_failed: retrieve subscription",
+      { subscriptionId, invoiceId: invoice.id, err },
+    );
+    const { data: row, error: selErr } = await admin
+      .from("assinaturas")
+      .select("id")
+      .eq("stripe_subscription_id", subscriptionId)
+      .maybeSingle();
+
+    if (selErr) {
+      console.error("[webhook/stripe] invoice.payment_failed: select assinaturas", selErr.message);
+      return { ok: false, error: selErr.message };
+    }
+    if (!row) {
+      return { ok: true };
+    }
+
+    const { error: updErr } = await admin
+      .from("assinaturas")
+      .update({ status: "past_due" })
+      .eq("id", row.id);
+
+    if (updErr) {
+      console.error("[webhook/stripe] invoice.payment_failed: update status", updErr.message);
+      return { ok: false, error: updErr.message };
+    }
+    return { ok: true };
+  }
+
+  let userId = resolveSupabaseUserId(subscription.metadata);
+  if (!userId) {
+    userId = await findUserIdByStripeSubscriptionId(admin, subscriptionId);
+  }
+
+  if (!userId) {
+    console.error(
+      "[webhook/stripe] invoice.payment_failed: user_id não resolvido",
+      { subscriptionId, invoiceId: invoice.id },
+    );
+    return { ok: true };
+  }
+
+  const payload = buildPayloadFromSubscription(subscription, userId);
+  if (payload.status === "active" || payload.status === "trialing") {
+    payload.status = "past_due";
+  }
+
+  const result = await upsertAssinatura(admin, payload);
+  return result.ok ? { ok: true } : { ok: false, error: result.error };
+}
+
 export async function handleSubscriptionUpdated(
   stripe: Stripe,
   admin: SupabaseClient,
@@ -203,6 +274,13 @@ export async function dispatchStripeEvent(
 
     case "invoice.payment_succeeded":
       return handleInvoicePaymentSucceeded(
+        stripe,
+        admin,
+        event.data.object as Stripe.Invoice
+      );
+
+    case "invoice.payment_failed":
+      return handleInvoicePaymentFailed(
         stripe,
         admin,
         event.data.object as Stripe.Invoice

@@ -3,7 +3,9 @@
 import { Suspense, useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import type { Prato, PratoStatus, Restaurante } from "../../types";
+import { isValidSlug } from "@/lib/billing/slug";
 import { createBrowserSupabaseClient } from "@/lib/supabase";
+import { isRetryableSupabaseError, withRetry } from "@/lib/with-retry";
 
 function formatSlugToDisplayName(slug: string): string {
   const s = slug.trim();
@@ -699,19 +701,25 @@ function AdminPageInner() {
     void (async () => {
       const {
         data: { user },
-      } = await supabase.auth.getUser();
+      } = await withRetry(async () => supabase.auth.getUser(), {
+        shouldRetry: (r) => isRetryableSupabaseError(r.error),
+      });
       if (!user || cancelled) {
         setResolvingSlug(false);
         return;
       }
 
-      const { data, error } = await supabase
-        .from("restaurantes")
-        .select("slug")
-        .eq("owner_id", user.id)
-        .order("criado_em", { ascending: false })
-        .limit(1)
-        .maybeSingle();
+      const { data, error } = await withRetry(
+        async () =>
+          supabase
+            .from("restaurantes")
+            .select("slug")
+            .eq("owner_id", user.id)
+            .order("criado_em", { ascending: false })
+            .limit(1)
+            .maybeSingle(),
+        { shouldRetry: (r) => isRetryableSupabaseError(r.error) },
+      );
 
       if (cancelled) return;
 
@@ -741,11 +749,25 @@ function AdminPageInner() {
     setLoading(true);
     setFetchError(null);
     try {
-      const { data: restRow, error: restErr } = await supabase
-        .from("restaurantes")
-        .select("id, nome, slug, whatsapp, logo, cor_tema")
-        .eq("slug", tenantSlug)
-        .maybeSingle();
+      if (!isValidSlug(tenantSlug)) {
+        setFetchError(
+          "Slug inválido. Use apenas letras minúsculas, números e hífens (3 a 64 caracteres), no formato do seu cardápio público.",
+        );
+        setRestaurante(null);
+        setPratos([]);
+        setPedidos([]);
+        return;
+      }
+
+      const { data: restRow, error: restErr } = await withRetry(
+        async () =>
+          supabase
+            .from("restaurantes")
+            .select("id, nome, slug, whatsapp, logo, cor_tema")
+            .eq("slug", tenantSlug)
+            .maybeSingle(),
+        { shouldRetry: (r) => isRetryableSupabaseError(r.error) },
+      );
 
       if (restErr) {
         setFetchError(restErr.message);
@@ -769,16 +791,24 @@ function AdminPageInner() {
 
       const [{ data: pratosData, error: pratosErr }, { data: pedidosData, error: pedidosErr }] =
         await Promise.all([
-          supabase
-            .from("pratos")
-            .select("id, restaurante_id, nome, preco, descricao, imagem, status, categoria")
-            .eq("restaurante_id", rest.id)
-            .order("criado_em", { ascending: false }),
-          supabase
-            .from("pedidos")
-            .select("id, cliente, telefone, total, pagamento, coluna, observacoes, itens, motoboy")
-            .eq("restaurante_id", rest.id)
-            .order("criado_em", { ascending: true }),
+          withRetry(
+            async () =>
+              supabase
+                .from("pratos")
+                .select("id, restaurante_id, nome, preco, descricao, imagem, status, categoria")
+                .eq("restaurante_id", rest.id)
+                .order("criado_em", { ascending: false }),
+            { shouldRetry: (r) => isRetryableSupabaseError(r.error) },
+          ),
+          withRetry(
+            async () =>
+              supabase
+                .from("pedidos")
+                .select("id, cliente, telefone, total, pagamento, coluna, observacoes, itens, motoboy")
+                .eq("restaurante_id", rest.id)
+                .order("criado_em", { ascending: true }),
+            { shouldRetry: (r) => isRetryableSupabaseError(r.error) },
+          ),
         ]);
 
       if (pratosErr) {
@@ -1142,6 +1172,15 @@ function AdminPageInner() {
                 className="inline-flex items-center justify-center rounded-xl bg-[#1d1d1f] px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-black"
               >
                 Novo prato
+              </button>
+            ) : tab === "pedidos" ? (
+              <button
+                type="button"
+                disabled={loading}
+                onClick={() => void loadData()}
+                className="inline-flex items-center justify-center rounded-xl border border-black/[0.08] bg-white px-4 py-2.5 text-sm font-semibold text-[#1d1d1f] shadow-sm transition hover:bg-[#fbfbfd] disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                {loading ? "Atualizando…" : "Atualizar pedidos"}
               </button>
             ) : null}
           </div>

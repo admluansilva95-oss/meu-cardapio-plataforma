@@ -14,7 +14,7 @@ export const runtime = "nodejs";
  * 1. Dashboard Stripe → Developers → Webhooks → Add endpoint
  * 2. URL: https://seu-dominio.com/api/webhooks/stripe
  * 3. Eventos: checkout.session.completed, invoice.payment_succeeded,
- *    customer.subscription.updated, customer.subscription.deleted
+ *    invoice.payment_failed, customer.subscription.updated, customer.subscription.deleted
  * 4. Copie o signing secret para STRIPE_WEBHOOK_SECRET
  * 5. Em `checkout.sessions.create`, envie metadata: supabase_user_id, slug, restaurant_name
  *

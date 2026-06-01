@@ -1,6 +1,19 @@
 "use client";
 
+import { isValidSlug } from "@/lib/billing/slug";
 import { createBrowserSupabaseClient } from "@/lib/supabase";
+import { isRetryableSupabaseError, withRetry } from "@/lib/with-retry";
+
+/** Após esgotar retries ou falha de rede, evita mensagens técnicas cruas para o cliente final. */
+function mensagemErroCardapioParaCliente(message: string): string {
+  if (
+    isRetryableSupabaseError({ message }) ||
+    /\b(50[0-4]|503|502|504|429|unavailable|timeout|network|fetch|gateway)\b/i.test(message)
+  ) {
+    return "O cardápio está temporariamente indisponível. Tente novamente em alguns instantes.";
+  }
+  return message;
+}
 import type { CarrinhoItem, Prato, Restaurante } from "@/types";
 import Link from "next/link";
 import { useParams } from "next/navigation";
@@ -204,7 +217,7 @@ export default function PublicCardapioPage() {
   const fetchAbort = useRef<AbortController | null>(null);
 
   const load = useCallback(async () => {
-    if (!slug) {
+    if (!slug || !isValidSlug(slug)) {
       setLoading(false);
       setError(null);
       setRestaurante(null);
@@ -220,16 +233,20 @@ export default function PublicCardapioPage() {
     setError(null);
 
     try {
-      const { data: restRow, error: restErr } = await supabase
-        .from("restaurantes")
-        .select("id, nome, slug, whatsapp, logo, cor_tema")
-        .eq("slug", slug)
-        .maybeSingle();
+      const { data: restRow, error: restErr } = await withRetry(
+        async () =>
+          supabase
+            .from("restaurantes")
+            .select("id, nome, slug, whatsapp, logo, cor_tema")
+            .eq("slug", slug)
+            .maybeSingle(),
+        { shouldRetry: (r) => isRetryableSupabaseError(r.error) },
+      );
 
       if (ac.signal.aborted) return;
 
       if (restErr) {
-        setError(restErr.message);
+        setError(mensagemErroCardapioParaCliente(restErr.message));
         setRestaurante(null);
         setPratos([]);
         return;
@@ -245,17 +262,21 @@ export default function PublicCardapioPage() {
       const rest = mapRestauranteRow(restRow as RestauranteRow);
       setRestaurante(rest);
 
-      const { data: pratosData, error: pratosErr } = await supabase
-        .from("pratos")
-        .select("id, restaurante_id, nome, preco, descricao, imagem, status, categoria")
-        .eq("restaurante_id", rest.id)
-        .eq("status", "ativo")
-        .order("nome", { ascending: true });
+      const { data: pratosData, error: pratosErr } = await withRetry(
+        async () =>
+          supabase
+            .from("pratos")
+            .select("id, restaurante_id, nome, preco, descricao, imagem, status, categoria")
+            .eq("restaurante_id", rest.id)
+            .eq("status", "ativo")
+            .order("nome", { ascending: true }),
+        { shouldRetry: (r) => isRetryableSupabaseError(r.error) },
+      );
 
       if (ac.signal.aborted) return;
 
       if (pratosErr) {
-        setError(pratosErr.message);
+        setError(mensagemErroCardapioParaCliente(pratosErr.message));
         setPratos([]);
         return;
       }
@@ -266,7 +287,8 @@ export default function PublicCardapioPage() {
       setPratos(mapped);
     } catch (e) {
       if (!ac.signal.aborted) {
-        setError(e instanceof Error ? e.message : "Erro ao carregar o cardápio.");
+        const raw = e instanceof Error ? e.message : "Erro ao carregar o cardápio.";
+        setError(mensagemErroCardapioParaCliente(raw));
         setRestaurante(null);
         setPratos([]);
       }
@@ -394,6 +416,12 @@ export default function PublicCardapioPage() {
     );
   }
 
+  if (!isValidSlug(slug)) {
+    return (
+      <RestauranteNaoEncontradoView subtitle="O link do cardápio não é válido. Use apenas letras minúsculas, números e hífens (ex.: casa-do-sabor)." />
+    );
+  }
+
   if (loading) {
     return (
       <div className={`${shellClass} flex flex-col items-center justify-center gap-5 px-6`}>
@@ -411,7 +439,7 @@ export default function PublicCardapioPage() {
     return (
       <div className={`${shellClass} px-6 py-20`}>
         <div className="mx-auto max-w-md rounded-2xl border border-black/[0.06] bg-white p-8 text-center shadow-[0_20px_60px_-30px_rgba(0,0,0,0.2)]">
-          <p className="text-sm font-semibold tracking-tight text-[#1d1d1f]">Não foi possível carregar</p>
+          <p className="text-sm font-semibold tracking-tight text-[#1d1d1f]">Não foi possível carregar o cardápio</p>
           <p className="mt-2 text-sm leading-relaxed text-[#6e6e73]">{error}</p>
           <button
             type="button"
