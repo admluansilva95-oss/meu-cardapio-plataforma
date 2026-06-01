@@ -1,5 +1,3 @@
-import { getPlanByPriceId } from "@/lib/plans";
-
 export type StartCheckoutParams = {
   priceId: string;
   userId: string;
@@ -19,10 +17,10 @@ export type StartCheckoutResult =
 export async function startSubscriptionCheckout(
   params: StartCheckoutParams
 ): Promise<StartCheckoutResult> {
-  const plan = getPlanByPriceId(params.priceId);
-  if (!plan) {
-    return { ok: false, error: "Plano inválido." };
-  }
+  // Não validar o priceId aqui com `PLANS`/`getPlanByPriceId`: no cliente, os
+  // NEXT_PUBLIC_* são fixados no build, enquanto o SSR usa o .env em runtime —
+  // isso gerava "Plano inválido" falso-positivo. A rota `/api/checkout/create-session`
+  // já valida o priceId no servidor.
 
   const response = await fetch("/api/checkout/create-session", {
     method: "POST",
