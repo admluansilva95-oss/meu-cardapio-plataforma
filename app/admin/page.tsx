@@ -3,7 +3,12 @@
 import { Suspense, useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import type { Prato, PratoStatus, Restaurante } from "../../types";
+import { PedidosDashboardSkeleton } from "@/components/admin/PedidosDashboardSkeleton";
+import { PedidosEmptyState } from "@/components/admin/PedidosEmptyState";
+import { PedidosKpiBar } from "@/components/admin/PedidosKpiBar";
 import { isValidSlug } from "@/lib/billing/slug";
+import { playNewOrderChime } from "@/lib/admin/play-new-order-chime";
+import { computePedidoKpis } from "@/lib/admin/pedido-kpis";
 import { createBrowserSupabaseClient } from "@/lib/supabase";
 import { isRetryableSupabaseError, withRetry } from "@/lib/with-retry";
 
@@ -37,6 +42,8 @@ interface Pedido {
   motoboy: string;
   observacoes: string;
   coluna: KanbanCol;
+  /** ISO 8601 — usado em KPIs e ordenação. */
+  criado_em: string;
 }
 
 function formatBRL(value: number) {
@@ -78,9 +85,14 @@ function mapPedidoRow(row: {
   observacoes: string | null;
   itens: unknown;
   motoboy: string | null;
+  criado_em?: string | null;
 }): Pedido | null {
   if (!isKanbanCol(row.coluna)) return null;
   if (!isFormaPagamento(row.pagamento)) return null;
+  const criado =
+    typeof row.criado_em === "string" && row.criado_em.length > 0
+      ? row.criado_em
+      : new Date(0).toISOString();
   return {
     id: row.id,
     cliente: row.cliente,
@@ -91,6 +103,7 @@ function mapPedidoRow(row: {
     motoboy: row.motoboy?.trim() ?? "",
     observacoes: row.observacoes?.trim() ?? "",
     coluna: row.coluna,
+    criado_em: criado,
   };
 }
 
@@ -804,7 +817,9 @@ function AdminPageInner() {
             async () =>
               supabase
                 .from("pedidos")
-                .select("id, cliente, telefone, total, pagamento, coluna, observacoes, itens, motoboy")
+                .select(
+                  "id, cliente, telefone, total, pagamento, coluna, observacoes, itens, motoboy, criado_em",
+                )
                 .eq("restaurante_id", rest.id)
                 .order("criado_em", { ascending: true }),
             { shouldRetry: (r) => isRetryableSupabaseError(r.error) },
@@ -844,6 +859,63 @@ function AdminPageInner() {
   }, [loadData]);
 
   useEffect(() => {
+    const rid = restaurante?.id;
+    if (!rid) return;
+
+    const filter = `restaurante_id=eq.${rid}`;
+    const channel = supabase
+      .channel(`pedidos-restaurante-${rid}`)
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: "pedidos",
+          filter,
+        },
+        (payload) => {
+          if (payload.eventType === "INSERT") {
+            const mapped = mapPedidoRow(payload.new as Parameters<typeof mapPedidoRow>[0]);
+            if (!mapped) return;
+            setPedidos((prev) => {
+              if (prev.some((p) => p.id === mapped.id)) return prev;
+              return [...prev, mapped];
+            });
+            playNewOrderChime();
+            return;
+          }
+          if (payload.eventType === "UPDATE") {
+            const mapped = mapPedidoRow(payload.new as Parameters<typeof mapPedidoRow>[0]);
+            const pid = (payload.new as { id?: string }).id;
+            if (!pid) return;
+            if (!mapped) {
+              setPedidos((prev) => prev.filter((p) => p.id !== pid));
+              return;
+            }
+            setPedidos((prev) => {
+              const idx = prev.findIndex((p) => p.id === mapped.id);
+              if (idx < 0) return [...prev, mapped];
+              const next = [...prev];
+              next[idx] = mapped;
+              return next;
+            });
+            return;
+          }
+          if (payload.eventType === "DELETE") {
+            const id = (payload.old as { id?: string } | null)?.id;
+            if (!id) return;
+            setPedidos((prev) => prev.filter((p) => p.id !== id));
+          }
+        },
+      )
+      .subscribe();
+
+    return () => {
+      void supabase.removeChannel(channel);
+    };
+  }, [supabase, restaurante?.id]);
+
+  useEffect(() => {
     if (restaurante?.nome) {
       document.title = `${restaurante.nome} · Painel`;
     } else {
@@ -863,6 +935,8 @@ function AdminPageInner() {
     }
     return map;
   }, [pedidos]);
+
+  const kpisPedidos = useMemo(() => computePedidoKpis(pedidos), [pedidos]);
 
   const atualizarColunaPedido = async (pedidoId: string, nova: KanbanCol) => {
     const anterior = pedidos.find((p) => p.id === pedidoId);
@@ -1121,11 +1195,7 @@ function AdminPageInner() {
   }
 
   if (loading && !restaurante) {
-    return (
-      <div className="flex min-h-screen items-center justify-center bg-[#f5f5f7] font-sans text-[#6e6e73] antialiased">
-        <p className="text-sm font-medium">Carregando painel…</p>
-      </div>
-    );
+    return <PedidosDashboardSkeleton variant="full" />;
   }
 
   if (!restaurante) {
@@ -1153,13 +1223,16 @@ function AdminPageInner() {
             <div>
               <h1 className="text-xl font-semibold tracking-tight text-[#1d1d1f]">
                 {tab === "pedidos"
-                  ? "Esteira de pedidos"
+                  ? "Painel de operações"
                   : tab === "cardapio"
                     ? "Cardápio"
                     : "Configurações"}
               </h1>
               <p className="mt-1 text-sm text-[#86868b]">
                 Tenant: <span className="font-medium text-[#424245]">{restaurante.nome}</span>
+                {tab === "pedidos" && !loading ? (
+                  <span className="ml-2 text-xs text-[#aeaeb2]">· KPIs e esteira ao vivo</span>
+                ) : null}
                 {loading ? (
                   <span className="ml-2 text-xs text-[#aeaeb2]">· sincronizando…</span>
                 ) : null}
@@ -1201,61 +1274,72 @@ function AdminPageInner() {
 
         <div className="flex-1 overflow-auto px-4 py-6 sm:px-8">
           {tab === "pedidos" ? (
-            <div className="grid grid-cols-1 gap-5 md:grid-cols-2 xl:grid-cols-4">
-              {colunas.map((col) => (
-                <section
-                  key={col.id}
-                  onDragOver={(e) => {
-                    e.preventDefault();
-                    e.dataTransfer.dropEffect = "move";
-                    setDragOverCol(col.id);
-                  }}
-                  onDrop={(e) => {
-                    e.preventDefault();
-                    setDragOverCol(null);
-                    const id = e.dataTransfer.getData(DRAG_MIME);
-                    if (!id) return;
-                    void atualizarColunaPedido(id, col.id);
-                  }}
-                  className={[
-                    "flex min-h-[420px] flex-col rounded-2xl border border-black/[0.06] bg-white p-4 shadow-[0_8px_30px_-16px_rgba(0,0,0,0.12)] transition",
-                    dragOverCol === col.id
-                      ? "ring-2 ring-[#0071e3]/25 border-[#0071e3]/30"
-                      : "",
-                  ].join(" ")}
-                >
-                  <div
-                    className={`mb-4 rounded-xl bg-gradient-to-r ${col.accent} px-3 py-3 ring-1 ring-black/[0.04]`}
-                  >
-                    <div className="flex items-center justify-between gap-2">
-                      <h2 className="text-sm font-semibold tracking-tight text-[#1d1d1f]">{col.title}</h2>
-                      <span className="rounded-full bg-[#f5f5f7] px-2 py-0.5 text-[11px] font-medium text-[#6e6e73]">
-                        {porColuna[col.id].length}
-                      </span>
-                    </div>
-                  </div>
-                  <div className="flex flex-1 flex-col gap-3 overflow-y-auto pr-0.5">
-                    {porColuna[col.id].map((p) => (
-                      <PedidoCard
-                        key={p.id}
-                        pedido={p}
-                        canAdvance={nextColuna(p.coluna) !== null}
-                        onAdvance={() => void avancarPedido(p.id)}
-                        onEdit={() => setPedidoModal(p)}
-                        onCancel={() => void cancelarPedido(p.id)}
-                        onDragEnd={() => setDragOverCol(null)}
-                      />
+            loading ? (
+              <PedidosDashboardSkeleton variant="embedded" />
+            ) : (
+              <>
+                <PedidosKpiBar kpis={kpisPedidos} />
+                {pedidos.length === 0 ? (
+                  <PedidosEmptyState />
+                ) : (
+                  <div className="grid grid-cols-1 gap-5 md:grid-cols-2 xl:grid-cols-4">
+                    {colunas.map((col) => (
+                      <section
+                        key={col.id}
+                        onDragOver={(e) => {
+                          e.preventDefault();
+                          e.dataTransfer.dropEffect = "move";
+                          setDragOverCol(col.id);
+                        }}
+                        onDrop={(e) => {
+                          e.preventDefault();
+                          setDragOverCol(null);
+                          const id = e.dataTransfer.getData(DRAG_MIME);
+                          if (!id) return;
+                          void atualizarColunaPedido(id, col.id);
+                        }}
+                        className={[
+                          "flex min-h-[420px] flex-col rounded-2xl border border-black/[0.06] bg-white p-4 shadow-[0_8px_30px_-16px_rgba(0,0,0,0.12)] transition",
+                          dragOverCol === col.id
+                            ? "ring-2 ring-[#0071e3]/25 border-[#0071e3]/30"
+                            : "",
+                        ].join(" ")}
+                      >
+                        <div
+                          className={`mb-4 rounded-xl bg-gradient-to-r ${col.accent} px-3 py-3 ring-1 ring-black/[0.04]`}
+                        >
+                          <div className="flex items-center justify-between gap-2">
+                            <h2 className="text-sm font-semibold tracking-tight text-[#1d1d1f]">{col.title}</h2>
+                            <span className="rounded-full bg-[#f5f5f7] px-2 py-0.5 text-[11px] font-medium text-[#6e6e73]">
+                              {porColuna[col.id].length}
+                            </span>
+                          </div>
+                        </div>
+                        <div className="flex flex-1 flex-col gap-3 overflow-y-auto pr-0.5">
+                          {porColuna[col.id].map((p) => (
+                            <PedidoCard
+                              key={p.id}
+                              pedido={p}
+                              canAdvance={nextColuna(p.coluna) !== null}
+                              onAdvance={() => void avancarPedido(p.id)}
+                              onEdit={() => setPedidoModal(p)}
+                              onCancel={() => void cancelarPedido(p.id)}
+                              onDragEnd={() => setDragOverCol(null)}
+                            />
+                          ))}
+                          {porColuna[col.id].length === 0 ? (
+                            <p className="rounded-2xl border border-dashed border-black/[0.08] bg-[#fafafa] px-4 py-10 text-center text-xs text-[#86868b]">
+                              Nenhum pedido nesta coluna. Arraste um card de outra coluna ou crie pedidos no
+                              Supabase.
+                            </p>
+                          ) : null}
+                        </div>
+                      </section>
                     ))}
-                    {porColuna[col.id].length === 0 ? (
-                      <p className="rounded-2xl border border-dashed border-black/[0.08] bg-[#fafafa] px-4 py-10 text-center text-xs text-[#86868b]">
-                        Nenhum pedido nesta coluna. Arraste um card de outra coluna ou crie pedidos no
-                        Supabase.
-                      </p>
-                    ) : null}
                   </div>
-                </section>
-              ))}
-            </div>
+                )}
+              </>
+            )
           ) : null}
 
           {tab === "cardapio" ? (
