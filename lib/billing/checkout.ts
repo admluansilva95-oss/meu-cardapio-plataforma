@@ -4,6 +4,7 @@ import { getPlanByPriceId } from "@/lib/plans";
 import { getStripe } from "@/lib/stripe/client";
 import { isValidSlug, normalizeSlugInput } from "@/lib/billing/slug";
 import { isSlugAvailable } from "@/lib/billing/restaurantes";
+import { getPublicAppUrl } from "@/lib/site-url";
 
 export type CreateSubscriptionCheckoutInput = {
   userId: string;
@@ -17,10 +18,6 @@ export type CreateSubscriptionCheckoutInput = {
 export type CreateSubscriptionCheckoutResult =
   | { ok: true; url: string }
   | { ok: false; error: string; status: number };
-
-function appBaseUrl(): string {
-  return process.env.NEXT_PUBLIC_APP_URL?.replace(/\/$/, "") ?? "http://localhost:3000";
-}
 
 /**
  * Valida dados e cria sessão Stripe Checkout (modo assinatura).
@@ -51,7 +48,7 @@ export async function createSubscriptionCheckoutSession(
 
   const restaurantName = input.restaurantName.trim() || slug;
   const whatsapp = input.whatsapp?.trim() ?? "";
-  const appUrl = appBaseUrl();
+  const appUrl = getPublicAppUrl();
 
   let stripe: Stripe;
   try {

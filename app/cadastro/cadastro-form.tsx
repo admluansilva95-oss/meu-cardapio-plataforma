@@ -7,6 +7,7 @@ import { startSubscriptionCheckout } from "@/lib/billing/start-checkout";
 import { isValidSlug, normalizeSlugInput, slugify } from "@/lib/billing/slug";
 import { getPlanByPriceId, PLANS } from "@/lib/plans";
 import { PhoneInput } from "@/components/PhoneInput";
+import { getPublicAppUrl } from "@/lib/site-url";
 import { createBrowserSupabaseClient } from "@/lib/supabase";
 
 export function CadastroForm() {
@@ -58,9 +59,13 @@ export function CadastroForm() {
 
     try {
       const supabase = createBrowserSupabaseClient();
+      const afterConfirmPath = `/login?signup=1&priceId=${encodeURIComponent(plan.priceId)}`;
       const { data, error } = await supabase.auth.signUp({
         email,
         password,
+        options: {
+          emailRedirectTo: `${getPublicAppUrl()}/auth/callback?next=${encodeURIComponent(afterConfirmPath)}`,
+        },
       });
 
       if (error) {

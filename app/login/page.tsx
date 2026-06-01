@@ -11,6 +11,9 @@ function LoginForm() {
   const priceId = searchParams.get("priceId") ?? "";
   const signupPending = searchParams.get("signup") === "1";
   const nextParam = searchParams.get("next")?.trim() ?? "";
+  const authError = searchParams.get("error");
+  const authErrorDetail =
+    searchParams.get("error_description") ?? searchParams.get("message");
 
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -83,6 +86,14 @@ function LoginForm() {
           <p className="mb-4 rounded-2xl border border-teal-500/30 bg-teal-500/10 px-4 py-3 text-center text-sm text-teal-100">
             Conta criada. Confirme o e-mail se o Supabase pediu, faça login abaixo e conclua o
             pagamento.
+          </p>
+        ) : null}
+
+        {authError ? (
+          <p className="mb-4 rounded-2xl border border-red-500/30 bg-red-500/10 px-4 py-3 text-center text-sm text-red-100">
+            {authError === "otp_expired"
+              ? "O link de confirmação expirou ou já foi usado. Peça um novo e-mail em “Esqueci a senha” ou cadastre-se de novo."
+              : authErrorDetail ?? `Não foi possível concluir a autenticação (${authError}).`}
           </p>
         ) : null}
 
