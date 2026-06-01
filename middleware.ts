@@ -45,6 +45,26 @@ export async function middleware(request: NextRequest) {
     return NextResponse.redirect(login);
   }
 
+  const { data: assinaturasValidas, error: assinaturasError } = await supabase
+    .from("assinaturas")
+    .select("id")
+    .eq("user_id", user.id)
+    .in("status", ["active", "trialing"])
+    .limit(1);
+
+  if (assinaturasError) {
+    console.error("[middleware/admin] assinaturas:", assinaturasError.message);
+    return response;
+  }
+
+  if (!assinaturasValidas?.length) {
+    const cadastro = request.nextUrl.clone();
+    cadastro.pathname = "/cadastro";
+    cadastro.search = "";
+    cadastro.searchParams.set("billing", "required");
+    return NextResponse.redirect(cadastro);
+  }
+
   const slugParam = searchParams.get("slug")?.trim();
   if (slugParam) {
     return response;
