@@ -10,18 +10,6 @@ export async function middleware(request: NextRequest) {
     return NextResponse.next();
   }
 
-  const slugParam = searchParams.get("slug")?.trim();
-  if (slugParam) {
-    return NextResponse.next();
-  }
-
-  const envSlug = process.env.NEXT_PUBLIC_ADMIN_RESTAURANT_SLUG?.trim();
-  if (envSlug) {
-    const url = request.nextUrl.clone();
-    url.searchParams.set("slug", envSlug);
-    return NextResponse.redirect(url);
-  }
-
   let response = NextResponse.next({
     request: { headers: request.headers },
   });
@@ -50,7 +38,23 @@ export async function middleware(request: NextRequest) {
   } = await supabase.auth.getUser();
 
   if (!user) {
+    const login = request.nextUrl.clone();
+    login.pathname = "/login";
+    const nextPath = `${pathname}${request.nextUrl.search}`;
+    login.searchParams.set("next", nextPath);
+    return NextResponse.redirect(login);
+  }
+
+  const slugParam = searchParams.get("slug")?.trim();
+  if (slugParam) {
     return response;
+  }
+
+  const envSlug = process.env.NEXT_PUBLIC_ADMIN_RESTAURANT_SLUG?.trim();
+  if (envSlug) {
+    const url = request.nextUrl.clone();
+    url.searchParams.set("slug", envSlug);
+    return NextResponse.redirect(url);
   }
 
   const { data: restaurante, error } = await supabase

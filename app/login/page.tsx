@@ -10,15 +10,21 @@ function LoginForm() {
   const searchParams = useSearchParams();
   const priceId = searchParams.get("priceId") ?? "";
   const signupPending = searchParams.get("signup") === "1";
+  const nextParam = searchParams.get("next")?.trim() ?? "";
 
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
-  const redirectAfterLogin = priceId
-    ? `/assinar?priceId=${encodeURIComponent(priceId)}`
-    : "/admin";
+  const safeNext =
+    nextParam.startsWith("/") && !nextParam.startsWith("//") ? nextParam : null;
+
+  const redirectAfterLogin = safeNext
+    ? safeNext
+    : priceId
+      ? `/assinar?priceId=${encodeURIComponent(priceId)}`
+      : "/admin";
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
