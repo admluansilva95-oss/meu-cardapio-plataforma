@@ -10,7 +10,9 @@ export async function middleware(request: NextRequest) {
     return NextResponse.next();
   }
 
-  let response = NextResponse.next({
+  // Uma única instância: `setAll` pode ser chamado várias vezes (ex.: refresh).
+  // Recriar `NextResponse.next` a cada chamada descarta Set-Cookie anteriores.
+  const response = NextResponse.next({
     request: { headers: request.headers },
   });
 
@@ -18,16 +20,23 @@ export async function middleware(request: NextRequest) {
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
     {
+      cookieOptions: {
+        path: "/",
+        sameSite: "lax",
+        secure: process.env.NODE_ENV === "production",
+      },
       cookies: {
         getAll() {
           return request.cookies.getAll();
         },
         setAll(cookiesToSet: CookieToSet[]) {
-          cookiesToSet.forEach(({ name, value }) => request.cookies.set(name, value));
-          response = NextResponse.next({ request: { headers: request.headers } });
-          cookiesToSet.forEach(({ name, value, options }) =>
-            response.cookies.set(name, value, options)
-          );
+          cookiesToSet.forEach(({ name, value, options }) => {
+            // 1. Atualiza a requisição para que os Server Components adiante vejam o cookie novo imediatamente
+            request.cookies.set(name, value);
+
+            // 2. Atualiza a resposta para salvar o cookie de forma definitiva no navegador do usuário
+            response.cookies.set(name, value, options);
+          });
         },
       },
     }

@@ -64,22 +64,28 @@ export async function GET(request: NextRequest) {
   const nextPath = safeInternalPath(searchParams.get("next"));
   const redirectUrl = new URL(nextPath, origin);
 
-  let response = NextResponse.redirect(redirectUrl);
+  // Uma única instância de redirect: `setAll` pode ser chamado várias vezes
+  // (ex.: limpar PKCE e depois gravar a sessão). Recriar NextResponse.redirect
+  // a cada chamada descarta Set-Cookie da resposta anterior → sessão incompleta.
+  const response = NextResponse.redirect(redirectUrl);
 
   const supabase = createServerClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
     {
+      cookieOptions: {
+        path: "/",
+        sameSite: "lax",
+        secure: process.env.NODE_ENV === "production",
+      },
       cookies: {
         getAll() {
           return request.cookies.getAll();
         },
         setAll(cookiesToSet: CookieToSet[]) {
-          cookiesToSet.forEach(({ name, value }) => request.cookies.set(name, value));
-          response = NextResponse.redirect(redirectUrl);
-          cookiesToSet.forEach(({ name, value, options }) =>
-            response.cookies.set(name, value, options)
-          );
+          cookiesToSet.forEach(({ name, value, options }) => {
+            response.cookies.set(name, value, options);
+          });
         },
       },
     }
