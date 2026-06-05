@@ -7,6 +7,7 @@ import { startSubscriptionCheckout } from "@/lib/billing/start-checkout";
 import { isValidSlug, normalizeSlugInput, slugify } from "@/lib/billing/slug";
 import { getPlanByPriceId, PLANS } from "@/lib/plans";
 import { PhoneInput } from "@/components/PhoneInput";
+import { buildAssinarPathWithCarry } from "@/lib/auth/post-signup-carry";
 import { getPublicAppUrl } from "@/lib/site-url";
 import { createBrowserSupabaseClient } from "@/lib/supabase";
 
@@ -59,7 +60,12 @@ export function CadastroForm() {
 
     try {
       const supabase = createBrowserSupabaseClient();
-      const afterConfirmPath = `/login?signup=1&priceId=${encodeURIComponent(plan.priceId)}`;
+      const afterConfirmPath = buildAssinarPathWithCarry({
+        priceId: plan.priceId,
+        slug: normalizedSlug,
+        restaurantName: restaurantName.trim(),
+        whatsapp: whatsapp.trim() || undefined,
+      });
       const { data, error } = await supabase.auth.signUp({
         email,
         password,
@@ -76,11 +82,8 @@ export function CadastroForm() {
 
       const session = data.session;
       if (!session?.user) {
-        const loginParams = new URLSearchParams({
-          priceId: plan.priceId,
-          signup: "1",
-        });
-        router.push(`/login?${loginParams.toString()}`);
+        const next = encodeURIComponent(afterConfirmPath);
+        router.push(`/login?signup=1&next=${next}`);
         return;
       }
 

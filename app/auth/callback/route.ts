@@ -1,22 +1,54 @@
 import { createServerClient, type CookieOptions } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
+import { getPublicAppUrl } from "@/lib/site-url";
 
 type CookieToSet = { name: string; value: string; options: CookieOptions };
 
+type EmailOtpType =
+  | "signup"
+  | "invite"
+  | "magiclink"
+  | "recovery"
+  | "email_change"
+  | "email";
+
+const EMAIL_OTP_TYPES = new Set<string>([
+  "signup",
+  "invite",
+  "magiclink",
+  "recovery",
+  "email_change",
+  "email",
+]);
+
+function isEmailOtpType(t: string): t is EmailOtpType {
+  return EMAIL_OTP_TYPES.has(t);
+}
+
 function safeInternalPath(next: string | null): string {
-  if (!next) return "/login?signup=1";
+  const fallback = "/assinar";
+  if (!next?.trim()) return fallback;
   const trimmed = next.trim();
-  if (!trimmed.startsWith("/") || trimmed.startsWith("//")) return "/login?signup=1";
-  return trimmed;
+  if (trimmed.startsWith("/") && !trimmed.startsWith("//")) {
+    return trimmed;
+  }
+  try {
+    const u = new URL(trimmed);
+    const app = new URL(getPublicAppUrl());
+    if (u.origin !== app.origin) return fallback;
+    return `${u.pathname}${u.search}`;
+  } catch {
+    return fallback;
+  }
 }
 
 /**
- * Supabase redireciona cá após confirmar e-mail (PKCE): ?code=...
- * Troca o código por cookies de sessão antes de redirecionar o usuário.
+ * Confirmação de e-mail:
+ * - `token_hash` + `type` → verifyOtp (funciona em outro navegador/dispositivo; ver lib/auth/supabase-confirm-email.md)
+ * - `code` → exchangeCodeForSession (PKCE; mesmo contexto do signUp)
  */
 export async function GET(request: NextRequest) {
   const { searchParams, origin } = new URL(request.url);
-  const code = searchParams.get("code");
   const error = searchParams.get("error");
   const errorDescription = searchParams.get("error_description");
 
@@ -26,11 +58,6 @@ export async function GET(request: NextRequest) {
     if (errorDescription) {
       loginUrl.searchParams.set("error_description", errorDescription);
     }
-    return NextResponse.redirect(loginUrl);
-  }
-
-  if (!code) {
-    loginUrl.searchParams.set("error", "missing_code");
     return NextResponse.redirect(loginUrl);
   }
 
@@ -58,14 +85,43 @@ export async function GET(request: NextRequest) {
     }
   );
 
-  const { error: exchangeError } = await supabase.auth.exchangeCodeForSession(code);
+  const token_hash = searchParams.get("token_hash");
+  const otpTypeRaw = searchParams.get("type");
+  const code = searchParams.get("code");
 
-  if (exchangeError) {
-    const errLogin = new URL("/login", origin);
-    errLogin.searchParams.set("error", "auth_callback");
-    errLogin.searchParams.set("message", exchangeError.message);
-    return NextResponse.redirect(errLogin);
+  if (token_hash && otpTypeRaw && isEmailOtpType(otpTypeRaw)) {
+    const { error: verifyError } = await supabase.auth.verifyOtp({
+      type: otpTypeRaw,
+      token_hash,
+    });
+
+    if (verifyError) {
+      const errLogin = new URL("/login", origin);
+      errLogin.searchParams.set("error", "auth_callback");
+      errLogin.searchParams.set("message", verifyError.message);
+      return NextResponse.redirect(errLogin);
+    }
+
+    return response;
   }
 
-  return response;
+  if (code) {
+    const { error: exchangeError } = await supabase.auth.exchangeCodeForSession(code);
+
+    if (exchangeError) {
+      const errLogin = new URL("/login", origin);
+      errLogin.searchParams.set("error", "auth_callback");
+      errLogin.searchParams.set("message", exchangeError.message);
+      return NextResponse.redirect(errLogin);
+    }
+
+    return response;
+  }
+
+  loginUrl.searchParams.set("error", "missing_auth_code");
+  loginUrl.searchParams.set(
+    "error_description",
+    "Link inválido ou incompleto. Confira o template de e-mail no Supabase (token_hash) ou solicite um novo link."
+  );
+  return NextResponse.redirect(loginUrl);
 }

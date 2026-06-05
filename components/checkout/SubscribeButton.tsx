@@ -1,9 +1,10 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { startSubscriptionCheckout } from "@/lib/billing/start-checkout";
 import { normalizeSlugInput, slugify } from "@/lib/billing/slug";
+import { parseCarryFromObParam } from "@/lib/auth/post-signup-carry";
 import { createBrowserSupabaseClient } from "@/lib/supabase";
 import type { Plan } from "@/lib/plans";
 
@@ -13,6 +14,7 @@ type SubscribeButtonProps = {
 
 export function SubscribeButton({ plan }: SubscribeButtonProps) {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const [loading, setLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [restaurantName, setRestaurantName] = useState("");
@@ -27,6 +29,15 @@ export function SubscribeButton({ plan }: SubscribeButtonProps) {
       setSlug(slugify(restaurantName));
     }
   }, [restaurantName, slugTouched]);
+
+  useEffect(() => {
+    const carry = parseCarryFromObParam(searchParams.get("ob"));
+    if (!carry) return;
+    setRestaurantName(carry.restaurantName);
+    setSlug(carry.slug);
+    setSlugTouched(true);
+    if (carry.whatsapp) setWhatsapp(carry.whatsapp);
+  }, [searchParams]);
 
   async function handleSubscribe() {
     setLoading(true);
@@ -58,6 +69,9 @@ export function SubscribeButton({ plan }: SubscribeButtonProps) {
         .limit(1)
         .maybeSingle();
 
+      const carry = parseCarryFromObParam(searchParams.get("ob"));
+      const priceId = carry?.priceId ?? plan.priceId;
+
       const checkoutSlug = existingRest?.slug ?? normalizeSlugInput(slug);
       const checkoutName = restaurantName.trim() || checkoutSlug;
 
@@ -70,7 +84,7 @@ export function SubscribeButton({ plan }: SubscribeButtonProps) {
       }
 
       const checkout = await startSubscriptionCheckout({
-        priceId: plan.priceId,
+        priceId,
         userId: session.user.id,
         accessToken: session.access_token,
         slug: checkoutSlug,

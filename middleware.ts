@@ -57,7 +57,9 @@ export async function middleware(request: NextRequest) {
     return response;
   }
 
-  if (!assinaturasValidas?.length) {
+  const checkoutSuccess = searchParams.get("checkout") === "success";
+
+  if (!assinaturasValidas?.length && !checkoutSuccess) {
     const cadastro = request.nextUrl.clone();
     cadastro.pathname = "/cadastro";
     cadastro.search = "";

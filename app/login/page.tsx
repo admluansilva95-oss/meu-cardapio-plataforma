@@ -2,8 +2,9 @@
 
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
-import { Suspense, useState } from "react";
+import { Suspense, useEffect, useState } from "react";
 import { createBrowserSupabaseClient } from "@/lib/supabase";
+import { getPublicAppUrl } from "@/lib/site-url";
 
 function LoginForm() {
   const router = useRouter();
@@ -20,14 +21,41 @@ function LoginForm() {
   const [loading, setLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
-  const safeNext =
-    nextParam.startsWith("/") && !nextParam.startsWith("//") ? nextParam : null;
+  const safeNext = (() => {
+    const t = nextParam.trim();
+    if (!t) return null;
+    if (t.startsWith("/") && !t.startsWith("//")) return t;
+    try {
+      const u = new URL(t);
+      const app = new URL(getPublicAppUrl());
+      if (u.origin !== app.origin) return null;
+      return `${u.pathname}${u.search}`;
+    } catch {
+      return null;
+    }
+  })();
 
   const redirectAfterLogin = safeNext
     ? safeNext
     : priceId
       ? `/assinar?priceId=${encodeURIComponent(priceId)}`
       : "/admin";
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      const supabase = createBrowserSupabaseClient();
+      const {
+        data: { session },
+      } = await supabase.auth.getSession();
+      if (!cancelled && session?.user) {
+        router.replace(redirectAfterLogin);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [router, redirectAfterLogin]);
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
