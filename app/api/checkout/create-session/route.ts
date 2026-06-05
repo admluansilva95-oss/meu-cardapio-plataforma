@@ -95,6 +95,24 @@ export async function POST(request: NextRequest) {
       (n) => n.startsWith("sb-") && n.includes("auth")
     );
 
+    try {
+      const token =
+        bearerToken || (await supabase.auth.getSession()).data.session?.access_token;
+      if (token) {
+        const base64Url = token.split(".")[1];
+        const base64 = base64Url.replace(/-/g, "+").replace(/_/g, "/");
+        const payload = JSON.parse(atob(base64));
+        console.log("===[ DEBUG AUTH ]===");
+        console.log("ID do Usuário no Token (sub):", payload.sub);
+        console.log("Email no Token:", payload.email);
+        console.log("Supabase URL sendo usada na API:", process.env.NEXT_PUBLIC_SUPABASE_URL);
+      } else {
+        console.log("===[ DEBUG AUTH ]=== Nenhum token encontrado na requisição.");
+      }
+    } catch (e) {
+      console.error("Erro ao decodificar JWT para log:", e);
+    }
+
     let user = null as Awaited<ReturnType<typeof supabase.auth.getUser>>["data"]["user"];
     let authSource: "bearer" | "cookies" | null = null;
 
