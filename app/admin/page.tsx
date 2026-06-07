@@ -220,6 +220,8 @@ function mapRestauranteRow(row: {
   cor_tema: string;
   horario_funcionamento?: string | null;
   taxa_entrega?: string | number | null;
+  vitrine_fechada?: boolean | null;
+  mensagem_fechado?: string | null;
 }): Restaurante {
   const rawNome = row.nome?.trim() ?? "";
   const taxaRaw = row.taxa_entrega;
@@ -237,6 +239,8 @@ function mapRestauranteRow(row: {
     cor_tema: row.cor_tema?.trim() || "#0d9488",
     horario_funcionamento: row.horario_funcionamento?.trim() || null,
     taxa_entrega: taxaEntrega,
+    vitrine_fechada: row.vitrine_fechada === true,
+    mensagem_fechado: row.mensagem_fechado?.trim() || null,
   };
 }
 
@@ -811,6 +815,8 @@ function AdminPageInner() {
   const [cfgHorario, setCfgHorario] = useState("");
   const [cfgTaxaStr, setCfgTaxaStr] = useState("");
   const [cfgCor, setCfgCor] = useState("#0d9488");
+  const [cfgVitrineFechada, setCfgVitrineFechada] = useState(false);
+  const [cfgMensagemFechado, setCfgMensagemFechado] = useState("");
   const [cfgMsg, setCfgMsg] = useState<string | null>(null);
 
   useEffect(() => {
@@ -984,6 +990,8 @@ function AdminPageInner() {
         : "",
     );
     setCfgCor(restaurante.cor_tema);
+    setCfgVitrineFechada(restaurante.vitrine_fechada === true);
+    setCfgMensagemFechado(restaurante.mensagem_fechado ?? "");
     setCfgMsg(null);
   }, [tab, restaurante]);
 
@@ -1032,6 +1040,8 @@ function AdminPageInner() {
           cor_tema: corOk,
           horario_funcionamento: cfgHorario.trim() || null,
           taxa_entrega: taxaParsed,
+          vitrine_fechada: cfgVitrineFechada,
+          mensagem_fechado: cfgVitrineFechada ? cfgMensagemFechado.trim() || null : null,
         }),
       });
 
@@ -1050,7 +1060,18 @@ function AdminPageInner() {
     } finally {
       setTenantSaving(false);
     }
-  }, [restaurante, cfgNome, cfgWhatsapp, cfgHorario, cfgTaxaStr, cfgCor, supabase, loadData]);
+  }, [
+    restaurante,
+    cfgNome,
+    cfgWhatsapp,
+    cfgHorario,
+    cfgTaxaStr,
+    cfgCor,
+    cfgVitrineFechada,
+    cfgMensagemFechado,
+    supabase,
+    loadData,
+  ]);
 
   useEffect(() => {
     const rid = restaurante?.id;
@@ -1758,8 +1779,49 @@ function AdminPageInner() {
                       className="w-full resize-y rounded-xl border border-black/[0.08] bg-[#fafafa] px-3 py-2.5 text-sm text-[#1d1d1f] outline-none transition focus:border-[#0071e3]/40 focus:ring-2 focus:ring-[#0071e3]/12"
                     />
                     <p className="text-[11px] text-[#86868b]">
-                      Texto livre exibido no cardápio público para o cliente saber quando pode pedir.
+                      Este texto aparece em destaque no link do cardápio. Use frases claras (ex.:{" "}
+                      <span className="italic">Ter–Dom 11h–23h · Segundas fechado</span>) para quem abrir
+                      o link saber se vocês estão atendendo.
                     </p>
+                  </div>
+
+                  <div className="rounded-xl border border-amber-200/70 bg-amber-50/50 p-4 sm:p-5">
+                    <label className="flex cursor-pointer items-start gap-3">
+                      <input
+                        type="checkbox"
+                        checked={cfgVitrineFechada}
+                        onChange={(e) => setCfgVitrineFechada(e.target.checked)}
+                        className="mt-1 h-4 w-4 shrink-0 rounded border-black/20 text-[#1d1d1f] focus:ring-[#0071e3]/30"
+                      />
+                      <span className="min-w-0">
+                        <span className="text-sm font-semibold text-[#1d1d1f]">
+                          Mostrar aviso de &quot;fechado&quot; no cardápio público
+                        </span>
+                        <span className="mt-1 block text-[11px] leading-relaxed text-[#6e6e73]">
+                          Quem abrir o link vê um aviso em destaque, lê o horário e{" "}
+                          <strong className="font-medium text-[#424245]">não consegue adicionar pratos</strong>{" "}
+                          ao carrinho (só consulta o cardápio).
+                        </span>
+                      </span>
+                    </label>
+                    {cfgVitrineFechada ? (
+                      <div className="mt-4 space-y-2 border-t border-amber-200/60 pt-4 pl-7 sm:pl-8">
+                        <label className="text-xs font-semibold uppercase tracking-wide text-[#86868b]">
+                          Mensagem no aviso (opcional)
+                        </label>
+                        <textarea
+                          value={cfgMensagemFechado}
+                          onChange={(e) => setCfgMensagemFechado(e.target.value.slice(0, 400))}
+                          rows={3}
+                          maxLength={400}
+                          placeholder="Ex.: Hoje fechamos mais cedo. Voltamos amanhã ao meio-dia."
+                          className="w-full resize-y rounded-xl border border-black/[0.08] bg-white px-3 py-2.5 text-sm text-[#1d1d1f] outline-none transition focus:border-[#0071e3]/40 focus:ring-2 focus:ring-[#0071e3]/12"
+                        />
+                        <p className="text-[11px] text-[#86868b]">
+                          Se deixar em branco, o site usa uma mensagem padrão amigável.
+                        </p>
+                      </div>
+                    ) : null}
                   </div>
 
                   <div className="space-y-2">

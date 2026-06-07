@@ -22,6 +22,10 @@ export interface Restaurante {
   horario_funcionamento?: string | null;
   /** Taxa fixa de entrega (R$), opcional. */
   taxa_entrega?: number | null;
+  /** Se true, a vitrine pública mostra aviso de fechado e não aceita novos itens no carrinho. */
+  vitrine_fechada?: boolean;
+  /** Texto opcional no aviso de fechado; se vazio, a vitrine usa mensagem padrão. */
+  mensagem_fechado?: string | null;
 }
 
 export interface Prato {

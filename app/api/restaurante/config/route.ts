@@ -21,10 +21,12 @@ type ConfigBody = {
   cor_tema?: string;
   horario_funcionamento?: string | null;
   taxa_entrega?: number | null;
+  vitrine_fechada?: boolean;
+  mensagem_fechado?: string | null;
 };
 
 const MIGRATION_HINT =
-  "Horário e taxa não foram gravados: faltam colunas no Supabase. Abra o SQL Editor, cole o conteúdo de supabase/migrations/20260608120000_restaurantes_tenant_settings.sql e execute. Nome, WhatsApp e cor já foram salvos.";
+  "Horário, taxa e aviso de fechado não foram gravados: faltam colunas no Supabase. No SQL Editor, execute em ordem: supabase/migrations/20260608120000_restaurantes_tenant_settings.sql e depois 20260610120000_restaurantes_vitrine_fechada.sql. Nome, WhatsApp e cor já foram salvos.";
 
 function isSchemaColumnError(err: { message?: string; code?: string; details?: string } | null): boolean {
   if (!err) return false;
@@ -49,7 +51,12 @@ async function updateRestauranteConfig(
   client: SupabaseClient,
   opts: { id: string; ownerFilter: string | null },
   base: Record<string, unknown>,
-  extras: { horario_funcionamento: string | null; taxa_entrega: number | null },
+  extras: {
+    horario_funcionamento: string | null;
+    taxa_entrega: number | null;
+    vitrine_fechada: boolean;
+    mensagem_fechado: string | null;
+  },
 ): Promise<
   { ok: true; extrasSkipped?: boolean } | { ok: false; message: string; code?: "rls" | "other" }
 > {
@@ -90,6 +97,8 @@ async function updateRestauranteConfig(
   const extraPayload: Record<string, unknown> = {
     horario_funcionamento: extras.horario_funcionamento,
     taxa_entrega: extras.taxa_entrega,
+    vitrine_fechada: extras.vitrine_fechada,
+    mensagem_fechado: extras.mensagem_fechado,
   };
 
   const extraRes = await run(extraPayload);
@@ -185,6 +194,10 @@ export async function POST(request: NextRequest) {
     body.taxa_entrega === null || body.taxa_entrega === undefined || Number.isNaN(body.taxa_entrega)
       ? null
       : Math.max(0, Math.round(Number(body.taxa_entrega) * 100) / 100);
+  const vitrineFechada = body.vitrine_fechada === true;
+  const mensagemFechadoRaw =
+    typeof body.mensagem_fechado === "string" ? body.mensagem_fechado.trim().slice(0, 400) : "";
+  const mensagem_fechado = vitrineFechada && mensagemFechadoRaw.length > 0 ? mensagemFechadoRaw : null;
 
   if (!restauranteId) {
     const res = NextResponse.json({ error: "restauranteId é obrigatório." }, { status: 400 });
@@ -204,7 +217,12 @@ export async function POST(request: NextRequest) {
 
   const cor_tema = normalizeCorTema(corRaw);
   const base = { nome, whatsapp, cor_tema };
-  const extras = { horario_funcionamento: horario, taxa_entrega: taxa };
+  const extras = {
+    horario_funcionamento: horario,
+    taxa_entrega: taxa,
+    vitrine_fechada: vitrineFechada,
+    mensagem_fechado: vitrineFechada ? mensagem_fechado : null,
+  };
 
   const admin = createAdminSupabaseClient();
 

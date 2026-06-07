@@ -47,6 +47,12 @@ alter table public.restaurantes
   add constraint restaurantes_taxa_entrega_nonneg
   check (taxa_entrega is null or taxa_entrega >= 0);
 
+alter table public.restaurantes
+  add column if not exists vitrine_fechada boolean not null default false;
+
+alter table public.restaurantes
+  add column if not exists mensagem_fechado text null;
+
 comment on table public.restaurantes is 'Tenant do cardápio (um registro por restaurante, após pagamento Stripe).';
 comment on column public.restaurantes.slug is 'URL pública: /{slug} e /admin?slug={slug}';
 comment on column public.restaurantes.owner_id is 'Dono (Supabase Auth). Preenchido no webhook checkout.session.completed.';
