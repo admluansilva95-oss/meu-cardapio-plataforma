@@ -737,7 +737,18 @@ function AdminPageInner() {
       if (cancelled) return;
 
       if (!error && data?.slug) {
-        router.replace(`/admin?slug=${encodeURIComponent(data.slug)}`);
+        // Preserva ?checkout=success da volta do Stripe; senão o middleware redireciona
+        // para /cadastro antes do webhook gravar a assinatura (parece “travado”).
+        const next = new URL("/admin", window.location.origin);
+        next.searchParams.set("slug", data.slug);
+        const cur = new URLSearchParams(window.location.search);
+        if (cur.get("checkout") === "success") {
+          next.searchParams.set("checkout", "success");
+        }
+        if (cur.get("success") === "true") {
+          next.searchParams.set("success", "true");
+        }
+        router.replace(`${next.pathname}?${next.searchParams.toString()}`);
         return;
       }
 

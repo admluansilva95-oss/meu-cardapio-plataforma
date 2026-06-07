@@ -22,20 +22,41 @@ export async function startSubscriptionCheckout(
   // isso gerava "Plano inválido" falso-positivo. A rota `/api/checkout/create-session`
   // já valida o priceId no servidor.
 
-  const response = await fetch("/api/checkout/create-session", {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      Authorization: `Bearer ${params.accessToken}`,
-    },
-    body: JSON.stringify({
-      priceId: params.priceId,
-      userId: params.userId,
-      slug: params.slug,
-      restaurantName: params.restaurantName,
-      whatsapp: params.whatsapp,
-    }),
-  });
+  const controller = new AbortController();
+  const timeoutMs = 45_000;
+  const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+
+  let response: Response;
+  try {
+    response = await fetch("/api/checkout/create-session", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${params.accessToken}`,
+      },
+      body: JSON.stringify({
+        priceId: params.priceId,
+        userId: params.userId,
+        slug: params.slug,
+        restaurantName: params.restaurantName,
+        whatsapp: params.whatsapp,
+      }),
+      signal: controller.signal,
+    });
+  } catch (err) {
+    clearTimeout(timeoutId);
+    if (err instanceof DOMException && err.name === "AbortError") {
+      return {
+        ok: false,
+        error: "O servidor demorou demais a responder. Atualize a página e tente de novo.",
+      };
+    }
+    return {
+      ok: false,
+      error: "Não foi possível conectar ao servidor. Verifique sua internet e tente novamente.",
+    };
+  }
+  clearTimeout(timeoutId);
 
   const payload = (await response.json()) as { url?: string; error?: string };
 

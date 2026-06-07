@@ -1,12 +1,11 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { Suspense } from "react";
 import { SubscribeButton } from "@/components/checkout/SubscribeButton";
 import { getPlanById, PLANS } from "@/lib/plans";
 import { Check } from "lucide-react";
 
 type PageProps = {
-  searchParams: Promise<{ plan?: string; priceId?: string }>;
+  searchParams: Promise<{ plan?: string; priceId?: string; ob?: string }>;
 };
 
 export default async function AssinarPage({ searchParams }: PageProps) {
@@ -69,9 +68,7 @@ export default async function AssinarPage({ searchParams }: PageProps) {
           </ul>
 
           <div className="mt-10 flex flex-col items-center">
-            <Suspense fallback={<p className="text-sm text-zinc-500">Carregando…</p>}>
-              <SubscribeButton plan={plan} />
-            </Suspense>
+            <SubscribeButton plan={plan} carryOb={params.ob ?? null} />
             <p className="mt-4 text-center text-xs text-zinc-500">
               Pagamento seguro via Stripe. Você será redirecionado ao checkout.
             </p>

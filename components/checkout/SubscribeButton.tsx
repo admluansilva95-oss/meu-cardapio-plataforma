@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { useRouter, useSearchParams } from "next/navigation";
+import { useRouter } from "next/navigation";
 import { startSubscriptionCheckout } from "@/lib/billing/start-checkout";
 import { normalizeSlugInput, slugify } from "@/lib/billing/slug";
 import { parseCarryFromObParam } from "@/lib/auth/post-signup-carry";
@@ -10,11 +10,12 @@ import type { Plan } from "@/lib/plans";
 
 type SubscribeButtonProps = {
   plan: Plan;
+  /** Parâmetro `ob` (pós-cadastro) vindo do servidor — evita `useSearchParams` e suspense infinito. */
+  carryOb?: string | null;
 };
 
-export function SubscribeButton({ plan }: SubscribeButtonProps) {
+export function SubscribeButton({ plan, carryOb = null }: SubscribeButtonProps) {
   const router = useRouter();
-  const searchParams = useSearchParams();
   const [loading, setLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [restaurantName, setRestaurantName] = useState("");
@@ -31,13 +32,13 @@ export function SubscribeButton({ plan }: SubscribeButtonProps) {
   }, [restaurantName, slugTouched]);
 
   useEffect(() => {
-    const carry = parseCarryFromObParam(searchParams.get("ob"));
+    const carry = parseCarryFromObParam(carryOb);
     if (!carry) return;
     setRestaurantName(carry.restaurantName);
     setSlug(carry.slug);
     setSlugTouched(true);
     if (carry.whatsapp) setWhatsapp(carry.whatsapp);
-  }, [searchParams]);
+  }, [carryOb]);
 
   async function handleSubscribe() {
     setLoading(true);
@@ -69,7 +70,7 @@ export function SubscribeButton({ plan }: SubscribeButtonProps) {
         .limit(1)
         .maybeSingle();
 
-      const carry = parseCarryFromObParam(searchParams.get("ob"));
+      const carry = parseCarryFromObParam(carryOb);
       const priceId = carry?.priceId ?? plan.priceId;
 
       const checkoutSlug = existingRest?.slug ?? normalizeSlugInput(slug);
@@ -98,7 +99,7 @@ export function SubscribeButton({ plan }: SubscribeButtonProps) {
         return;
       }
 
-      window.location.href = checkout.url;
+      window.location.assign(checkout.url);
     } catch (err) {
       console.error("[SubscribeButton] handleSubscribe:", err);
       setErrorMessage("Erro inesperado. Tente novamente em instantes.");

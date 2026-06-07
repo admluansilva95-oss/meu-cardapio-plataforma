@@ -4,7 +4,7 @@ import { getPlanByPriceId } from "@/lib/plans";
 import { getStripe } from "@/lib/stripe/client";
 import { isValidSlug, normalizeSlugInput } from "@/lib/billing/slug";
 import { isSlugAvailable } from "@/lib/billing/restaurantes";
-import { resolveDefaultAppOrigin } from "@/lib/site-url";
+import { resolveStripeCheckoutOrigin } from "@/lib/site-url";
 
 export type CreateSubscriptionCheckoutInput = {
   userId: string;
@@ -49,7 +49,7 @@ export async function createSubscriptionCheckoutSession(
   const restaurantName = input.restaurantName.trim() || slug;
   const whatsapp = input.whatsapp?.trim() ?? "";
 
-  const baseUrl = resolveDefaultAppOrigin();
+  const origin = resolveStripeCheckoutOrigin();
 
   let stripe: Stripe;
   try {
@@ -72,13 +72,24 @@ export async function createSubscriptionCheckoutSession(
   };
 
   try {
-    const success_url = `${baseUrl}/admin?checkout=success&success=true`;
-    const cancel_url = `${baseUrl}/assinar?canceled=true`;
+    const success = new URL("/admin", origin);
+    success.searchParams.set("checkout", "success");
+    success.searchParams.set("success", "true");
+    const cancel = new URL("/assinar", origin);
+    cancel.searchParams.set("canceled", "true");
 
-    console.log("===[ STRIPE PAYLOAD URLs ]===", { success_url, cancel_url });
+    const success_url = success.href;
+    const cancel_url = cancel.href;
+
+    console.log("===[ STRIPE PAYLOAD URLs ]===", {
+      origin,
+      success_url,
+      cancel_url,
+    });
 
     const session = await stripe.checkout.sessions.create({
       mode: "subscription",
+      locale: "pt-BR",
       customer_email: input.userEmail,
       line_items: [{ price: input.priceId, quantity: 1 }],
       success_url,
