@@ -177,6 +177,16 @@ function extensaoImagemSegura(file: File): string {
   return "jpg";
 }
 
+/**
+ * Nomes com caracteres fora de Latin-1 (ex.: "•foto.png", emojis) podem gerar
+ * `TypeError: Cannot convert argument to a ByteString` no multipart do `fetch` (Storage).
+ */
+function fileComNomeAsciiParaUpload(file: File, label: string): File {
+  const ext = extensaoImagemSegura(file);
+  const name = `${label}-${crypto.randomUUID()}.${ext}`;
+  return new File([file], name, { type: file.type, lastModified: file.lastModified });
+}
+
 /** Extrai o path dentro do bucket a partir da URL pública do Supabase Storage. */
 function caminhoStorageDeUrlPublica(publicUrl: string): string | null {
   const marker = `/storage/v1/object/public/${BUCKET_IMAGENS_PRATOS}/`;
@@ -197,16 +207,17 @@ async function enviarImagemAoBucketImagensPratos(
     console.error("Erro no Upload do Storage:", err);
     throw err;
   }
-  const ext = extensaoImagemSegura(file);
+  const fileToSend = fileComNomeAsciiParaUpload(file, "prato");
+  const ext = extensaoImagemSegura(fileToSend);
   const pasta = sanitizarSegmentoPathStorage(restauranteId, "Upload de foto do prato");
   const objectPath = `${pasta}/${crypto.randomUUID()}.${ext}`;
   const contentType =
-    file.type && file.type.startsWith("image/")
-      ? file.type
+    fileToSend.type && fileToSend.type.startsWith("image/")
+      ? fileToSend.type
       : `image/${ext === "jpg" ? "jpeg" : ext}`;
   const { error } = await supabase.storage
     .from(BUCKET_IMAGENS_PRATOS)
-    .upload(objectPath, file, { contentType, cacheControl: "3600", upsert: false });
+    .upload(objectPath, fileToSend, { contentType, cacheControl: "3600", upsert: false });
   if (error) {
     console.error("Erro no Upload do Storage:", error);
     throw error;
@@ -242,19 +253,20 @@ async function enviarLogoRestaurante(
     console.error("Erro no Upload do Storage:", err);
     throw err;
   }
-  const ext = extensaoImagemSegura(file);
+  const fileToSend = fileComNomeAsciiParaUpload(file, "logo");
+  const ext = extensaoImagemSegura(fileToSend);
   if (ext === "gif") {
     throw new Error("Use JPG, PNG ou WebP para o logo.");
   }
   const pasta = sanitizarSegmentoPathStorage(restauranteId, "Upload de logo do restaurante");
   const objectPath = `${pasta}/${crypto.randomUUID()}.${ext}`;
   const contentType =
-    file.type && file.type.startsWith("image/")
-      ? file.type
+    fileToSend.type && fileToSend.type.startsWith("image/")
+      ? fileToSend.type
       : `image/${ext === "jpg" ? "jpeg" : ext}`;
   const { error } = await supabase.storage
     .from(BUCKET_RESTAURANT_LOGOS)
-    .upload(objectPath, file, { contentType, cacheControl: "3600", upsert: false });
+    .upload(objectPath, fileToSend, { contentType, cacheControl: "3600", upsert: false });
   if (error) {
     console.error("Erro no Upload do Storage:", error);
     throw error;

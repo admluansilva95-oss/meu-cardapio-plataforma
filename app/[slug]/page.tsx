@@ -1,19 +1,5 @@
 "use client";
 
-import { isValidSlug } from "@/lib/billing/slug";
-import { createBrowserSupabaseClient } from "@/lib/supabase";
-import { isRetryableSupabaseError, withRetry } from "@/lib/with-retry";
-
-/** Após esgotar retries ou falha de rede, evita mensagens técnicas cruas para o cliente final. */
-function mensagemErroCardapioParaCliente(message: string): string {
-  if (
-    isRetryableSupabaseError({ message }) ||
-    /\b(50[0-4]|503|502|504|429|unavailable|timeout|network|fetch|gateway)\b/i.test(message)
-  ) {
-    return "O cardápio está temporariamente indisponível. Tente novamente em alguns instantes.";
-  }
-  return message;
-}
 import type { CarrinhoItem, Prato, Restaurante, EntregaModo } from "@/types";
 import {
   taxaEntregaParaPedido,
@@ -37,6 +23,19 @@ import Link from "next/link";
 import { useParams } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Clock } from "lucide-react";
+import { isValidSlug } from "@/lib/billing/slug";
+import { isRetryableSupabaseError, withRetry } from "@/lib/with-retry";
+
+/** Após esgotar retries ou falha de rede, evita mensagens técnicas cruas para o cliente final. */
+function mensagemErroCardapioParaCliente(message: string): string {
+  if (
+    isRetryableSupabaseError({ message }) ||
+    /\b(50[0-4]|503|502|504|429|unavailable|timeout|network|fetch|gateway)\b/i.test(message)
+  ) {
+    return "O cardápio está temporariamente indisponível. Tente novamente em alguns instantes.";
+  }
+  return message;
+}
 
 /** Aviso fixo no topo quando pedidos estão bloqueados (vitrine fechada ou fora do horário). */
 const BANNER_FECHADO_TITULO = "Estamos fechados no momento.";
@@ -226,9 +225,13 @@ function RestauranteNaoEncontradoView(props: { subtitle?: string }) {
 
 export default function PublicCardapioPage() {
   const params = useParams();
-  const slug = typeof params?.slug === "string" ? params.slug : "";
-
-  const supabase = useMemo(() => createBrowserSupabaseClient(), []);
+  const rawSlug = params?.slug;
+  const slug =
+    typeof rawSlug === "string"
+      ? rawSlug
+      : Array.isArray(rawSlug)
+        ? (rawSlug[0] ?? "")
+        : "";
 
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -281,55 +284,64 @@ export default function PublicCardapioPage() {
     setError(null);
 
     try {
-      const { data: restRow, error: restErr } = await withRetry(
-        async () =>
-          supabase
-            .from("restaurantes")
-            .select("*")
-            .eq("slug", slug)
-            .maybeSingle(),
+      const result = await withRetry(
+        async () => {
+          try {
+            const res = await fetch(
+              `/api/public/cardapio?slug=${encodeURIComponent(slug)}`,
+              { method: "GET", cache: "no-store", credentials: "omit" },
+            );
+            let body: unknown = {};
+            try {
+              body = await res.json();
+            } catch {
+              body = {};
+            }
+            const b = body as { error?: string; restaurante?: unknown; pratos?: unknown };
+            if (!res.ok) {
+              return {
+                data: null as { restaurante: RestauranteRow | null; pratos: unknown[] } | null,
+                error: { message: b.error ?? `Erro ${res.status}` },
+              };
+            }
+            return {
+              data: {
+                restaurante: (b.restaurante ?? null) as RestauranteRow | null,
+                pratos: Array.isArray(b.pratos) ? b.pratos : [],
+              },
+              error: null as { message: string } | null,
+            };
+          } catch (e) {
+            return {
+              data: null,
+              error: { message: e instanceof Error ? e.message : "Falha de rede." },
+            };
+          }
+        },
         { shouldRetry: (r) => isRetryableSupabaseError(r.error) },
       );
 
       if (ac.signal.aborted) return;
 
-      if (restErr) {
-        setError(mensagemErroCardapioParaCliente(restErr.message));
+      if (result.error) {
+        setError(mensagemErroCardapioParaCliente(result.error.message ?? "Erro ao carregar."));
         setRestaurante(null);
         setPratos([]);
         return;
       }
 
-      if (!restRow) {
+      const payload = result.data;
+      if (!payload?.restaurante) {
         setError(null);
         setRestaurante(null);
         setPratos([]);
         return;
       }
 
-      const rest = mapRestauranteRow(restRow as RestauranteRow);
+      const rest = mapRestauranteRow(payload.restaurante);
       setRestaurante(rest);
 
-      const { data: pratosData, error: pratosErr } = await withRetry(
-        async () =>
-          supabase
-            .from("pratos")
-            .select("id, restaurante_id, nome, preco, descricao, imagem, status, categoria")
-            .eq("restaurante_id", rest.id)
-            .eq("status", "ativo")
-            .order("nome", { ascending: true }),
-        { shouldRetry: (r) => isRetryableSupabaseError(r.error) },
-      );
-
-      if (ac.signal.aborted) return;
-
-      if (pratosErr) {
-        setError(mensagemErroCardapioParaCliente(pratosErr.message));
-        setPratos([]);
-        return;
-      }
-
-      const mapped = (pratosData ?? [])
+      const mapped = payload.pratos
         .map((r) => mapPratoRow(r as PratoRow))
         .filter((p): p is Prato => p !== null);
       setPratos(mapped);
@@ -343,7 +355,7 @@ export default function PublicCardapioPage() {
     } finally {
       if (!ac.signal.aborted) setLoading(false);
     }
-  }, [slug, supabase]);
+  }, [slug]);
 
   useEffect(() => {
     void load();
