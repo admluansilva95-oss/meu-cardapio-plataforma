@@ -328,9 +328,9 @@ export async function POST(request: NextRequest) {
       } else if (t.length > 2500) {
         const res = NextResponse.json({ error: "URL do logo muito longa." }, { status: 400 });
         return applyAuthCookies(res, authCookieWrites);
-      } else if (!/^https:\/\//i.test(t)) {
+      } else if (!/^https?:\/\//i.test(t)) {
         const res = NextResponse.json(
-          { error: "A URL do logo deve ser HTTPS (ex.: link do Supabase Storage)." },
+          { error: "A URL do logo deve começar com http:// ou https://." },
           { status: 400 },
         );
         return applyAuthCookies(res, authCookieWrites);

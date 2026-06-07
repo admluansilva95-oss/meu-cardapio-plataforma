@@ -1161,35 +1161,47 @@ function AdminPageInner() {
     const corOk = normalizeCorTema(cfgCor);
 
     let logoOut: string | null;
-    try {
-      if (cfgLogoFile) {
+    let logoUploadWarning: string | null = null;
+    if (cfgLogoFile) {
+      try {
         logoOut = await enviarLogoRestaurante(supabase, restaurante.id, cfgLogoFile);
         const antiga = restaurante.logo?.trim() ?? "";
         if (antiga && antiga !== logoOut) {
           const pathOld = caminhoStorageLogoRestaurante(antiga);
           if (pathOld) {
-            await supabase.storage.from(BUCKET_RESTAURANT_LOGOS).remove([pathOld]);
+            const { error: remErr } = await supabase.storage
+              .from(BUCKET_RESTAURANT_LOGOS)
+              .remove([pathOld]);
+            if (remErr) {
+              /* não bloqueia — arquivo antigo pode ficar órfão */
+            }
           }
         }
-      } else if (cfgLogoUrl === null) {
-        const antiga = restaurante.logo?.trim() ?? "";
-        if (antiga) {
-          const pathOld = caminhoStorageLogoRestaurante(antiga);
-          if (pathOld) {
-            await supabase.storage.from(BUCKET_RESTAURANT_LOGOS).remove([pathOld]);
-          }
-        }
-        logoOut = null;
-      } else {
-        logoOut = cfgLogoUrl ?? null;
+      } catch (err) {
+        const msg =
+          err && typeof err === "object" && "message" in err
+            ? String((err as { message: unknown }).message)
+            : "Falha no envio da imagem.";
+        logoUploadWarning = `Logo não foi atualizado (${msg}). As demais configurações serão salvas. Crie o bucket "restaurant-logos" no Supabase ou verifique permissões.`;
+        logoOut = cfgLogoUrl ?? restaurante.logo?.trim() ?? null;
       }
-    } catch (err) {
-      const msg =
-        err && typeof err === "object" && "message" in err
-          ? String((err as { message: unknown }).message)
-          : "Não foi possível enviar o logo. Verifique o formato e tente de novo.";
-      setCfgMsg(msg);
-      return;
+    } else if (cfgLogoUrl === null) {
+      const antiga = restaurante.logo?.trim() ?? "";
+      if (antiga) {
+        const pathOld = caminhoStorageLogoRestaurante(antiga);
+        if (pathOld) {
+          const { error: remErr } = await supabase.storage
+            .from(BUCKET_RESTAURANT_LOGOS)
+            .remove([pathOld]);
+          if (remErr) {
+            logoUploadWarning =
+              "Não foi possível apagar o arquivo antigo no Storage; o link no banco será limpo mesmo assim.";
+          }
+        }
+      }
+      logoOut = null;
+    } else {
+      logoOut = cfgLogoUrl ?? null;
     }
 
     setTenantSaving(true);
@@ -1235,13 +1247,20 @@ function AdminPageInner() {
         setCfgMsg(json.error ?? `Falha ao salvar (${res.status}).`);
         return;
       }
-      if (json.warning) {
-        setCfgMsg(json.warning);
+      const partesMsg: string[] = [];
+      if (logoUploadWarning) partesMsg.push(logoUploadWarning);
+      if (json.warning) partesMsg.push(json.warning);
+      if (partesMsg.length) {
+        setCfgMsg(partesMsg.join(" "));
       } else {
         setCfgMsg("Configurações salvas com sucesso.");
       }
-      window.setTimeout(() => setCfgMsg(null), json.warning ? 12000 : 6000);
+      window.setTimeout(() => setCfgMsg(null), partesMsg.length ? 14000 : 6000);
       await loadData();
+      if (logoUploadWarning) {
+        setCfgLogoFile(null);
+        setCfgLogoDraftPreview(null);
+      }
     } finally {
       setTenantSaving(false);
     }
