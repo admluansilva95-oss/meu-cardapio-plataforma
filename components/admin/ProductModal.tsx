@@ -2,6 +2,11 @@
 
 import { useEffect, useMemo, useState } from "react";
 import type { Prato, PratoStatus } from "../../types";
+import {
+  normalizarPrecoCampoAoSair,
+  parsePrecoBrasileiro,
+  sanitizePrecoBrInput,
+} from "@/lib/restaurante/preco-input";
 
 export type ProductModalMode = "create" | "edit";
 
@@ -64,10 +69,8 @@ export function ProductModal({
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    const precoNormalizado = Number(
-      form.preco.replace(/\s/g, "").replace(",", "."),
-    );
-    if (!form.nome.trim() || Number.isNaN(precoNormalizado) || precoNormalizado < 0) {
+    const precoNormalizado = parsePrecoBrasileiro(form.preco);
+    if (!form.nome.trim() || precoNormalizado == null || precoNormalizado < 0) {
       return;
     }
     setSubmitting(true);
@@ -139,9 +142,19 @@ export function ProductModal({
               <input
                 id="preco"
                 name="preco"
+                type="text"
                 inputMode="decimal"
                 value={form.preco}
-                onChange={(e) => setForm((f) => ({ ...f, preco: e.target.value }))}
+                onChange={(e) =>
+                  setForm((f) => ({ ...f, preco: sanitizePrecoBrInput(e.target.value) }))
+                }
+                onBlur={() =>
+                  setForm((f) =>
+                    f.preco.trim() === ""
+                      ? f
+                      : { ...f, preco: normalizarPrecoCampoAoSair(f.preco) },
+                  )
+                }
                 className="w-full rounded-xl border border-slate-200 bg-slate-50/60 px-3 py-2.5 text-sm text-slate-900 outline-none ring-teal-500/30 transition focus:border-teal-500 focus:bg-white focus:ring-4"
                 placeholder="24,90"
                 required

@@ -2,14 +2,7 @@
 
 import type { TaxaEntregaZona } from "@/lib/restaurante/taxas-entrega-zonas";
 import { novaTaxaZonaId } from "@/lib/restaurante/taxas-entrega-zonas";
-
-function parseValorTaxa(s: string): number | null {
-  const t = s.trim().replace(/\./g, "").replace(",", ".");
-  if (t === "") return null;
-  const n = Number(t);
-  if (!Number.isFinite(n) || n < 0) return null;
-  return Math.round(n * 100) / 100;
-}
+import { parsePrecoBrasileiro } from "@/lib/restaurante/preco-input";
 
 export function TaxasZonasForm(props: {
   value: TaxaEntregaZona[];
@@ -62,7 +55,7 @@ export function TaxasZonasForm(props: {
                   inputMode="decimal"
                   value={z.valor > 0 ? String(z.valor).replace(".", ",") : ""}
                   onChange={(e) => {
-                    const v = parseValorTaxa(e.target.value);
+                    const v = parsePrecoBrasileiro(e.target.value);
                     const next = [...value];
                     next[idx] = { ...z, valor: v ?? 0 };
                     onChange(next);

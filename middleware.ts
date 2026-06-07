@@ -1,5 +1,6 @@
 import { createServerClient, type CookieOptions } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
+import { isValidSlug } from "@/lib/billing/slug";
 
 type CookieToSet = { name: string; value: string; options: CookieOptions };
 
@@ -81,7 +82,45 @@ export async function middleware(request: NextRequest) {
 
   const slugParam = searchParams.get("slug")?.trim();
   if (slugParam) {
-    return response;
+    if (!isValidSlug(slugParam)) {
+      const url = request.nextUrl.clone();
+      url.searchParams.delete("slug");
+      return NextResponse.redirect(url);
+    }
+
+    const { data: alvo, error: alvoErr } = await supabase
+      .from("restaurantes")
+      .select("owner_id")
+      .eq("slug", slugParam)
+      .maybeSingle();
+
+    if (alvoErr) {
+      console.error("[middleware/admin] slug tenant:", alvoErr.message);
+      return response;
+    }
+
+    if (alvo?.owner_id === user.id) {
+      return response;
+    }
+
+    const url = request.nextUrl.clone();
+    url.searchParams.delete("slug");
+    const { data: meu, error: meuErr } = await supabase
+      .from("restaurantes")
+      .select("slug")
+      .eq("owner_id", user.id)
+      .order("criado_em", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
+    if (meuErr) {
+      console.error("[middleware/admin] meu restaurante:", meuErr.message);
+      return response;
+    }
+    if (meu?.slug) {
+      url.searchParams.set("slug", meu.slug);
+    }
+    return NextResponse.redirect(url);
   }
 
   const envSlug = process.env.NEXT_PUBLIC_ADMIN_RESTAURANT_SLUG?.trim();

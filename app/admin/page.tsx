@@ -13,6 +13,12 @@ import { computePedidoKpis } from "@/lib/admin/pedido-kpis";
 import { createBrowserSupabaseClient } from "@/lib/supabase";
 import { getPublicAppUrl } from "@/lib/site-url";
 import { isRetryableSupabaseError, withRetry } from "@/lib/with-retry";
+import { mensagemErroSupabasePainel } from "@/lib/supabase/mensagem-erro";
+import {
+  normalizarPrecoCampoAoSair,
+  parsePrecoBrasileiro,
+  sanitizePrecoBrInput,
+} from "@/lib/restaurante/preco-input";
 import { normalizeCorTema } from "@/lib/restaurante/cor-tema";
 import {
   criarFuncionamentoSemanaVazio,
@@ -79,41 +85,6 @@ function toNumber(value: string | number | null | undefined): number {
   if (typeof value === "number") return value;
   const n = Number(value);
   return Number.isFinite(n) ? n : 0;
-}
-
-/** Interpreta preço digitado no painel (pt-BR): vírgula decimal, ponto como milhar. */
-function parsePrecoBrasileiro(raw: string): number | null {
-  const t = raw.trim().replace(/R\$\s?/gi, "");
-  if (!t) return null;
-  if (t.includes(",")) {
-    const parts = t.split(",");
-    if (parts.length !== 2) return null;
-    const intPart = parts[0].replace(/\./g, "").replace(/\D/g, "");
-    const decPart = parts[1].replace(/\D/g, "");
-    if (!intPart && !decPart) return null;
-    const n = Number(`${intPart || "0"}.${decPart || "0"}`);
-    if (!Number.isFinite(n) || n < 0) return null;
-    return Math.round(n * 100) / 100;
-  }
-  const normalized = t.replace(/[^\d.]/g, "");
-  if (!normalized) return null;
-  const lastDot = normalized.lastIndexOf(".");
-  if (lastDot === -1) {
-    const n = Number(normalized);
-    return Number.isFinite(n) && n >= 0 ? Math.round(n * 100) / 100 : null;
-  }
-  const after = normalized.slice(lastDot + 1);
-  const before = normalized.slice(0, lastDot);
-  if (/^\d{1,2}$/.test(after) && before.includes(".")) {
-    const intPart = before.replace(/\./g, "");
-    const n = Number(`${intPart}.${after}`);
-    if (!Number.isFinite(n) || n < 0) return null;
-    return Math.round(n * 100) / 100;
-  }
-  const digits = normalized.replace(/\./g, "");
-  const n = Number(digits);
-  if (!Number.isFinite(n) || n < 0) return null;
-  return Math.round(n * 100) / 100;
 }
 
 function normalizeItens(raw: unknown): string[] {
@@ -408,9 +379,6 @@ function AdminSidebar(props: {
           );
         })}
       </nav>
-      <div className="hidden border-t border-black/[0.06] p-4 text-[11px] text-[#86868b] lg:block">
-        Slug: <span className="font-mono text-[#424245]">{restaurante.slug}</span>
-      </div>
     </aside>
   );
 }
@@ -721,12 +689,27 @@ function ModalPrato(props: {
           <div className="space-y-1">
             <label className="text-xs font-medium text-[#86868b]">Preço (R$)</label>
             <input
+              type="text"
+              inputMode="decimal"
               value={form.preco}
-              onChange={(e) => setForm((f) => ({ ...f, preco: e.target.value }))}
-              placeholder="Ex.: 24,90 ou 1.299,00"
+              onChange={(e) =>
+                setForm((f) => ({ ...f, preco: sanitizePrecoBrInput(e.target.value) }))
+              }
+              onBlur={() =>
+                setForm((f) =>
+                  f.preco.trim() === ""
+                    ? f
+                    : { ...f, preco: normalizarPrecoCampoAoSair(f.preco) },
+                )
+              }
+              placeholder="Ex.: 24,90"
               className="w-full rounded-xl border border-black/[0.08] bg-white px-3 py-2.5 text-sm text-[#1d1d1f] shadow-[0_1px_0_rgba(0,0,0,0.04)] outline-none transition focus:border-[#0071e3]/40 focus:ring-2 focus:ring-[#0071e3]/15"
               required
             />
+            <p className="text-[11px] leading-relaxed text-[#86868b]">
+              Ponto (.) vira vírgula automaticamente; ao sair do campo o valor é ajustado com duas
+              casas decimais.
+            </p>
           </div>
           <div className="space-y-1">
             <label className="text-xs font-medium text-[#86868b]">Descrição</label>
@@ -934,6 +917,32 @@ function AdminPageInner() {
       if (!restRow) {
         setFetchError(
           "Não encontramos um restaurante com o slug informado. Verifique o link ou cadastre o tenant no Supabase.",
+        );
+        setRestaurante(null);
+        setPratos([]);
+        setPedidos([]);
+        return;
+      }
+
+      const {
+        data: { user: sessionUser },
+      } = await supabase.auth.getUser();
+
+      if (!sessionUser) {
+        setFetchError("Sessão expirada. Faça login novamente.");
+        setRestaurante(null);
+        setPratos([]);
+        setPedidos([]);
+        return;
+      }
+
+      const rowOwner = (restRow as { owner_id?: string | null }).owner_id ?? null;
+
+      if (rowOwner !== sessionUser.id) {
+        setFetchError(
+          rowOwner == null
+            ? "Este cardápio ainda não está vinculado a uma conta (owner_id em branco no banco). Associe o restaurante ao seu usuário no Supabase ou conclua o fluxo de cadastro."
+            : "Este cardápio não pertence à sua sessão. Abra o painel pelo menu ou pelo link sem alterar o slug na barra de endereço.",
         );
         setRestaurante(null);
         setPratos([]);
@@ -1344,8 +1353,9 @@ function AdminPageInner() {
         .eq("id", payload.id);
 
       if (error) {
-        setFetchError(error.message);
-        throw new Error(error.message);
+        const msg = mensagemErroSupabasePainel(error.message);
+        setFetchError(msg);
+        throw new Error(msg);
       }
       if (urlAntigaParaRemover) {
         const pathAntigo = caminhoStorageDeUrlPublica(urlAntigaParaRemover);
@@ -1394,8 +1404,9 @@ function AdminPageInner() {
         .single();
 
       if (error) {
-        setFetchError(error.message);
-        throw new Error(error.message);
+        const msg = mensagemErroSupabasePainel(error.message);
+        setFetchError(msg);
+        throw new Error(msg);
       }
       const mapped = mapPratoRow(data as Parameters<typeof mapPratoRow>[0]);
       if (mapped) setPratos((lista) => [mapped, ...lista]);
@@ -1409,7 +1420,7 @@ function AdminPageInner() {
 
     const { error } = await supabase.from("pratos").delete().eq("id", prato.id);
     if (error) {
-      setFetchError(error.message);
+      setFetchError(mensagemErroSupabasePainel(error.message));
       setPratos(prev);
       return;
     }
@@ -1608,8 +1619,8 @@ function AdminPageInner() {
                           ))}
                           {porColuna[col.id].length === 0 ? (
                             <p className="rounded-2xl border border-dashed border-black/[0.08] bg-[#fafafa] px-4 py-10 text-center text-xs text-[#86868b]">
-                              Nenhum pedido nesta coluna. Arraste um card de outra coluna ou crie pedidos no
-                              Supabase.
+                              Nenhum pedido nesta coluna. Arraste um card de outra coluna ou aguarde novos
+                              pedidos.
                             </p>
                           ) : null}
                         </div>
@@ -1627,8 +1638,7 @@ function AdminPageInner() {
                 <div>
                   <h2 className="text-sm font-semibold tracking-tight text-[#1d1d1f]">Pratos</h2>
                   <p className="text-xs text-[#86868b]">
-                    Dados ao vivo do Supabase · slug{" "}
-                    <span className="font-mono text-[#424245]">{restaurante.slug}</span>
+                    Itens visíveis no link público; alterações aparecem na hora para o cliente.
                   </p>
                 </div>
                 <span className="rounded-full bg-[#f5f5f7] px-3 py-1 text-xs font-medium text-[#6e6e73]">
