@@ -22,7 +22,7 @@ import {
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Clock } from "lucide-react";
+import { Clock, UtensilsCrossed } from "lucide-react";
 import { isValidSlug } from "@/lib/billing/slug";
 import { isRetryableSupabaseError, withRetry } from "@/lib/with-retry";
 
@@ -36,11 +36,6 @@ function mensagemErroCardapioParaCliente(message: string): string {
   }
   return message;
 }
-
-/** Aviso fixo no topo quando pedidos estão bloqueados (vitrine fechada ou fora do horário). */
-const BANNER_FECHADO_TITULO = "Estamos fechados no momento.";
-const BANNER_FECHADO_CORPO =
-  "Você pode navegar, mas os pedidos via WhatsApp estão desativados.";
 
 function formatSlugToDisplayName(slug: string): string {
   const s = slug.trim();
@@ -102,6 +97,10 @@ type RestauranteRow = {
   entrega_modo?: string | null;
   retirada_balcao?: boolean | null;
   cardapio_categorias?: unknown;
+  mensagem_boas_vindas?: string | null;
+  texto_vitrine_aberto?: string | null;
+  texto_vitrine_fechado?: string | null;
+  mensagem_fora_horario?: string | null;
 };
 
 function mapRestauranteRow(row: RestauranteRow): Restaurante {
@@ -137,6 +136,10 @@ function mapRestauranteRow(row: RestauranteRow): Restaurante {
     entrega_modo,
     retirada_balcao: row.retirada_balcao === true,
     cardapio_categorias: cardapio_categorias.length > 0 ? cardapio_categorias : null,
+    mensagem_boas_vindas: row.mensagem_boas_vindas?.trim() || null,
+    texto_vitrine_aberto: row.texto_vitrine_aberto?.trim() || null,
+    texto_vitrine_fechado: row.texto_vitrine_fechado?.trim() || null,
+    mensagem_fora_horario: row.mensagem_fora_horario?.trim() || null,
   };
 }
 
@@ -163,6 +166,27 @@ function mapPratoRow(row: PratoRow): Prato | null {
     categoria: row.categoria?.trim() || null,
     status: "ativo",
   };
+}
+
+function PratoCoverImage(props: { src: string | null; nome: string }) {
+  const [failed, setFailed] = useState(false);
+  if (!props.src || failed) {
+    return (
+      <div className="flex h-full min-h-[10.5rem] w-full flex-col items-center justify-center bg-gradient-to-b from-zinc-100 via-zinc-50 to-zinc-100">
+        <UtensilsCrossed className="h-10 w-10 text-zinc-300/95" strokeWidth={1.15} aria-hidden />
+        <span className="sr-only">{props.nome}</span>
+      </div>
+    );
+  }
+  return (
+    // eslint-disable-next-line @next/next/no-img-element
+    <img
+      src={props.src}
+      alt=""
+      className="h-full w-full object-cover transition duration-500 ease-out group-hover:scale-[1.03]"
+      onError={() => setFailed(true)}
+    />
+  );
 }
 
 function cartStorageKey(slug: string) {
@@ -825,33 +849,25 @@ export default function PublicCardapioPage() {
   const mensagemFechadoCustom = restaurante.mensagem_fechado?.trim() ?? "";
 
   const textoHor = textoHorarioVitrine(restaurante);
-  const statusRelogio = statusAberturaPorRelogio(restaurante, relogio);
 
-  /** Aviso verde/vermelho no topo: agenda do painel + pausa manual da vitrine. */
-  const avisoStatusCardapio =
-    vitrineFechada
-      ? {
-          cor: "vermelho" as const,
-          titulo: "Fechado",
-          subtitulo: "Pedidos pausados pelo restaurante.",
-        }
-      : statusRelogio === "fechado"
-        ? {
-            cor: "vermelho" as const,
-            titulo: "Fechado",
-            subtitulo: "Fora do horário de atendimento cadastrado.",
-          }
-        : statusRelogio === "aberto"
-          ? {
-              cor: "verde" as const,
-              titulo: "Aberto",
-              subtitulo: "Dentro do horário de atendimento.",
-            }
-          : {
-              cor: "neutro" as const,
-              titulo: "Horário",
-              subtitulo: "Agenda digital não configurada — confira o texto abaixo ou com o restaurante.",
-            };
+  const textoVitrineAbertoPadrao = "Faça seu pedido e receba em instantes.";
+  const textoVitrineFechadoPadrao = "No momento estamos fechados. Veja nosso cardápio!";
+
+  const badgeLinhaStatus = pedidosBloqueados
+    ? (restaurante.texto_vitrine_fechado?.trim() || textoVitrineFechadoPadrao)
+    : (restaurante.texto_vitrine_aberto?.trim() || textoVitrineAbertoPadrao);
+
+  const boasVindasTexto =
+    restaurante.mensagem_boas_vindas?.trim() ||
+    `Bem-vindo ao cardápio de ${restaurante.nome}.`;
+
+  const faixaAlertaTexto = pedidosBloqueados
+    ? vitrineFechada
+      ? mensagemFechadoCustom || badgeLinhaStatus
+      : restaurante.mensagem_fora_horario?.trim() || badgeLinhaStatus
+    : "";
+
+  const zonasTx = restaurante.taxas_entrega_zonas ?? [];
 
   const irParaSecao = (titulo: string) => {
     const id = `sec-${slugifySecaoCardapio(titulo)}`;
@@ -860,308 +876,192 @@ export default function PublicCardapioPage() {
   };
 
   return (
-    <div className={shellClass}>
-      <header className="sticky top-0 z-40 border-b border-zinc-200/80 bg-white/80 backdrop-blur-md">
-        {pedidosBloqueados ? (
-          <div
-            role="alert"
-            className="border-b border-amber-200/70 bg-gradient-to-b from-amber-50/98 to-amber-50/90 backdrop-blur-sm"
-          >
-            <div className="mx-auto max-w-6xl px-5 py-3.5 sm:px-8">
-              <p className="text-center text-sm font-semibold text-amber-950 sm:text-left">
-                {BANNER_FECHADO_TITULO}
-              </p>
-              <p className="mt-1 text-center text-xs font-normal leading-relaxed text-amber-900/90 sm:text-left sm:text-sm">
-                {BANNER_FECHADO_CORPO}
-              </p>
-              {vitrineFechada && mensagemFechadoCustom ? (
-                <p className="mt-2 border-t border-amber-200/60 pt-2 text-center text-xs font-normal text-amber-900/85 sm:text-left">
-                  {mensagemFechadoCustom}
-                </p>
-              ) : null}
-            </div>
-          </div>
-        ) : null}
-        <div className="mx-auto max-w-6xl px-5 py-8 sm:flex sm:items-center sm:justify-between sm:px-8 sm:py-10">
-          <div className="flex items-start gap-5 sm:items-center">
-            <div className="shrink-0">
-              {restaurante.logo ? (
-                // eslint-disable-next-line @next/next/no-img-element
-                <img
-                  src={restaurante.logo}
-                  alt=""
-                  className="h-20 w-20 rounded-2xl border border-zinc-100 object-cover shadow-sm"
-                />
-              ) : (
-                <div
-                  className="flex h-20 w-20 items-center justify-center rounded-2xl border border-zinc-100 bg-white text-xl font-semibold text-zinc-400 shadow-sm"
-                  style={{
-                    boxShadow: `0 0 0 1px color-mix(in srgb, ${accent} 18%, transparent), 0 8px 28px -18px rgba(0,0,0,0.12)`,
-                  }}
-                >
-                  <span aria-hidden>{restaurante.nome.slice(0, 1).toUpperCase()}</span>
-                </div>
-              )}
-            </div>
-            <div className="min-w-0">
-              <p className="text-[11px] font-semibold uppercase tracking-wider text-zinc-500">Cardápio</p>
-              <h1 className="mt-1 text-2xl font-semibold tracking-tight text-zinc-900 sm:text-4xl sm:leading-tight">
-                {restaurante.nome}
-              </h1>
-              <div
-                className="mt-3 flex items-start gap-2.5 rounded-2xl border px-3 py-2.5 sm:mt-4 sm:gap-3 sm:px-4 sm:py-3"
-                role="status"
-                aria-live="polite"
-                style={{
-                  borderColor:
-                    avisoStatusCardapio.cor === "verde"
-                      ? "color-mix(in srgb, rgb(16 185 129) 35%, transparent)"
-                      : avisoStatusCardapio.cor === "vermelho"
-                        ? "color-mix(in srgb, rgb(239 68 68) 35%, transparent)"
-                        : "rgba(0,0,0,0.08)",
-                  backgroundColor:
-                    avisoStatusCardapio.cor === "verde"
-                      ? "color-mix(in srgb, rgb(16 185 129) 8%, white)"
-                      : avisoStatusCardapio.cor === "vermelho"
-                        ? "color-mix(in srgb, rgb(239 68 68) 7%, white)"
-                        : "rgba(244,244,245,0.9)",
-                }}
-              >
-                <span className="relative mt-0.5 flex h-3 w-3 shrink-0" aria-hidden>
-                  {avisoStatusCardapio.cor !== "neutro" ? (
-                    <span
-                      className={[
-                        "absolute inset-0 animate-ping rounded-full opacity-40",
-                        avisoStatusCardapio.cor === "verde" ? "bg-emerald-500" : "bg-red-500",
-                      ].join(" ")}
-                    />
-                  ) : null}
-                  <span
-                    className={[
-                      "relative inline-flex h-3 w-3 rounded-full ring-2 ring-white",
-                      avisoStatusCardapio.cor === "verde"
-                        ? "bg-emerald-500"
-                        : avisoStatusCardapio.cor === "vermelho"
-                          ? "bg-red-500"
-                          : "bg-zinc-400",
-                    ].join(" ")}
-                  />
-                </span>
-                <div className="min-w-0">
-                  <p
-                    className={[
-                      "text-sm font-semibold tracking-tight sm:text-base",
-                      avisoStatusCardapio.cor === "verde"
-                        ? "text-emerald-900"
-                        : avisoStatusCardapio.cor === "vermelho"
-                          ? "text-red-900"
-                          : "text-zinc-800",
-                    ].join(" ")}
-                  >
-                    {avisoStatusCardapio.titulo}
-                  </p>
-                  <p className="mt-0.5 text-xs leading-relaxed text-zinc-600 sm:text-sm">
-                    {avisoStatusCardapio.subtitulo}
-                  </p>
-                </div>
-              </div>
-              <p className="mt-2 max-w-xl text-sm leading-relaxed text-zinc-500 sm:mt-3">
-                {pedidosBloqueados ? (
-                  <span className="text-zinc-600">
-                    Explore o menu abaixo. Os pedidos pelo WhatsApp ficam indisponíveis até o restaurante reabrir ou
-                    retornar ao horário de atendimento.
-                  </span>
-                ) : (
-                  <>
-                    Monte seu pedido com calma; finalize no carrinho e envie pelo WhatsApp.
-                    {(() => {
-                  const zonasTx = restaurante.taxas_entrega_zonas ?? [];
-                  if (restaurante.retirada_balcao) {
-                    return (
-                      <>
-                        {" "}
-                        <span className="font-medium text-zinc-800">Retirada no balcão disponível.</span>
-                      </>
-                    );
-                  }
-                  if (zonasTx.length === 1) {
-                    return (
-                      <>
-                        {" "}
-                        <span className="font-medium text-zinc-800">
-                          Taxa de entrega: {formatBRL(zonasTx[0].valor)}
-                        </span>
-                        .
-                      </>
-                    );
-                  }
-                  if (zonasTx.length > 1) {
-                    return (
-                      <>
-                        {" "}
-                        <span className="font-medium text-zinc-800">
-                          Taxa conforme a região — escolha no carrinho.
-                        </span>
-                      </>
-                    );
-                  }
-                  if (restaurante.taxa_entrega != null && restaurante.taxa_entrega > 0) {
-                    return (
-                      <>
-                        {" "}
-                        <span className="font-medium text-zinc-800">
-                          Taxa de entrega: {formatBRL(restaurante.taxa_entrega)}
-                        </span>
-                        .
-                      </>
-                    );
-                  }
-                  return null;
-                })()}
-                  </>
-                )}
-              </p>
-            </div>
-          </div>
-        </div>
-
-        {pratos.length > 0 && categorias.length > 0 ? (
-          <div className="border-t border-zinc-100/90">
-            <nav
-              className="mx-auto flex max-w-6xl gap-2 overflow-x-auto px-5 py-3 [scrollbar-width:none] [-ms-overflow-style:none] sm:px-8 sm:py-3.5 [&::-webkit-scrollbar]:hidden"
-              aria-label="Seções do cardápio"
-            >
-              {categorias.map(({ titulo }) => {
-                const sid = `sec-${slugifySecaoCardapio(titulo)}`;
-                const active = activeCategoriaId === sid;
-                return (
-                  <button
-                    key={titulo}
-                    type="button"
-                    onClick={() => irParaSecao(titulo)}
-                    className={[
-                      "shrink-0 rounded-full px-4 py-2 text-sm font-semibold transition-all",
-                      active
-                        ? "bg-zinc-900 text-white shadow-sm"
-                        : "bg-zinc-100/80 text-zinc-600 hover:bg-zinc-200/80 hover:text-zinc-900",
-                    ].join(" ")}
-                  >
-                    {titulo}
-                  </button>
-                );
-              })}
-            </nav>
-          </div>
-        ) : null}
-      </header>
-
-      {textoHor || restaurante.funcionamento_semana ? (
-        <div className="border-b border-zinc-100 bg-white/90">
-          <div className="mx-auto flex max-w-6xl gap-4 px-5 py-4 sm:px-8 sm:py-5">
-            <div
-              className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl border border-zinc-100 bg-zinc-50 text-zinc-600"
-              style={{ color: accent }}
-              aria-hidden
-            >
-              <Clock className="h-5 w-5" strokeWidth={2} />
-            </div>
-            <div className="min-w-0 flex-1">
-              <div className="flex flex-wrap items-center gap-2">
-                <p className="text-[11px] font-semibold uppercase tracking-wider text-zinc-500">
-                  Horário de funcionamento
-                </p>
-                {vitrineFechada ? (
-                  <span className="inline-flex items-center gap-1.5 rounded-full bg-red-50 px-2.5 py-0.5 text-[11px] font-semibold text-red-800 ring-1 ring-red-200/70">
-                    <span className="h-1.5 w-1.5 rounded-full bg-red-500" aria-hidden />
-                    Pedidos pausados
-                  </span>
-                ) : statusRelogio === "aberto" ? (
-                  <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-50 px-2.5 py-0.5 text-[11px] font-semibold text-emerald-800 ring-1 ring-emerald-200/70">
-                    <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" aria-hidden />
-                    Aberto agora
-                  </span>
-                ) : statusRelogio === "fechado" ? (
-                  <span className="inline-flex items-center gap-1.5 rounded-full bg-red-50 px-2.5 py-0.5 text-[11px] font-semibold text-red-800 ring-1 ring-red-200/70">
-                    <span className="h-1.5 w-1.5 rounded-full bg-red-500" aria-hidden />
-                    Fechado agora
-                  </span>
-                ) : (
-                  <span className="inline-flex items-center gap-1.5 rounded-full bg-zinc-100 px-2.5 py-0.5 text-[11px] font-semibold text-zinc-600 ring-1 ring-zinc-200/80">
-                    <span className="h-1.5 w-1.5 rounded-full bg-zinc-400" aria-hidden />
-                    Sem agenda digital
-                  </span>
-                )}
-              </div>
-              <p className="mt-1 text-sm font-medium leading-relaxed text-zinc-900 sm:text-base">
-                {textoHor ? (
-                  textoHor
-                ) : (
-                  <span className="font-normal text-zinc-500">
-                    Não informado neste cardápio. Se precisar de urgência, procure o restaurante pelos
-                    canais habituais.
-                  </span>
-                )}
-              </p>
-            </div>
+    <div className={`${shellClass} pb-28 sm:pb-32`}>
+      {pedidosBloqueados && faixaAlertaTexto ? (
+        <div
+          role="alert"
+          className="border-b border-amber-200/55 bg-amber-50/92 backdrop-blur-md supports-[backdrop-filter]:bg-amber-50/78"
+        >
+          <div className="mx-auto max-w-3xl px-5 py-3.5 text-center sm:px-8">
+            <p className="text-[13px] font-medium leading-relaxed text-amber-950/95">{faixaAlertaTexto}</p>
           </div>
         </div>
       ) : null}
 
-      <main className="mx-auto max-w-6xl px-5 pb-32 pt-10 sm:px-8 sm:pb-36 sm:pt-12">
+      <div
+        className="relative overflow-hidden border-b border-zinc-200/45 pb-12 pt-10 sm:pb-14 sm:pt-12"
+        style={{
+          background: `linear-gradient(180deg, color-mix(in srgb, ${accent} 10%, #ffffff) 0%, #fafafa 46%, #fafafa 100%)`,
+        }}
+      >
+        <div
+          className="pointer-events-none absolute inset-0 bg-[radial-gradient(ellipse_75%_45%_at_50%_0%,rgba(255,255,255,0.88),transparent)]"
+          aria-hidden
+        />
+        <div className="relative mx-auto max-w-2xl px-5 text-center sm:px-8">
+          <div className="mx-auto flex w-fit justify-center">
+            {restaurante.logo ? (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img
+                src={restaurante.logo}
+                alt=""
+                className="h-[5.25rem] w-[5.25rem] rounded-2xl border border-zinc-200/90 bg-white object-cover shadow-sm ring-1 ring-black/[0.04] sm:h-24 sm:w-24"
+              />
+            ) : (
+              <div
+                className="flex h-[5.25rem] w-[5.25rem] items-center justify-center rounded-2xl border border-zinc-200/90 bg-white text-2xl font-semibold text-zinc-400 shadow-sm ring-1 ring-black/[0.04] sm:h-24 sm:w-24"
+                style={{
+                  boxShadow: `0 0 0 1px color-mix(in srgb, ${accent} 14%, transparent), 0 10px 32px -20px rgba(0,0,0,0.14)`,
+                }}
+              >
+                <span aria-hidden>{restaurante.nome.slice(0, 1).toUpperCase()}</span>
+              </div>
+            )}
+          </div>
+
+          <h1 className="mt-7 text-[1.9rem] font-black tracking-[-0.03em] text-zinc-950 sm:mt-8 sm:text-[2.4rem] sm:leading-[1.06]">
+            {restaurante.nome}
+          </h1>
+
+          <div className="mt-8 flex justify-center sm:mt-9" role="status" aria-live="polite">
+            <div
+              className={[
+                "inline-flex max-w-full items-center gap-2.5 rounded-full border px-4 py-2 sm:px-5 sm:py-2.5",
+                pedidosBloqueados
+                  ? "border-red-200/65 bg-white/[0.92] text-red-950 shadow-[0_1px_0_rgba(255,255,255,0.6)_inset]"
+                  : "border-emerald-200/60 bg-white/[0.92] text-emerald-950 shadow-[0_1px_0_rgba(255,255,255,0.6)_inset]",
+              ].join(" ")}
+            >
+              <span className="relative flex h-2.5 w-2.5 shrink-0" aria-hidden>
+                {!pedidosBloqueados ? (
+                  <span className="absolute inset-0 animate-ping rounded-full bg-emerald-500/40" />
+                ) : (
+                  <span className="absolute inset-0 animate-ping rounded-full bg-red-500/35" />
+                )}
+                <span
+                  className={[
+                    "relative inline-flex h-2.5 w-2.5 rounded-full ring-[2px] ring-white",
+                    pedidosBloqueados ? "bg-red-500" : "bg-emerald-500",
+                  ].join(" ")}
+                />
+              </span>
+              <p className="min-w-0 text-left text-[13px] font-medium leading-snug tracking-tight text-zinc-800 sm:text-sm">
+                <span className="font-semibold text-zinc-950">{pedidosBloqueados ? "Fechado" : "Aberto"}</span>
+                <span className="mx-1.5 font-light text-zinc-400">·</span>
+                <span>{badgeLinhaStatus}</span>
+              </p>
+            </div>
+          </div>
+
+          <p className="mx-auto mt-5 max-w-md text-[15px] leading-relaxed text-zinc-600 sm:mt-6 sm:max-w-lg">
+            {boasVindasTexto}
+          </p>
+
+          {!pedidosBloqueados ? (
+            <div className="mx-auto mt-4 flex max-w-lg flex-wrap justify-center gap-2 sm:mt-5">
+              {restaurante.retirada_balcao ? (
+                <span className="inline-flex rounded-full border border-zinc-200/90 bg-white/75 px-3 py-1 text-[11px] font-medium tabular-nums text-zinc-600 backdrop-blur-sm">
+                  Retirada
+                </span>
+              ) : null}
+              {zonasTx.length === 1 ? (
+                <span className="inline-flex rounded-full border border-zinc-200/90 bg-white/75 px-3 py-1 text-[11px] font-medium tabular-nums text-zinc-600 backdrop-blur-sm">
+                  {formatBRL(zonasTx[0].valor)}
+                </span>
+              ) : null}
+              {zonasTx.length > 1 ? (
+                <span className="inline-flex rounded-full border border-zinc-200/90 bg-white/75 px-3 py-1 text-[11px] font-medium tabular-nums text-zinc-600 backdrop-blur-sm">
+                  {zonasTx.length} zonas
+                </span>
+              ) : null}
+              {zonasTx.length === 0 &&
+              restaurante.taxa_entrega != null &&
+              restaurante.taxa_entrega > 0 ? (
+                <span className="inline-flex rounded-full border border-zinc-200/90 bg-white/75 px-3 py-1 text-[11px] font-medium tabular-nums text-zinc-600 backdrop-blur-sm">
+                  {formatBRL(restaurante.taxa_entrega)}
+                </span>
+              ) : null}
+            </div>
+          ) : null}
+
+          {textoHor ? (
+            <div className="mx-auto mt-6 flex max-w-lg items-start justify-center gap-2.5 text-left sm:mt-7">
+              <Clock className="mt-0.5 h-4 w-4 shrink-0 text-zinc-400" strokeWidth={2} aria-hidden />
+              <p className="text-sm leading-relaxed text-zinc-500">{textoHor}</p>
+            </div>
+          ) : null}
+        </div>
+      </div>
+
+      {pratos.length > 0 && categorias.length > 0 ? (
+        <nav
+          className="sticky top-0 z-30 border-b border-zinc-200/55 bg-white/70 py-3 backdrop-blur-xl backdrop-saturate-150 supports-[backdrop-filter]:bg-white/65 sm:py-3.5"
+          aria-label="Seções do cardápio"
+        >
+          <div className="mx-auto flex max-w-6xl gap-2 overflow-x-auto px-5 [scrollbar-width:none] [-ms-overflow-style:none] sm:px-8 [&::-webkit-scrollbar]:hidden">
+            {categorias.map(({ titulo }) => {
+              const sid = `sec-${slugifySecaoCardapio(titulo)}`;
+              const active = activeCategoriaId === sid;
+              return (
+                <button
+                  key={titulo}
+                  type="button"
+                  onClick={() => irParaSecao(titulo)}
+                  className={[
+                    "shrink-0 rounded-full px-4 py-2 text-sm font-semibold transition-all active:scale-[0.97]",
+                    active
+                      ? "bg-zinc-900 text-white shadow-sm ring-1 ring-black/10"
+                      : "bg-zinc-100/90 text-zinc-600 hover:bg-zinc-200/90 hover:text-zinc-900",
+                  ].join(" ")}
+                >
+                  {titulo}
+                </button>
+              );
+            })}
+          </div>
+        </nav>
+      ) : null}
+
+      <main className="mx-auto max-w-6xl px-5 pb-24 pt-10 sm:px-8 sm:pb-28 sm:pt-12">
         {pratos.length === 0 ? (
-          <p className="rounded-3xl border border-dashed border-zinc-200 bg-white px-6 py-16 text-center text-sm text-zinc-500 shadow-sm">
-            Este restaurante ainda não publicou itens ativos no cardápio.
+          <p className="rounded-3xl border border-dashed border-zinc-200/90 bg-white px-6 py-16 text-center text-sm leading-relaxed text-zinc-500 shadow-sm">
+            {restaurante.nome} — nenhum item ativo publicado no momento.
           </p>
         ) : (
           <div className="space-y-16 sm:space-y-20">
             {categorias.map(({ titulo, lista }) => {
               const secId = `sec-${slugifySecaoCardapio(titulo)}`;
               return (
-              <section key={titulo} id={secId} aria-labelledby={`cat-${secId}`} className="scroll-mt-44 sm:scroll-mt-40">
-                <div className="mb-8 flex items-baseline justify-between gap-4 border-b border-zinc-100 pb-4">
+              <section key={titulo} id={secId} aria-labelledby={`cat-${secId}`} className="scroll-mt-36 sm:scroll-mt-32">
+                <div className="mb-6 flex items-baseline justify-between gap-4 border-b border-zinc-100/90 pb-3 sm:mb-8 sm:pb-4">
                   <h2
                     id={`cat-${secId}`}
-                    className="text-xs font-semibold uppercase tracking-wider text-zinc-500"
+                    className="text-[11px] font-semibold uppercase tracking-[0.2em] text-zinc-400"
                   >
                     {titulo}
                   </h2>
-                  <span className="text-[11px] font-medium tabular-nums text-zinc-400">{lista.length}</span>
+                  <span className="text-[11px] font-medium tabular-nums text-zinc-300">{lista.length}</span>
                 </div>
-                <ul className="grid gap-6 sm:grid-cols-2 lg:grid-cols-2 lg:gap-8">
+                <ul className="grid grid-cols-1 gap-5 sm:grid-cols-2 sm:gap-6 xl:grid-cols-3 xl:gap-7">
                   {lista.map((prato) => (
                     <li key={prato.id}>
-                      <article className="group flex h-full flex-col overflow-hidden rounded-3xl border border-zinc-100 bg-white shadow-sm transition duration-300 hover:shadow-md">
-                        <div className="relative aspect-[16/10] w-full overflow-hidden rounded-t-2xl bg-zinc-100">
-                          {prato.imagem ? (
-                            // eslint-disable-next-line @next/next/no-img-element
-                            <img
-                              src={prato.imagem}
-                              alt=""
-                              className="h-full w-full rounded-t-2xl object-cover transition duration-700 ease-out group-hover:scale-[1.02]"
-                            />
-                          ) : (
-                            <div className="flex h-full w-full items-center justify-center text-zinc-300">
-                              <span className="text-4xl font-extralight" aria-hidden>
-                                —
-                              </span>
-                            </div>
-                          )}
+                      <article className="group flex h-full flex-col overflow-hidden rounded-3xl border border-zinc-200/60 bg-white shadow-[0_2px_24px_-12px_rgba(0,0,0,0.08)] transition duration-300 hover:border-zinc-200 hover:shadow-[0_12px_40px_-16px_rgba(0,0,0,0.12)]">
+                        <div className="relative aspect-[4/3] w-full overflow-hidden bg-zinc-50">
+                          <PratoCoverImage src={prato.imagem} nome={prato.nome} />
                         </div>
-                        <div className="flex flex-1 flex-col gap-3 p-6 sm:p-7">
-                          <div className="flex flex-wrap items-start justify-between gap-3">
-                            <h3 className="text-lg font-semibold tracking-tight text-zinc-900 sm:text-xl">
+                        <div className="flex flex-1 flex-col gap-2 p-5 sm:p-6">
+                          <div className="flex flex-wrap items-start justify-between gap-3 gap-y-1">
+                            <h3 className="min-w-0 flex-1 text-base font-semibold leading-snug tracking-tight text-zinc-900 sm:text-lg">
                               {prato.nome}
                             </h3>
-                            <p className="shrink-0 text-base font-semibold tabular-nums tracking-tight text-zinc-900">
+                            <p className="shrink-0 text-base font-bold tabular-nums tracking-tight text-zinc-900">
                               {formatBRL(prato.preco)}
                             </p>
                           </div>
                           {prato.descricao ? (
                             <p className="line-clamp-3 text-sm leading-relaxed text-zinc-500">{prato.descricao}</p>
-                          ) : (
-                            <p className="text-sm italic text-zinc-400">Sem descrição</p>
-                          )}
-                          <div className="mt-auto flex justify-end pt-2">
+                          ) : null}
+                          <div className="mt-auto flex justify-end pt-3">
                             <button
                               type="button"
                               onClick={() => addToCart(prato)}
@@ -1169,7 +1069,7 @@ export default function PublicCardapioPage() {
                               title={
                                 pedidosBloqueados
                                   ? vitrineFechada
-                                    ? "Pedidos pelo cardápio estão pausados. Consulte o horário acima."
+                                    ? "Pedidos pelo cardápio estão pausados."
                                     : "Fora do horário de pedidos pelo cardápio."
                                   : undefined
                               }
@@ -1179,10 +1079,10 @@ export default function PublicCardapioPage() {
                                   : `Adicionar ${prato.nome} ao carrinho`
                               }
                               className={[
-                                "flex h-11 w-11 items-center justify-center rounded-full bg-zinc-900 text-xl font-light leading-none text-white shadow-sm transition active:scale-[0.97]",
+                                "flex h-11 w-11 items-center justify-center rounded-full bg-zinc-900 text-xl font-light leading-none text-white shadow-md transition-transform duration-150 active:scale-95",
                                 pedidosBloqueados
                                   ? "cursor-not-allowed opacity-35 shadow-none"
-                                  : "hover:bg-zinc-800",
+                                  : "hover:bg-zinc-800 hover:shadow-lg",
                               ].join(" ")}
                             >
                               <span aria-hidden>+</span>
@@ -1201,13 +1101,13 @@ export default function PublicCardapioPage() {
       </main>
 
       {cartCount > 0 ? (
-        <div className="pointer-events-none fixed inset-x-0 bottom-6 z-30 flex justify-center px-5 sm:bottom-8">
+        <div className="pointer-events-none fixed inset-x-0 bottom-6 z-30 flex justify-center px-5 sm:bottom-6">
           <button
             type="button"
             onClick={() => setCartOpen(true)}
-            className="pointer-events-auto flex max-w-full items-center gap-4 rounded-full border border-white/10 bg-[#1d1d1f] px-5 py-3.5 text-white shadow-[0_20px_50px_-12px_rgba(0,0,0,0.55)] transition hover:bg-black active:scale-[0.99]"
+            className="pointer-events-auto flex max-w-full items-center gap-4 rounded-full border border-white/12 bg-zinc-900/90 px-6 py-3.5 text-white shadow-[0_12px_48px_-8px_rgba(0,0,0,0.45)] backdrop-blur-md transition-transform duration-150 hover:bg-zinc-900 active:scale-[0.97] supports-[backdrop-filter]:bg-zinc-900/88"
             style={{
-              boxShadow: `0 20px 50px -12px color-mix(in srgb, ${accent} 35%, rgba(0,0,0,0.55))`,
+              boxShadow: `0 16px 48px -10px color-mix(in srgb, ${accent} 28%, rgba(0,0,0,0.5))`,
             }}
             aria-label={`Sacola com ${cartCount} itens, total ${formatBRL(total)}`}
           >

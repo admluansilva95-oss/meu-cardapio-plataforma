@@ -320,6 +320,10 @@ function mapRestauranteRow(row: {
   entrega_modo?: string | null;
   retirada_balcao?: boolean | null;
   cardapio_categorias?: unknown;
+  mensagem_boas_vindas?: string | null;
+  texto_vitrine_aberto?: string | null;
+  texto_vitrine_fechado?: string | null;
+  mensagem_fora_horario?: string | null;
 }): Restaurante {
   const rawNome = row.nome?.trim() ?? "";
   const taxaRaw = row.taxa_entrega;
@@ -353,6 +357,10 @@ function mapRestauranteRow(row: {
     entrega_modo,
     retirada_balcao: row.retirada_balcao === true,
     cardapio_categorias: cardapio_categorias.length > 0 ? cardapio_categorias : null,
+    mensagem_boas_vindas: row.mensagem_boas_vindas?.trim() || null,
+    texto_vitrine_aberto: row.texto_vitrine_aberto?.trim() || null,
+    texto_vitrine_fechado: row.texto_vitrine_fechado?.trim() || null,
+    mensagem_fora_horario: row.mensagem_fora_horario?.trim() || null,
   };
 }
 
@@ -1009,6 +1017,10 @@ function AdminPageInner() {
   const [cfgCardapioCategorias, setCfgCardapioCategorias] = useState<string[]>([]);
   const [cfgVitrineFechada, setCfgVitrineFechada] = useState(false);
   const [cfgMensagemFechado, setCfgMensagemFechado] = useState("");
+  const [cfgMensagemBoasVindas, setCfgMensagemBoasVindas] = useState("");
+  const [cfgTextoVitrineAberto, setCfgTextoVitrineAberto] = useState("");
+  const [cfgTextoVitrineFechado, setCfgTextoVitrineFechado] = useState("");
+  const [cfgMensagemForaHorario, setCfgMensagemForaHorario] = useState("");
   const [cfgMsg, setCfgMsg] = useState<string | null>(null);
   const [cfgLogoUrl, setCfgLogoUrl] = useState<string | null>(null);
   const [cfgLogoFile, setCfgLogoFile] = useState<File | null>(null);
@@ -1036,6 +1048,10 @@ function AdminPageInner() {
       rb: restaurante.retirada_balcao,
       vf: restaurante.vitrine_fechada,
       mf: restaurante.mensagem_fechado,
+      mb: restaurante.mensagem_boas_vindas,
+      tva: restaurante.texto_vitrine_aberto,
+      tvf: restaurante.texto_vitrine_fechado,
+      mfh: restaurante.mensagem_fora_horario,
       ccMerged: mergedCats,
     });
   }, [restaurante, pratos]);
@@ -1296,6 +1312,10 @@ function AdminPageInner() {
     setCfgLogoDraftPreview(null);
     setCfgVitrineFechada(restaurante.vitrine_fechada === true);
     setCfgMensagemFechado(restaurante.mensagem_fechado ?? "");
+    setCfgMensagemBoasVindas(restaurante.mensagem_boas_vindas ?? "");
+    setCfgTextoVitrineAberto(restaurante.texto_vitrine_aberto ?? "");
+    setCfgTextoVitrineFechado(restaurante.texto_vitrine_fechado ?? "");
+    setCfgMensagemForaHorario(restaurante.mensagem_fora_horario ?? "");
     setCfgMsg(null);
   }, [tab, restaurante, marcaVitrineDadosSyncKey]);
 
@@ -1448,6 +1468,10 @@ function AdminPageInner() {
           taxa_entrega: taxaSync,
           vitrine_fechada: cfgVitrineFechada,
           mensagem_fechado: cfgVitrineFechada ? cfgMensagemFechado.trim() || null : null,
+          mensagem_boas_vindas: cfgMensagemBoasVindas.trim() || null,
+          texto_vitrine_aberto: cfgTextoVitrineAberto.trim() || null,
+          texto_vitrine_fechado: cfgTextoVitrineFechado.trim() || null,
+          mensagem_fora_horario: cfgMensagemForaHorario.trim() || null,
           funcionamento_semana: cfgFuncionamento,
           taxas_entrega_zonas: zonasApi,
           retirada_balcao: cfgRetiradaBalcao,
@@ -1492,6 +1516,10 @@ function AdminPageInner() {
     cfgCor,
     cfgVitrineFechada,
     cfgMensagemFechado,
+    cfgMensagemBoasVindas,
+    cfgTextoVitrineAberto,
+    cfgTextoVitrineFechado,
+    cfgMensagemForaHorario,
     cfgLogoUrl,
     cfgLogoFile,
     supabase,
@@ -2373,6 +2401,67 @@ function AdminPageInner() {
                         />
                       </div>
                     ) : null}
+                  </div>
+
+                  <div className="rounded-2xl border border-zinc-100 bg-zinc-50/40 p-5 sm:p-6">
+                    <p className="text-sm font-semibold tracking-tight text-zinc-900">Textos na vitrine pública</p>
+                    <p className="mt-1 text-xs leading-relaxed text-zinc-500">
+                      Aparecem no cardápio do link público. Campos vazios usam frases neutras sugeridas pelo app.
+                    </p>
+                    <div className="mt-5 space-y-5">
+                      <div className="space-y-2">
+                        <label className="text-xs font-semibold uppercase tracking-wide text-zinc-500">
+                          Boas-vindas (abaixo do status)
+                        </label>
+                        <textarea
+                          value={cfgMensagemBoasVindas}
+                          onChange={(e) => setCfgMensagemBoasVindas(e.target.value.slice(0, 500))}
+                          rows={2}
+                          maxLength={500}
+                          placeholder="Ex.: Pratos feitos na hora, ingredientes frescos do dia."
+                          className="w-full rounded-xl border border-zinc-200 bg-white px-3 py-2.5 text-sm text-zinc-900 outline-none transition focus:border-transparent focus:ring-2 focus:ring-zinc-900"
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <label className="text-xs font-semibold uppercase tracking-wide text-zinc-500">
+                          Linha ao lado de “Aberto” (quando aceita pedidos)
+                        </label>
+                        <input
+                          type="text"
+                          value={cfgTextoVitrineAberto}
+                          onChange={(e) => setCfgTextoVitrineAberto(e.target.value.slice(0, 200))}
+                          maxLength={200}
+                          placeholder="Ex.: Faça seu pedido e receba em instantes."
+                          className="w-full rounded-xl border border-zinc-200 bg-white px-3 py-2.5 text-sm text-zinc-900 outline-none transition focus:border-transparent focus:ring-2 focus:ring-zinc-900"
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <label className="text-xs font-semibold uppercase tracking-wide text-zinc-500">
+                          Linha ao lado de “Fechado” (pedidos indisponíveis)
+                        </label>
+                        <input
+                          type="text"
+                          value={cfgTextoVitrineFechado}
+                          onChange={(e) => setCfgTextoVitrineFechado(e.target.value.slice(0, 200))}
+                          maxLength={200}
+                          placeholder="Ex.: No momento estamos fechados. Veja nosso cardápio!"
+                          className="w-full rounded-xl border border-zinc-200 bg-white px-3 py-2.5 text-sm text-zinc-900 outline-none transition focus:border-transparent focus:ring-2 focus:ring-zinc-900"
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <label className="text-xs font-semibold uppercase tracking-wide text-zinc-500">
+                          Aviso quando fora do horário (opcional)
+                        </label>
+                        <textarea
+                          value={cfgMensagemForaHorario}
+                          onChange={(e) => setCfgMensagemForaHorario(e.target.value.slice(0, 400))}
+                          rows={2}
+                          maxLength={400}
+                          placeholder="Ex.: Voltamos amanhã às 11h. Enquanto isso, confira o cardápio."
+                          className="w-full rounded-xl border border-zinc-200 bg-white px-3 py-2.5 text-sm text-zinc-900 outline-none transition focus:border-transparent focus:ring-2 focus:ring-zinc-900"
+                        />
+                      </div>
+                    </div>
                   </div>
 
                   <EntregaComercialSection

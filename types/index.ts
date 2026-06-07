@@ -41,6 +41,14 @@ export interface Restaurante {
   retirada_balcao?: boolean;
   /** Ordem das seções do cardápio público (nomes de categoria). */
   cardapio_categorias?: string[] | null;
+  /** Frase curta na vitrine pública abaixo do status (opcional). */
+  mensagem_boas_vindas?: string | null;
+  /** Linha ao lado de “Aberto” quando aceita pedidos (opcional). */
+  texto_vitrine_aberto?: string | null;
+  /** Linha ao lado de “Fechado” quando pedidos indisponíveis (opcional). */
+  texto_vitrine_fechado?: string | null;
+  /** Aviso quando fora do horário (pedidos bloqueados por agenda, não pausa manual). */
+  mensagem_fora_horario?: string | null;
 }
 
 export interface Prato {

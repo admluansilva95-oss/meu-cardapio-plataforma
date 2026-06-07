@@ -54,6 +54,18 @@ alter table public.restaurantes
   add column if not exists mensagem_fechado text null;
 
 alter table public.restaurantes
+  add column if not exists mensagem_boas_vindas text null;
+
+alter table public.restaurantes
+  add column if not exists texto_vitrine_aberto text null;
+
+alter table public.restaurantes
+  add column if not exists texto_vitrine_fechado text null;
+
+alter table public.restaurantes
+  add column if not exists mensagem_fora_horario text null;
+
+alter table public.restaurantes
   add column if not exists funcionamento_semana jsonb null;
 
 alter table public.restaurantes

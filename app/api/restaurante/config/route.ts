@@ -44,10 +44,14 @@ type ConfigBody = {
   cardapio_categorias?: string[] | null;
   retirada_balcao?: boolean;
   entrega_modo?: "fixa" | "zonas";
+  mensagem_boas_vindas?: string | null;
+  texto_vitrine_aberto?: string | null;
+  texto_vitrine_fechado?: string | null;
+  mensagem_fora_horario?: string | null;
 };
 
 const MIGRATION_HINT =
-  "Parte dos dados não foi gravada no banco (colunas em falta). No SQL Editor do Supabase, execute em ordem as migrações: 20260608120000_restaurantes_tenant_settings.sql, 20260610120000_restaurantes_vitrine_fechada.sql, 20260611120000_restaurantes_funcionamento_taxas_json.sql, 20260614120000_restaurantes_entrega_categorias.sql e 20260607140000_storage_restaurant_logos.sql (bucket de logos). Nome, WhatsApp e cor já foram salvos.";
+  "Parte dos dados não foi gravada no banco (colunas em falta). No SQL Editor do Supabase, execute em ordem as migrações: 20260608120000_restaurantes_tenant_settings.sql, 20260610120000_restaurantes_vitrine_fechada.sql, 20260611120000_restaurantes_funcionamento_taxas_json.sql, 20260614120000_restaurantes_entrega_categorias.sql, 20260615120000_restaurantes_vitrine_textos.sql e 20260607140000_storage_restaurant_logos.sql (bucket de logos). Nome, WhatsApp e cor já foram salvos.";
 
 function isSchemaColumnError(err: { message?: string; code?: string; details?: string } | null): boolean {
   if (!err) return false;
@@ -114,6 +118,10 @@ async function applyLegacyExtras(
     taxa_entrega: number | null;
     vitrine_fechada: boolean;
     mensagem_fechado: string | null;
+    mensagem_boas_vindas: string | null;
+    texto_vitrine_aberto: string | null;
+    texto_vitrine_fechado: string | null;
+    mensagem_fora_horario: string | null;
   },
 ): Promise<{ ok: true; skipped?: boolean } | { ok: false; message: string; code?: "rls" | "other" }> {
   const payload: Record<string, unknown> = {
@@ -121,6 +129,10 @@ async function applyLegacyExtras(
     taxa_entrega: extras.taxa_entrega,
     vitrine_fechada: extras.vitrine_fechada,
     mensagem_fechado: extras.mensagem_fechado,
+    mensagem_boas_vindas: extras.mensagem_boas_vindas,
+    texto_vitrine_aberto: extras.texto_vitrine_aberto,
+    texto_vitrine_fechado: extras.texto_vitrine_fechado,
+    mensagem_fora_horario: extras.mensagem_fora_horario,
   };
   const res = await runUpdate(client, opts, payload);
   if (!res.error) {
@@ -251,6 +263,13 @@ export async function POST(request: NextRequest) {
     typeof body.mensagem_fechado === "string" ? body.mensagem_fechado.trim().slice(0, 400) : "";
   const mensagem_fechado = vitrineFechada && mensagemFechadoRaw.length > 0 ? mensagemFechadoRaw : null;
 
+  const normTxt = (v: unknown, max: number) =>
+    typeof v === "string" ? v.trim().slice(0, max) || null : null;
+  const mensagem_boas_vindas = normTxt(body.mensagem_boas_vindas, 500);
+  const texto_vitrine_aberto = normTxt(body.texto_vitrine_aberto, 200);
+  const texto_vitrine_fechado = normTxt(body.texto_vitrine_fechado, 200);
+  const mensagem_fora_horario = normTxt(body.mensagem_fora_horario, 400);
+
   const funcionamento_semana = body.funcionamento_semana;
   const taxasBody = body.taxas_entrega_zonas;
   const taxas_zonas = Array.isArray(taxasBody)
@@ -352,6 +371,10 @@ export async function POST(request: NextRequest) {
     taxa_entrega: taxa,
     vitrine_fechada: vitrineFechada,
     mensagem_fechado: vitrineFechada ? mensagem_fechado : null,
+    mensagem_boas_vindas,
+    texto_vitrine_aberto,
+    texto_vitrine_fechado,
+    mensagem_fora_horario,
   };
 
   const jsonZonas = listaZonas.length > 0 ? listaZonas : null;
