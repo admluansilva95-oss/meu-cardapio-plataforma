@@ -6,10 +6,12 @@ import type { Prato, PratoStatus, Restaurante } from "../../types";
 import { PedidosDashboardSkeleton } from "@/components/admin/PedidosDashboardSkeleton";
 import { PedidosEmptyState } from "@/components/admin/PedidosEmptyState";
 import { PedidosKpiBar } from "@/components/admin/PedidosKpiBar";
+import { PhoneInput } from "@/components/PhoneInput";
 import { isValidSlug } from "@/lib/billing/slug";
 import { playNewOrderChime } from "@/lib/admin/play-new-order-chime";
 import { computePedidoKpis } from "@/lib/admin/pedido-kpis";
 import { createBrowserSupabaseClient } from "@/lib/supabase";
+import { getPublicAppUrl } from "@/lib/site-url";
 import { isRetryableSupabaseError, withRetry } from "@/lib/with-retry";
 
 function formatSlugToDisplayName(slug: string): string {
@@ -60,6 +62,41 @@ function toNumber(value: string | number | null | undefined): number {
   if (typeof value === "number") return value;
   const n = Number(value);
   return Number.isFinite(n) ? n : 0;
+}
+
+/** Interpreta preço digitado no painel (pt-BR): vírgula decimal, ponto como milhar. */
+function parsePrecoBrasileiro(raw: string): number | null {
+  const t = raw.trim().replace(/R\$\s?/gi, "");
+  if (!t) return null;
+  if (t.includes(",")) {
+    const parts = t.split(",");
+    if (parts.length !== 2) return null;
+    const intPart = parts[0].replace(/\./g, "").replace(/\D/g, "");
+    const decPart = parts[1].replace(/\D/g, "");
+    if (!intPart && !decPart) return null;
+    const n = Number(`${intPart || "0"}.${decPart || "0"}`);
+    if (!Number.isFinite(n) || n < 0) return null;
+    return Math.round(n * 100) / 100;
+  }
+  const normalized = t.replace(/[^\d.]/g, "");
+  if (!normalized) return null;
+  const lastDot = normalized.lastIndexOf(".");
+  if (lastDot === -1) {
+    const n = Number(normalized);
+    return Number.isFinite(n) && n >= 0 ? Math.round(n * 100) / 100 : null;
+  }
+  const after = normalized.slice(lastDot + 1);
+  const before = normalized.slice(0, lastDot);
+  if (/^\d{1,2}$/.test(after) && before.includes(".")) {
+    const intPart = before.replace(/\./g, "");
+    const n = Number(`${intPart}.${after}`);
+    if (!Number.isFinite(n) || n < 0) return null;
+    return Math.round(n * 100) / 100;
+  }
+  const digits = normalized.replace(/\./g, "");
+  const n = Number(digits);
+  if (!Number.isFinite(n) || n < 0) return null;
+  return Math.round(n * 100) / 100;
 }
 
 function normalizeItens(raw: unknown): string[] {
@@ -179,16 +216,51 @@ function mapRestauranteRow(row: {
   whatsapp: string;
   logo: string | null;
   cor_tema: string;
+  horario_funcionamento?: string | null;
+  taxa_entrega?: string | number | null;
 }): Restaurante {
+  const rawNome = row.nome?.trim() ?? "";
+  const taxaRaw = row.taxa_entrega;
+  const taxaEntrega =
+    taxaRaw == null || taxaRaw === ""
+      ? null
+      : Math.max(0, Math.round(toNumber(taxaRaw) * 100) / 100);
   return {
     id: row.id,
+    rawNome,
     nome: resolveRestauranteDisplayNome(row.nome, row.slug),
     slug: row.slug,
-    whatsapp: row.whatsapp,
+    whatsapp: row.whatsapp?.trim() || "+5500000000000",
     logo: row.logo ?? null,
-    cor_tema: row.cor_tema,
+    cor_tema: row.cor_tema?.trim() || "#0d9488",
+    horario_funcionamento: row.horario_funcionamento?.trim() || null,
+    taxa_entrega: taxaEntrega,
   };
 }
+
+/** Normaliza cor para hex #rrggbb (fallback teal). */
+function normalizeCorTema(cor: string): string {
+  const t = cor.trim();
+  if (/^#[0-9A-Fa-f]{6}$/.test(t)) return t.toLowerCase();
+  if (/^#[0-9A-Fa-f]{3}$/.test(t)) {
+    const r = t[1];
+    const g = t[2];
+    const b = t[3];
+    return `#${r}${r}${g}${g}${b}${b}`.toLowerCase();
+  }
+  return "#0d9488";
+}
+
+const PRESET_CORES_TEMA = [
+  "#0d9488",
+  "#0071e3",
+  "#7c3aed",
+  "#ea580c",
+  "#dc2626",
+  "#059669",
+  "#ca8a04",
+  "#1d1d1f",
+] as const;
 
 function digitsOnly(input: string) {
   return input.replace(/\D/g, "");
@@ -530,9 +602,11 @@ function ModalPrato(props: {
   const [form, setForm] = useState(emptyPratoForm);
   const [arquivoImagem, setArquivoImagem] = useState<File | null>(null);
   const [submitting, setSubmitting] = useState(false);
+  const [formError, setFormError] = useState<string | null>(null);
 
   useEffect(() => {
     if (!open) return;
+    setFormError(null);
     setArquivoImagem(null);
     if (mode === "edit" && initial) {
       setForm({
@@ -551,8 +625,16 @@ function ModalPrato(props: {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    const precoNormalizado = Number(form.preco.replace(/\s/g, "").replace(",", "."));
-    if (!form.nome.trim() || Number.isNaN(precoNormalizado) || precoNormalizado < 0) return;
+    setFormError(null);
+    const precoNormalizado = parsePrecoBrasileiro(form.preco);
+    if (!form.nome.trim()) {
+      setFormError("Informe o nome do prato.");
+      return;
+    }
+    if (precoNormalizado == null) {
+      setFormError("Informe um preço válido (ex.: 12,90 ou 1.234,56).");
+      return;
+    }
     setSubmitting(true);
     try {
       await onSubmit({
@@ -567,8 +649,12 @@ function ModalPrato(props: {
         imagemAtual: mode === "edit" && initial ? (initial.imagem ?? null) : null,
       });
       onClose();
-    } catch {
-      // Erro de rede / Supabase: o pai pode ter setado mensagem; modal permanece aberto.
+    } catch (err) {
+      const msg =
+        err instanceof Error && err.message
+          ? err.message
+          : "Não foi possível salvar. Verifique os dados ou tente sem foto.";
+      setFormError(msg);
     } finally {
       setSubmitting(false);
     }
@@ -607,6 +693,7 @@ function ModalPrato(props: {
             <input
               value={form.preco}
               onChange={(e) => setForm((f) => ({ ...f, preco: e.target.value }))}
+              placeholder="Ex.: 24,90 ou 1.299,00"
               className="w-full rounded-xl border border-black/[0.08] bg-white px-3 py-2.5 text-sm text-[#1d1d1f] shadow-[0_1px_0_rgba(0,0,0,0.04)] outline-none transition focus:border-[#0071e3]/40 focus:ring-2 focus:ring-[#0071e3]/15"
               required
             />
@@ -674,6 +761,11 @@ function ModalPrato(props: {
               {submitting ? "Salvando…" : "Salvar"}
             </button>
           </div>
+          {formError ? (
+            <p className="pt-2 text-center text-xs font-medium text-red-600" role="alert">
+              {formError}
+            </p>
+          ) : null}
         </form>
       </div>
     </div>
@@ -704,6 +796,15 @@ function AdminPageInner() {
   const [pratoModalMode, setPratoModalMode] = useState<"create" | "edit">("create");
   const [editingPrato, setEditingPrato] = useState<Prato | null>(null);
   const [resolvingSlug, setResolvingSlug] = useState(false);
+  const [cardapioLinkCopied, setCardapioLinkCopied] = useState(false);
+
+  const [tenantSaving, setTenantSaving] = useState(false);
+  const [cfgNome, setCfgNome] = useState("");
+  const [cfgWhatsapp, setCfgWhatsapp] = useState("");
+  const [cfgHorario, setCfgHorario] = useState("");
+  const [cfgTaxaStr, setCfgTaxaStr] = useState("");
+  const [cfgCor, setCfgCor] = useState("#0d9488");
+  const [cfgMsg, setCfgMsg] = useState<string | null>(null);
 
   useEffect(() => {
     if (tenantSlug) return;
@@ -787,7 +888,9 @@ function AdminPageInner() {
         async () =>
           supabase
             .from("restaurantes")
-            .select("id, nome, slug, whatsapp, logo, cor_tema")
+            .select(
+              "id, nome, slug, whatsapp, logo, cor_tema, horario_funcionamento, taxa_entrega",
+            )
             .eq("slug", tenantSlug)
             .maybeSingle(),
         { shouldRetry: (r) => isRetryableSupabaseError(r.error) },
@@ -868,6 +971,65 @@ function AdminPageInner() {
   useEffect(() => {
     void loadData();
   }, [loadData]);
+
+  useEffect(() => {
+    if (tab !== "configuracoes" || !restaurante) return;
+    setCfgNome(restaurante.rawNome !== "" ? restaurante.rawNome : restaurante.nome);
+    setCfgWhatsapp(restaurante.whatsapp);
+    setCfgHorario(restaurante.horario_funcionamento ?? "");
+    setCfgTaxaStr(
+      restaurante.taxa_entrega != null && restaurante.taxa_entrega > 0
+        ? String(restaurante.taxa_entrega).replace(".", ",")
+        : "",
+    );
+    setCfgCor(restaurante.cor_tema);
+    setCfgMsg(null);
+  }, [tab, restaurante]);
+
+  const salvarConfiguracoesTenant = useCallback(async () => {
+    if (!restaurante) return;
+    const nomeLimpo = cfgNome.trim();
+    if (nomeLimpo.length < 2) {
+      setCfgMsg("Informe o nome do estabelecimento (mínimo 2 caracteres).");
+      return;
+    }
+    if (!digitsOnly(cfgWhatsapp) || digitsOnly(cfgWhatsapp).length < 10) {
+      setCfgMsg("Informe um WhatsApp válido com DDD e número.");
+      return;
+    }
+    const taxaParsed = cfgTaxaStr.trim() === "" ? null : parsePrecoBrasileiro(cfgTaxaStr);
+    if (cfgTaxaStr.trim() !== "" && taxaParsed == null) {
+      setCfgMsg("Taxa de entrega inválida. Use ex.: 5,00 ou deixe em branco.");
+      return;
+    }
+    const corOk = normalizeCorTema(cfgCor);
+
+    setTenantSaving(true);
+    setCfgMsg(null);
+    setFetchError(null);
+    try {
+      const { error } = await supabase
+        .from("restaurantes")
+        .update({
+          nome: nomeLimpo,
+          whatsapp: cfgWhatsapp.trim(),
+          cor_tema: corOk,
+          horario_funcionamento: cfgHorario.trim() || null,
+          taxa_entrega: taxaParsed,
+        })
+        .eq("id", restaurante.id);
+
+      if (error) {
+        setCfgMsg(error.message);
+        return;
+      }
+      setCfgMsg("Configurações salvas com sucesso.");
+      window.setTimeout(() => setCfgMsg(null), 4000);
+      await loadData();
+    } finally {
+      setTenantSaving(false);
+    }
+  }, [restaurante, cfgNome, cfgWhatsapp, cfgHorario, cfgTaxaStr, cfgCor, supabase, loadData]);
 
   useEffect(() => {
     const rid = restaurante?.id;
@@ -1065,20 +1227,30 @@ function AdminPageInner() {
     arquivoImagem: File | null;
     imagemAtual: string | null;
   }) => {
+    const precoDb = Math.round(payload.preco * 100) / 100;
     let imagemFinal: string | null = payload.imagemAtual;
     let urlAntigaParaRemover: string | null = null;
 
     if (payload.arquivoImagem) {
-      const novaUrl = await enviarImagemAoBucketImagensPratos(
-        supabase,
-        payload.restaurante_id,
-        payload.arquivoImagem,
-      );
-      const antiga = payload.imagemAtual?.trim() ?? "";
-      if (payload.id && antiga.length > 0 && antiga !== novaUrl) {
-        urlAntigaParaRemover = antiga;
+      try {
+        const novaUrl = await enviarImagemAoBucketImagensPratos(
+          supabase,
+          payload.restaurante_id,
+          payload.arquivoImagem,
+        );
+        const antiga = payload.imagemAtual?.trim() ?? "";
+        if (payload.id && antiga.length > 0 && antiga !== novaUrl) {
+          urlAntigaParaRemover = antiga;
+        }
+        imagemFinal = novaUrl;
+      } catch (err) {
+        const msg =
+          err && typeof err === "object" && "message" in err
+            ? String((err as { message: unknown }).message)
+            : "Não foi possível enviar a foto. Tente outra imagem ou salve sem foto.";
+        setFetchError(msg);
+        throw new Error(msg);
       }
-      imagemFinal = novaUrl;
     }
 
     if (payload.id) {
@@ -1086,7 +1258,7 @@ function AdminPageInner() {
         .from("pratos")
         .update({
           nome: payload.nome,
-          preco: payload.preco,
+          preco: precoDb,
           descricao: payload.descricao,
           categoria: payload.categoria,
           status: payload.status,
@@ -1096,7 +1268,7 @@ function AdminPageInner() {
 
       if (error) {
         setFetchError(error.message);
-        throw error;
+        throw new Error(error.message);
       }
       if (urlAntigaParaRemover) {
         const pathAntigo = caminhoStorageDeUrlPublica(urlAntigaParaRemover);
@@ -1120,7 +1292,7 @@ function AdminPageInner() {
             ? {
                 ...p,
                 nome: payload.nome,
-                preco: payload.preco,
+                preco: precoDb,
                 descricao: payload.descricao,
                 categoria: payload.categoria,
                 status: payload.status,
@@ -1135,7 +1307,7 @@ function AdminPageInner() {
         .insert({
           restaurante_id: payload.restaurante_id,
           nome: payload.nome,
-          preco: payload.preco,
+          preco: precoDb,
           descricao: payload.descricao,
           categoria: payload.categoria,
           status: payload.status,
@@ -1146,7 +1318,7 @@ function AdminPageInner() {
 
       if (error) {
         setFetchError(error.message);
-        throw error;
+        throw new Error(error.message);
       }
       const mapped = mapPratoRow(data as Parameters<typeof mapPratoRow>[0]);
       if (mapped) setPratos((lista) => [mapped, ...lista]);
@@ -1186,6 +1358,12 @@ function AdminPageInner() {
   const pratosRows = restaurante
     ? pratos.filter((p) => p.restaurante_id === restaurante.id)
     : [];
+
+  const cardapioPublicoUrl = useMemo(() => {
+    if (!restaurante?.slug) return "";
+    const base = getPublicAppUrl().replace(/\/$/, "");
+    return `${base}/${encodeURIComponent(restaurante.slug)}`;
+  }, [restaurante?.slug]);
 
   const colunas: { id: KanbanCol; title: string; accent: string }[] = [
     { id: "recebidos", title: "Pendente", accent: "from-sky-500/10 to-transparent" },
@@ -1434,31 +1612,232 @@ function AdminPageInner() {
           ) : null}
 
           {tab === "configuracoes" ? (
-            <section className="max-w-2xl rounded-2xl border border-black/[0.06] bg-white p-6 shadow-[0_8px_30px_-16px_rgba(0,0,0,0.12)]">
-              <h2 className="text-sm font-semibold tracking-tight text-[#1d1d1f]">Configurações do tenant</h2>
-              <p className="mt-3 text-sm leading-relaxed text-[#6e6e73]">
-                Marca, horários de funcionamento, taxa de entrega e integrações (Supabase, WhatsApp
-                Business, etc.) ficam centralizados aqui. Os dados exibidos na barra lateral e na
-                esteira devem refletir o registro carregado do backend por{" "}
-                <code className="rounded-md bg-[#f5f5f7] px-1.5 py-0.5 font-mono text-xs text-[#424245]">slug</code>{" "}
-                ou sessão autenticada.
-              </p>
-              <dl className="mt-6 grid gap-3 text-sm text-[#424245] sm:grid-cols-2">
-                <div className="rounded-xl border border-black/[0.06] bg-[#fafafa] p-4">
-                  <dt className="text-xs font-medium uppercase tracking-wide text-[#86868b]">WhatsApp cadastro</dt>
-                  <dd className="mt-1 font-medium text-[#1d1d1f]">{restaurante.whatsapp}</dd>
+            <section className="mx-auto max-w-2xl space-y-6">
+              <div className="rounded-2xl border border-black/[0.06] bg-white p-6 shadow-[0_8px_30px_-16px_rgba(0,0,0,0.12)] sm:p-8">
+                <h2 className="text-base font-semibold tracking-tight text-[#1d1d1f]">
+                  Cardápio público
+                </h2>
+                <p className="mt-2 text-sm leading-relaxed text-[#6e6e73]">
+                  Link que seus clientes abrem no celular para ver o cardápio e enviar o pedido pelo
+                  WhatsApp.
+                </p>
+                <div className="mt-4 flex flex-col gap-3 sm:flex-row sm:items-center">
+                  <a
+                    href={cardapioPublicoUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="min-w-0 flex-1 truncate rounded-xl border border-black/[0.08] bg-[#fafafa] px-3 py-2.5 text-sm font-medium text-[#0071e3] underline-offset-2 hover:underline"
+                  >
+                    {cardapioPublicoUrl}
+                  </a>
+                  <div className="flex shrink-0 gap-2">
+                    <button
+                      type="button"
+                      onClick={async () => {
+                        try {
+                          await navigator.clipboard.writeText(cardapioPublicoUrl);
+                          setCardapioLinkCopied(true);
+                          window.setTimeout(() => setCardapioLinkCopied(false), 2000);
+                        } catch {
+                          setFetchError(
+                            "Não foi possível copiar. Selecione o link e copie manualmente.",
+                          );
+                        }
+                      }}
+                      className="rounded-xl border border-black/[0.08] bg-white px-4 py-2 text-xs font-semibold text-[#1d1d1f] shadow-sm transition hover:bg-[#f5f5f7]"
+                    >
+                      {cardapioLinkCopied ? "Copiado!" : "Copiar"}
+                    </button>
+                    <a
+                      href={cardapioPublicoUrl}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="rounded-xl bg-[#1d1d1f] px-4 py-2 text-center text-xs font-semibold text-white shadow-sm transition hover:bg-black"
+                    >
+                      Abrir
+                    </a>
+                  </div>
                 </div>
-                <div className="rounded-xl border border-black/[0.06] bg-[#fafafa] p-4">
-                  <dt className="text-xs font-medium uppercase tracking-wide text-[#86868b]">Cor do tema</dt>
-                  <dd className="mt-1 flex items-center gap-2 font-medium text-[#1d1d1f]">
-                    <span
-                      className="h-4 w-4 rounded-full ring-2 ring-black/[0.06]"
-                      style={{ backgroundColor: restaurante.cor_tema }}
+              </div>
+
+              <div className="rounded-2xl border border-black/[0.06] bg-white p-6 shadow-[0_8px_30px_-16px_rgba(0,0,0,0.12)] sm:p-8">
+                <div className="flex flex-col gap-1 border-b border-black/[0.06] pb-5 sm:flex-row sm:items-end sm:justify-between">
+                  <div>
+                    <h2 className="text-base font-semibold tracking-tight text-[#1d1d1f]">
+                      Configurações do estabelecimento
+                    </h2>
+                    <p className="mt-1 text-sm text-[#6e6e73]">
+                      Nome, WhatsApp dos pedidos, horários, taxa de entrega e identidade visual.
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    disabled={tenantSaving}
+                    onClick={() => void salvarConfiguracoesTenant()}
+                    className="mt-4 shrink-0 rounded-xl bg-[#1d1d1f] px-5 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-black disabled:cursor-not-allowed disabled:opacity-50 sm:mt-0"
+                  >
+                    {tenantSaving ? "Salvando…" : "Salvar alterações"}
+                  </button>
+                </div>
+
+                <div className="mt-6 space-y-6">
+                  <div className="space-y-2">
+                    <label className="text-xs font-semibold uppercase tracking-wide text-[#86868b]">
+                      Nome do restaurante
+                    </label>
+                    <input
+                      type="text"
+                      value={cfgNome}
+                      onChange={(e) => setCfgNome(e.target.value)}
+                      className="w-full rounded-xl border border-black/[0.08] bg-[#fafafa] px-3 py-2.5 text-sm text-[#1d1d1f] outline-none transition focus:border-[#0071e3]/40 focus:ring-2 focus:ring-[#0071e3]/12"
+                      autoComplete="organization"
                     />
-                    {restaurante.cor_tema}
-                  </dd>
+                    <p className="text-[11px] text-[#86868b]">
+                      Aparece na vitrine, no painel e na mensagem de pedido do WhatsApp.
+                    </p>
+                  </div>
+
+                  <div className="space-y-2">
+                    <label className="text-xs font-semibold uppercase tracking-wide text-[#86868b]">
+                      WhatsApp dos pedidos
+                    </label>
+                    <PhoneInput
+                      value={cfgWhatsapp}
+                      onChange={setCfgWhatsapp}
+                      placeholder="DDD e número"
+                      className="flex flex-col gap-2 sm:flex-row sm:items-stretch"
+                    />
+                    <p className="text-[11px] text-[#86868b]">
+                      É para este número que o cliente envia o pedido montado no cardápio público.
+                    </p>
+                  </div>
+
+                  <div className="space-y-2">
+                    <label className="text-xs font-semibold uppercase tracking-wide text-[#86868b]">
+                      Horário de funcionamento
+                    </label>
+                    <textarea
+                      value={cfgHorario}
+                      onChange={(e) => setCfgHorario(e.target.value)}
+                      rows={3}
+                      placeholder="Ex.: Segunda a sexta 11h–15h e 18h–23h · Sábado 11h–16h"
+                      className="w-full resize-y rounded-xl border border-black/[0.08] bg-[#fafafa] px-3 py-2.5 text-sm text-[#1d1d1f] outline-none transition focus:border-[#0071e3]/40 focus:ring-2 focus:ring-[#0071e3]/12"
+                    />
+                    <p className="text-[11px] text-[#86868b]">
+                      Texto livre exibido no cardápio público para o cliente saber quando pode pedir.
+                    </p>
+                  </div>
+
+                  <div className="space-y-2">
+                    <label className="text-xs font-semibold uppercase tracking-wide text-[#86868b]">
+                      Taxa de entrega (opcional)
+                    </label>
+                    <input
+                      type="text"
+                      value={cfgTaxaStr}
+                      onChange={(e) => setCfgTaxaStr(e.target.value)}
+                      placeholder="Ex.: 5,90 ou deixe em branco"
+                      className="w-full max-w-xs rounded-xl border border-black/[0.08] bg-[#fafafa] px-3 py-2.5 text-sm text-[#1d1d1f] outline-none transition focus:border-[#0071e3]/40 focus:ring-2 focus:ring-[#0071e3]/12"
+                    />
+                    <p className="text-[11px] text-[#86868b]">
+                      Valor fixo somado ao subtotal do carrinho na mensagem enviada ao WhatsApp.
+                    </p>
+                  </div>
+
+                  <div className="rounded-xl border border-black/[0.06] bg-[#fafafa] p-4">
+                    <p className="text-xs font-semibold uppercase tracking-wide text-[#86868b]">
+                      Cor da marca
+                    </p>
+                    <p className="mt-1 text-[11px] leading-relaxed text-[#86868b]">
+                      Usada nos destaques do cardápio público e no painel (botões e detalhes).
+                    </p>
+                    <div className="mt-3 flex flex-wrap gap-2">
+                      {PRESET_CORES_TEMA.map((hex) => (
+                        <button
+                          key={hex}
+                          type="button"
+                          title={hex}
+                          onClick={() => setCfgCor(hex)}
+                          className={[
+                            "h-9 w-9 rounded-full border-2 border-white shadow-sm ring-2 transition",
+                            normalizeCorTema(cfgCor) === hex
+                              ? "ring-[#0071e3] ring-offset-2"
+                              : "ring-black/[0.06] hover:ring-black/15",
+                          ].join(" ")}
+                          style={{ backgroundColor: hex }}
+                          aria-label={`Cor ${hex}`}
+                          aria-pressed={normalizeCorTema(cfgCor) === hex}
+                        />
+                      ))}
+                    </div>
+                    <div className="mt-4 flex flex-wrap items-center gap-3">
+                      <input
+                        type="color"
+                        aria-label="Seletor de cor"
+                        value={normalizeCorTema(cfgCor)}
+                        onChange={(e) => setCfgCor(normalizeCorTema(e.target.value))}
+                        className="h-11 w-14 cursor-pointer overflow-hidden rounded-lg border border-black/[0.1] bg-white p-0.5"
+                      />
+                      <input
+                        type="text"
+                        value={cfgCor}
+                        onChange={(e) => setCfgCor(e.target.value)}
+                        spellCheck={false}
+                        className="min-w-[7rem] flex-1 rounded-xl border border-black/[0.08] bg-white px-3 py-2 font-mono text-sm text-[#1d1d1f] outline-none transition focus:border-[#0071e3]/40"
+                        placeholder="#0d9488"
+                      />
+                      <span
+                        className="h-10 w-10 shrink-0 rounded-xl border border-black/[0.08] shadow-inner"
+                        style={{ backgroundColor: normalizeCorTema(cfgCor) }}
+                        aria-hidden
+                      />
+                    </div>
+                  </div>
+
+                  {cfgMsg ? (
+                    <p
+                      className={
+                        cfgMsg.includes("sucesso")
+                          ? "text-sm font-medium text-emerald-700"
+                          : "text-sm font-medium text-red-600"
+                      }
+                      role="status"
+                    >
+                      {cfgMsg}
+                    </p>
+                  ) : null}
                 </div>
-              </dl>
+              </div>
+
+              <div className="rounded-2xl border border-dashed border-black/[0.12] bg-white/80 p-6 sm:p-8">
+                <h3 className="text-sm font-semibold text-[#1d1d1f]">Identificação da URL</h3>
+                <p className="mt-2 text-sm leading-relaxed text-[#6e6e73]">
+                  O slug do cardápio é fixo após o cadastro. Para alterá-lo, entre em contato com o
+                  suporte da plataforma.
+                </p>
+                <p className="mt-3 inline-flex rounded-lg bg-[#f5f5f7] px-3 py-2 font-mono text-sm font-medium text-[#424245]">
+                  {restaurante.slug}
+                </p>
+              </div>
+
+              <div className="rounded-2xl border border-black/[0.06] bg-[#fafafa] p-6 sm:p-8">
+                <h3 className="text-sm font-semibold text-[#1d1d1f]">Integrações</h3>
+                <ul className="mt-3 list-disc space-y-2 pl-5 text-sm leading-relaxed text-[#6e6e73]">
+                  <li>
+                    <strong className="font-medium text-[#424245]">Stripe</strong> — cobrança da
+                    assinatura e faturamento do SaaS; não é necessário configurar chaves aqui.
+                  </li>
+                  <li>
+                    <strong className="font-medium text-[#424245]">WhatsApp</strong> — o número
+                    acima recebe o texto do pedido gerado pelo cliente; use um número atendido pela
+                    equipe ou WhatsApp Business.
+                  </li>
+                  <li>
+                    <strong className="font-medium text-[#424245]">Supabase</strong> — dados do
+                    cardápio e pedidos ficam na sua instância; o painel usa sua sessão autenticada.
+                  </li>
+                </ul>
+              </div>
             </section>
           ) : null}
         </div>

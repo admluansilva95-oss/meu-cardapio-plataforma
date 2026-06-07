@@ -69,15 +69,26 @@ function buildPedidoTexto(restaurante: Restaurante, itens: CarrinhoItem[]) {
     const sub = prato.preco * quantidade;
     return `• ${quantidade}x ${prato.nome} — ${formatBRL(sub)}`;
   });
-  const total = itens.reduce((acc, { prato, quantidade }) => acc + prato.preco * quantidade, 0);
+  const subtotal = itens.reduce((acc, { prato, quantidade }) => acc + prato.preco * quantidade, 0);
+  const taxa =
+    itens.length > 0 && restaurante.taxa_entrega && restaurante.taxa_entrega > 0
+      ? restaurante.taxa_entrega
+      : 0;
+  const total = subtotal + taxa;
 
-  return [
+  const blocos: string[] = [
     `Olá! Gostaria de fazer um pedido no *${restaurante.nome}*`,
     "",
     ...linhasItens,
     "",
-    `*Total:* ${formatBRL(total)}`,
-  ].join("\n");
+  ];
+  if (taxa > 0) {
+    blocos.push(`*Subtotal:* ${formatBRL(subtotal)}`);
+    blocos.push(`*Taxa de entrega:* ${formatBRL(taxa)}`);
+    blocos.push("");
+  }
+  blocos.push(`*Total:* ${formatBRL(total)}`);
+  return blocos.join("\n");
 }
 
 type RestauranteRow = {
@@ -87,16 +98,27 @@ type RestauranteRow = {
   whatsapp: string;
   logo: string | null;
   cor_tema: string;
+  horario_funcionamento?: string | null;
+  taxa_entrega?: string | number | null;
 };
 
 function mapRestauranteRow(row: RestauranteRow): Restaurante {
+  const rawNome = row.nome?.trim() ?? "";
+  const taxaRaw = row.taxa_entrega;
+  const taxaEntrega =
+    taxaRaw == null || taxaRaw === ""
+      ? null
+      : Math.max(0, Math.round(toNumber(taxaRaw) * 100) / 100);
   return {
     id: row.id,
+    rawNome,
     nome: resolveRestauranteDisplayNome(row.nome, row.slug),
     slug: row.slug,
-    whatsapp: row.whatsapp,
+    whatsapp: row.whatsapp?.trim() || "+5500000000000",
     logo: row.logo ?? null,
-    cor_tema: row.cor_tema,
+    cor_tema: row.cor_tema?.trim() || "#0d9488",
+    horario_funcionamento: row.horario_funcionamento?.trim() || null,
+    taxa_entrega: taxaEntrega,
   };
 }
 
@@ -237,7 +259,7 @@ export default function PublicCardapioPage() {
         async () =>
           supabase
             .from("restaurantes")
-            .select("id, nome, slug, whatsapp, logo, cor_tema")
+            .select("id, nome, slug, whatsapp, logo, cor_tema, horario_funcionamento, taxa_entrega")
             .eq("slug", slug)
             .maybeSingle(),
         { shouldRetry: (r) => isRetryableSupabaseError(r.error) },
@@ -371,10 +393,18 @@ export default function PublicCardapioPage() {
 
   const categorias = useMemo(() => groupPratosByCategoria(pratos), [pratos]);
 
-  const total = useMemo(
+  const subtotalCarrinho = useMemo(
     () => cart.reduce((acc, { prato, quantidade }) => acc + prato.preco * quantidade, 0),
     [cart],
   );
+
+  const taxaCarrinho = useMemo(() => {
+    const t = restaurante?.taxa_entrega;
+    if (t == null || t <= 0 || cart.length === 0) return 0;
+    return t;
+  }, [restaurante?.taxa_entrega, cart.length]);
+
+  const total = subtotalCarrinho + taxaCarrinho;
 
   const cartCount = useMemo(() => cart.reduce((n, x) => n + x.quantidade, 0), [cart]);
 
@@ -480,8 +510,22 @@ export default function PublicCardapioPage() {
               <h1 className="mt-2 text-3xl font-semibold tracking-tight text-[#1d1d1f] sm:text-[2.35rem] sm:leading-tight">
                 {restaurante.nome}
               </h1>
+              {restaurante.horario_funcionamento ? (
+                <p className="mt-2 text-sm font-medium" style={{ color: accent }}>
+                  {restaurante.horario_funcionamento}
+                </p>
+              ) : null}
               <p className="mt-3 max-w-xl text-sm leading-relaxed text-[#6e6e73]">
-                Seleção curada. Monte seu pedido com calma; finalize no carrinho e envie pelo WhatsApp.
+                Monte seu pedido com calma; finalize no carrinho e envie pelo WhatsApp.
+                {restaurante.taxa_entrega != null && restaurante.taxa_entrega > 0 ? (
+                  <>
+                    {" "}
+                    <span className="font-medium text-[#424245]">
+                      Taxa de entrega: {formatBRL(restaurante.taxa_entrega)}
+                    </span>
+                    .
+                  </>
+                ) : null}
               </p>
             </div>
           </div>
@@ -659,9 +703,25 @@ export default function PublicCardapioPage() {
             </div>
 
             <div className="border-t border-black/[0.06] bg-white/80 px-6 py-6 backdrop-blur-md">
+              {taxaCarrinho > 0 ? (
+                <div className="mb-3 space-y-1.5 text-sm text-[#6e6e73]">
+                  <div className="flex justify-between">
+                    <span>Subtotal</span>
+                    <span className="tabular-nums text-[#424245]">{formatBRL(subtotalCarrinho)}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span>Taxa de entrega</span>
+                    <span className="tabular-nums text-[#424245]">{formatBRL(taxaCarrinho)}</span>
+                  </div>
+                </div>
+              ) : null}
               <div className="mb-5 flex items-end justify-between">
-                <span className="text-xs font-semibold uppercase tracking-wider text-[#86868b]">Total estimado</span>
-                <span className="text-2xl font-semibold tabular-nums tracking-tight text-[#1d1d1f]">{formatBRL(total)}</span>
+                <span className="text-xs font-semibold uppercase tracking-wider text-[#86868b]">
+                  {taxaCarrinho > 0 ? "Total" : "Total estimado"}
+                </span>
+                <span className="text-2xl font-semibold tabular-nums tracking-tight text-[#1d1d1f]">
+                  {formatBRL(total)}
+                </span>
               </div>
               {waHref && cart.length > 0 ? (
                 <a

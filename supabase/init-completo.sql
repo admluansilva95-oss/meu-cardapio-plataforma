@@ -34,6 +34,19 @@ alter table public.restaurantes
 alter table public.restaurantes
   add column if not exists logo text null;
 
+alter table public.restaurantes
+  add column if not exists horario_funcionamento text null;
+
+alter table public.restaurantes
+  add column if not exists taxa_entrega numeric(10, 2) null;
+
+alter table public.restaurantes
+  drop constraint if exists restaurantes_taxa_entrega_nonneg;
+
+alter table public.restaurantes
+  add constraint restaurantes_taxa_entrega_nonneg
+  check (taxa_entrega is null or taxa_entrega >= 0);
+
 comment on table public.restaurantes is 'Tenant do cardápio (um registro por restaurante, após pagamento Stripe).';
 comment on column public.restaurantes.slug is 'URL pública: /{slug} e /admin?slug={slug}';
 comment on column public.restaurantes.owner_id is 'Dono (Supabase Auth). Preenchido no webhook checkout.session.completed.';

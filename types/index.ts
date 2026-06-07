@@ -7,6 +7,9 @@ export type PratoStatus = "ativo" | "pausado";
 
 export interface Restaurante {
   id: string;
+  /** Valor salvo em `restaurantes.nome` (pode estar vazio; a UI usa fallback a partir do slug). */
+  rawNome: string;
+  /** Nome exibido no painel e na vitrine. */
   nome: string;
   slug: string;
   /** Número no formato que o time usar no cadastro (ex.: +55 11 91234-5678) */
@@ -15,6 +18,10 @@ export interface Restaurante {
   logo: string | null;
   /** Cor principal da marca (hex ou CSS válido) — usada no tema do painel / vitrine */
   cor_tema: string;
+  /** Horários exibidos na vitrine (texto livre). */
+  horario_funcionamento?: string | null;
+  /** Taxa fixa de entrega (R$), opcional. */
+  taxa_entrega?: number | null;
 }
 
 export interface Prato {
