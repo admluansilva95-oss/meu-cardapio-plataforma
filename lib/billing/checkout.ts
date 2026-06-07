@@ -4,7 +4,7 @@ import { getPlanByPriceId } from "@/lib/plans";
 import { getStripe } from "@/lib/stripe/client";
 import { isValidSlug, normalizeSlugInput } from "@/lib/billing/slug";
 import { isSlugAvailable } from "@/lib/billing/restaurantes";
-import { getPublicAppUrl } from "@/lib/site-url";
+import { resolveDefaultAppOrigin } from "@/lib/site-url";
 
 export type CreateSubscriptionCheckoutInput = {
   userId: string;
@@ -48,7 +48,8 @@ export async function createSubscriptionCheckoutSession(
 
   const restaurantName = input.restaurantName.trim() || slug;
   const whatsapp = input.whatsapp?.trim() ?? "";
-  const baseUrl = getPublicAppUrl();
+
+  const baseUrl = resolveDefaultAppOrigin();
 
   let stripe: Stripe;
   try {
@@ -71,12 +72,17 @@ export async function createSubscriptionCheckoutSession(
   };
 
   try {
+    const success_url = `${baseUrl}/admin?checkout=success&success=true`;
+    const cancel_url = `${baseUrl}/assinar?canceled=true`;
+
+    console.log("===[ STRIPE PAYLOAD URLs ]===", { success_url, cancel_url });
+
     const session = await stripe.checkout.sessions.create({
       mode: "subscription",
       customer_email: input.userEmail,
       line_items: [{ price: input.priceId, quantity: 1 }],
-      success_url: `${baseUrl}/admin?checkout=success&success=true`,
-      cancel_url: `${baseUrl}/assinar?canceled=true&priceId=${encodeURIComponent(input.priceId)}`,
+      success_url,
+      cancel_url,
       metadata,
       subscription_data: {
         metadata: {

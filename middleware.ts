@@ -66,6 +66,9 @@ export async function middleware(request: NextRequest) {
     return response;
   }
 
+  // Stripe success_url: /admin?checkout=success&success=true — libera acesso antes do
+  // webhook gravar `assinaturas` (evita loop /cadastro?billing=required). Só `checkout`
+  // é obrigatório aqui; `success=true` é opcional (UX / analytics).
   const checkoutSuccess = searchParams.get("checkout") === "success";
 
   if (!assinaturasValidas?.length && !checkoutSuccess) {
