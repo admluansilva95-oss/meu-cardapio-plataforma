@@ -14,7 +14,22 @@ import { createBrowserSupabaseClient } from "@/lib/supabase";
 import { getPublicAppUrl } from "@/lib/site-url";
 import { isRetryableSupabaseError, withRetry } from "@/lib/with-retry";
 import { normalizeCorTema } from "@/lib/restaurante/cor-tema";
+import {
+  criarFuncionamentoSemanaVazio,
+  formatFuncionamentoResumo,
+  parseFuncionamentoSemana,
+  validarFuncionamentoSemana,
+  type FuncionamentoSemana,
+} from "@/lib/restaurante/funcionamento-semana";
+import {
+  parseTaxasEntregaZonas,
+  validarTaxasZonas,
+  zonasFromLegacyTaxa,
+  type TaxaEntregaZona,
+} from "@/lib/restaurante/taxas-entrega-zonas";
 import { BookOpen, ClipboardList, Palette, type LucideIcon } from "lucide-react";
+import { FuncionamentoSemanalForm } from "@/components/admin/FuncionamentoSemanalForm";
+import { TaxasZonasForm } from "@/components/admin/TaxasZonasForm";
 
 function formatSlugToDisplayName(slug: string): string {
   const s = slug.trim();
@@ -222,6 +237,8 @@ function mapRestauranteRow(row: {
   taxa_entrega?: string | number | null;
   vitrine_fechada?: boolean | null;
   mensagem_fechado?: string | null;
+  funcionamento_semana?: unknown;
+  taxas_entrega_zonas?: unknown;
 }): Restaurante {
   const rawNome = row.nome?.trim() ?? "";
   const taxaRaw = row.taxa_entrega;
@@ -241,6 +258,8 @@ function mapRestauranteRow(row: {
     taxa_entrega: taxaEntrega,
     vitrine_fechada: row.vitrine_fechada === true,
     mensagem_fechado: row.mensagem_fechado?.trim() || null,
+    funcionamento_semana: parseFuncionamentoSemana(row.funcionamento_semana) ?? undefined,
+    taxas_entrega_zonas: parseTaxasEntregaZonas(row.taxas_entrega_zonas) ?? undefined,
   };
 }
 
@@ -812,9 +831,11 @@ function AdminPageInner() {
   const [tenantSaving, setTenantSaving] = useState(false);
   const [cfgNome, setCfgNome] = useState("");
   const [cfgWhatsapp, setCfgWhatsapp] = useState("");
-  const [cfgHorario, setCfgHorario] = useState("");
-  const [cfgTaxaStr, setCfgTaxaStr] = useState("");
   const [cfgCor, setCfgCor] = useState("#0d9488");
+  const [cfgFuncionamento, setCfgFuncionamento] = useState<FuncionamentoSemana>(() =>
+    criarFuncionamentoSemanaVazio(),
+  );
+  const [cfgTaxasZonas, setCfgTaxasZonas] = useState<TaxaEntregaZona[]>([]);
   const [cfgVitrineFechada, setCfgVitrineFechada] = useState(false);
   const [cfgMensagemFechado, setCfgMensagemFechado] = useState("");
   const [cfgMsg, setCfgMsg] = useState<string | null>(null);
@@ -983,12 +1004,16 @@ function AdminPageInner() {
     if (tab !== "configuracoes" || !restaurante) return;
     setCfgNome(restaurante.rawNome !== "" ? restaurante.rawNome : restaurante.nome);
     setCfgWhatsapp(restaurante.whatsapp);
-    setCfgHorario(restaurante.horario_funcionamento ?? "");
-    setCfgTaxaStr(
-      restaurante.taxa_entrega != null && restaurante.taxa_entrega > 0
-        ? String(restaurante.taxa_entrega).replace(".", ",")
-        : "",
-    );
+    const parsedFn = restaurante.funcionamento_semana;
+    setCfgFuncionamento(parsedFn ?? criarFuncionamentoSemanaVazio());
+    const tz = restaurante.taxas_entrega_zonas;
+    if (tz && tz.length > 0) {
+      setCfgTaxasZonas(tz);
+    } else if (restaurante.taxa_entrega != null && restaurante.taxa_entrega > 0) {
+      setCfgTaxasZonas(zonasFromLegacyTaxa(restaurante.taxa_entrega) ?? []);
+    } else {
+      setCfgTaxasZonas([]);
+    }
     setCfgCor(restaurante.cor_tema);
     setCfgVitrineFechada(restaurante.vitrine_fechada === true);
     setCfgMensagemFechado(restaurante.mensagem_fechado ?? "");
@@ -1006,11 +1031,19 @@ function AdminPageInner() {
       setCfgMsg("Informe um WhatsApp válido com DDD e número.");
       return;
     }
-    const taxaParsed = cfgTaxaStr.trim() === "" ? null : parsePrecoBrasileiro(cfgTaxaStr);
-    if (cfgTaxaStr.trim() !== "" && taxaParsed == null) {
-      setCfgMsg("Taxa de entrega inválida. Use ex.: 5,00 ou deixe em branco.");
+    const errF = validarFuncionamentoSemana(cfgFuncionamento);
+    if (errF) {
+      setCfgMsg(errF);
       return;
     }
+    const errZ = validarTaxasZonas(cfgTaxasZonas);
+    if (errZ) {
+      setCfgMsg(errZ);
+      return;
+    }
+    const resumoHorario = formatFuncionamentoResumo(cfgFuncionamento).trim() || null;
+    const taxaSync =
+      cfgTaxasZonas.length === 1 ? Math.round(cfgTaxasZonas[0].valor * 100) / 100 : null;
     const corOk = normalizeCorTema(cfgCor);
 
     setTenantSaving(true);
@@ -1038,10 +1071,12 @@ function AdminPageInner() {
           nome: nomeLimpo,
           whatsapp: cfgWhatsapp.trim(),
           cor_tema: corOk,
-          horario_funcionamento: cfgHorario.trim() || null,
-          taxa_entrega: taxaParsed,
+          horario_funcionamento: resumoHorario,
+          taxa_entrega: taxaSync,
           vitrine_fechada: cfgVitrineFechada,
           mensagem_fechado: cfgVitrineFechada ? cfgMensagemFechado.trim() || null : null,
+          funcionamento_semana: cfgFuncionamento,
+          taxas_entrega_zonas: cfgTaxasZonas.length > 0 ? cfgTaxasZonas : null,
         }),
       });
 
@@ -1064,8 +1099,8 @@ function AdminPageInner() {
     restaurante,
     cfgNome,
     cfgWhatsapp,
-    cfgHorario,
-    cfgTaxaStr,
+    cfgFuncionamento,
+    cfgTaxasZonas,
     cfgCor,
     cfgVitrineFechada,
     cfgMensagemFechado,
@@ -1667,21 +1702,15 @@ function AdminPageInner() {
           ) : null}
 
           {tab === "configuracoes" ? (
-            <section className="mx-auto max-w-2xl space-y-6">
-              <div className="rounded-2xl border border-black/[0.06] bg-white p-6 shadow-[0_8px_30px_-16px_rgba(0,0,0,0.12)] sm:p-8">
-                <h2 className="text-base font-semibold tracking-tight text-[#1d1d1f]">
-                  Cardápio público
-                </h2>
-                <p className="mt-2 text-sm leading-relaxed text-[#6e6e73]">
-                  Link que seus clientes abrem no celular para ver o cardápio e enviar o pedido pelo
-                  WhatsApp.
-                </p>
-                <div className="mt-4 flex flex-col gap-3 sm:flex-row sm:items-center">
+            <section className="mx-auto max-w-xl space-y-8">
+              <div className="rounded-2xl border border-black/[0.06] bg-white px-5 py-6 sm:px-6 sm:py-7">
+                <p className="text-xs font-medium uppercase tracking-wide text-[#86868b]">Link público</p>
+                <div className="mt-3 flex flex-col gap-3 sm:flex-row sm:items-center">
                   <a
                     href={cardapioPublicoUrl}
                     target="_blank"
                     rel="noopener noreferrer"
-                    className="min-w-0 flex-1 truncate rounded-xl border border-black/[0.08] bg-[#fafafa] px-3 py-2.5 text-sm font-medium text-[#0071e3] underline-offset-2 hover:underline"
+                    className="min-w-0 flex-1 truncate text-sm font-medium text-[#0071e3] underline-offset-2 hover:underline"
                   >
                     {cardapioPublicoUrl}
                   </a>
@@ -1699,15 +1728,15 @@ function AdminPageInner() {
                           );
                         }
                       }}
-                      className="rounded-xl border border-black/[0.08] bg-white px-4 py-2 text-xs font-semibold text-[#1d1d1f] shadow-sm transition hover:bg-[#f5f5f7]"
+                      className="rounded-full border border-black/[0.08] bg-[#f5f5f7] px-3 py-1.5 text-xs font-semibold text-[#1d1d1f] transition hover:bg-[#ececee]"
                     >
-                      {cardapioLinkCopied ? "Copiado!" : "Copiar"}
+                      {cardapioLinkCopied ? "Copiado" : "Copiar"}
                     </button>
                     <a
                       href={cardapioPublicoUrl}
                       target="_blank"
                       rel="noopener noreferrer"
-                      className="rounded-xl bg-[#1d1d1f] px-4 py-2 text-center text-xs font-semibold text-white shadow-sm transition hover:bg-black"
+                      className="rounded-full bg-[#1d1d1f] px-3 py-1.5 text-center text-xs font-semibold text-white transition hover:bg-black"
                     >
                       Abrir
                     </a>
@@ -1715,46 +1744,36 @@ function AdminPageInner() {
                 </div>
               </div>
 
-              <div className="rounded-2xl border border-black/[0.06] bg-white p-6 shadow-[0_8px_30px_-16px_rgba(0,0,0,0.12)] sm:p-8">
-                <div className="flex flex-col gap-1 border-b border-black/[0.06] pb-5 sm:flex-row sm:items-end sm:justify-between">
-                  <div>
-                    <h2 className="text-base font-semibold tracking-tight text-[#1d1d1f]">
-                      Configurações do estabelecimento
-                    </h2>
-                    <p className="mt-1 text-sm text-[#6e6e73]">
-                      Nome, WhatsApp dos pedidos, horários, taxa de entrega e identidade visual.
-                    </p>
-                  </div>
+              <div className="rounded-2xl border border-black/[0.06] bg-white px-5 py-6 sm:px-6 sm:py-7">
+                <div className="flex flex-col gap-4 border-b border-black/[0.06] pb-5 sm:flex-row sm:items-center sm:justify-between">
+                  <h2 className="text-lg font-semibold tracking-tight text-[#1d1d1f]">Estabelecimento</h2>
                   <button
                     type="button"
                     disabled={tenantSaving}
                     onClick={() => void salvarConfiguracoesTenant()}
-                    className="mt-4 shrink-0 rounded-xl bg-[#1d1d1f] px-5 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-black disabled:cursor-not-allowed disabled:opacity-50 sm:mt-0"
+                    className="rounded-full bg-[#1d1d1f] px-5 py-2 text-sm font-semibold text-white transition hover:bg-black disabled:cursor-not-allowed disabled:opacity-50"
                   >
-                    {tenantSaving ? "Salvando…" : "Salvar alterações"}
+                    {tenantSaving ? "Salvando…" : "Salvar"}
                   </button>
                 </div>
 
-                <div className="mt-6 space-y-6">
+                <div className="mt-6 space-y-8">
                   <div className="space-y-2">
                     <label className="text-xs font-semibold uppercase tracking-wide text-[#86868b]">
-                      Nome do restaurante
+                      Nome
                     </label>
                     <input
                       type="text"
                       value={cfgNome}
                       onChange={(e) => setCfgNome(e.target.value)}
-                      className="w-full rounded-xl border border-black/[0.08] bg-[#fafafa] px-3 py-2.5 text-sm text-[#1d1d1f] outline-none transition focus:border-[#0071e3]/40 focus:ring-2 focus:ring-[#0071e3]/12"
+                      className="w-full rounded-xl border-0 bg-[#f5f5f7] px-3 py-2.5 text-sm text-[#1d1d1f] outline-none ring-1 ring-black/[0.06] transition focus:ring-2 focus:ring-[#0071e3]/35"
                       autoComplete="organization"
                     />
-                    <p className="text-[11px] text-[#86868b]">
-                      Aparece na vitrine, no painel e na mensagem de pedido do WhatsApp.
-                    </p>
                   </div>
 
                   <div className="space-y-2">
                     <label className="text-xs font-semibold uppercase tracking-wide text-[#86868b]">
-                      WhatsApp dos pedidos
+                      WhatsApp (pedidos)
                     </label>
                     <PhoneInput
                       value={cfgWhatsapp}
@@ -1762,92 +1781,44 @@ function AdminPageInner() {
                       placeholder="DDD e número"
                       className="flex flex-col gap-2 sm:flex-row sm:items-stretch"
                     />
-                    <p className="text-[11px] text-[#86868b]">
-                      É para este número que o cliente envia o pedido montado no cardápio público.
-                    </p>
                   </div>
 
-                  <div className="space-y-2">
-                    <label className="text-xs font-semibold uppercase tracking-wide text-[#86868b]">
-                      Horário de funcionamento
-                    </label>
-                    <textarea
-                      value={cfgHorario}
-                      onChange={(e) => setCfgHorario(e.target.value)}
-                      rows={3}
-                      placeholder="Ex.: Segunda a sexta 11h–15h e 18h–23h · Sábado 11h–16h"
-                      className="w-full resize-y rounded-xl border border-black/[0.08] bg-[#fafafa] px-3 py-2.5 text-sm text-[#1d1d1f] outline-none transition focus:border-[#0071e3]/40 focus:ring-2 focus:ring-[#0071e3]/12"
-                    />
-                    <p className="text-[11px] text-[#86868b]">
-                      Este texto aparece em destaque no link do cardápio. Use frases claras (ex.:{" "}
-                      <span className="italic">Ter–Dom 11h–23h · Segundas fechado</span>) para quem abrir
-                      o link saber se vocês estão atendendo.
-                    </p>
-                  </div>
+                  <FuncionamentoSemanalForm value={cfgFuncionamento} onChange={setCfgFuncionamento} />
 
-                  <div className="rounded-xl border border-amber-200/70 bg-amber-50/50 p-4 sm:p-5">
+                  <div className="rounded-xl border border-amber-200/60 bg-amber-50/40 px-4 py-4">
                     <label className="flex cursor-pointer items-start gap-3">
                       <input
                         type="checkbox"
                         checked={cfgVitrineFechada}
                         onChange={(e) => setCfgVitrineFechada(e.target.checked)}
-                        className="mt-1 h-4 w-4 shrink-0 rounded border-black/20 text-[#1d1d1f] focus:ring-[#0071e3]/30"
+                        className="mt-1 h-4 w-4 shrink-0 rounded border-black/20 text-[#1d1d1f]"
                       />
-                      <span className="min-w-0">
-                        <span className="text-sm font-semibold text-[#1d1d1f]">
-                          Mostrar aviso de &quot;fechado&quot; no cardápio público
-                        </span>
-                        <span className="mt-1 block text-[11px] leading-relaxed text-[#6e6e73]">
-                          Quem abrir o link vê um aviso em destaque, lê o horário e{" "}
-                          <strong className="font-medium text-[#424245]">não consegue adicionar pratos</strong>{" "}
-                          ao carrinho (só consulta o cardápio).
+                      <span className="min-w-0 text-sm leading-snug text-[#1d1d1f]">
+                        <span className="font-semibold">Pausar pedidos no cardápio</span>
+                        <span className="mt-1 block text-xs font-normal text-[#6e6e73]">
+                          Aviso visível no link; o cliente só consulta o menu.
                         </span>
                       </span>
                     </label>
                     {cfgVitrineFechada ? (
-                      <div className="mt-4 space-y-2 border-t border-amber-200/60 pt-4 pl-7 sm:pl-8">
-                        <label className="text-xs font-semibold uppercase tracking-wide text-[#86868b]">
-                          Mensagem no aviso (opcional)
-                        </label>
+                      <div className="mt-4 space-y-2 border-t border-amber-200/50 pt-4">
                         <textarea
                           value={cfgMensagemFechado}
                           onChange={(e) => setCfgMensagemFechado(e.target.value.slice(0, 400))}
-                          rows={3}
+                          rows={2}
                           maxLength={400}
-                          placeholder="Ex.: Hoje fechamos mais cedo. Voltamos amanhã ao meio-dia."
-                          className="w-full resize-y rounded-xl border border-black/[0.08] bg-white px-3 py-2.5 text-sm text-[#1d1d1f] outline-none transition focus:border-[#0071e3]/40 focus:ring-2 focus:ring-[#0071e3]/12"
+                          placeholder="Mensagem opcional no aviso"
+                          className="w-full rounded-xl border-0 bg-white/90 px-3 py-2.5 text-sm text-[#1d1d1f] outline-none ring-1 ring-black/[0.06] focus:ring-[#0071e3]/30"
                         />
-                        <p className="text-[11px] text-[#86868b]">
-                          Se deixar em branco, o site usa uma mensagem padrão amigável.
-                        </p>
                       </div>
                     ) : null}
                   </div>
 
-                  <div className="space-y-2">
-                    <label className="text-xs font-semibold uppercase tracking-wide text-[#86868b]">
-                      Taxa de entrega (opcional)
-                    </label>
-                    <input
-                      type="text"
-                      value={cfgTaxaStr}
-                      onChange={(e) => setCfgTaxaStr(e.target.value)}
-                      placeholder="Ex.: 5,90 ou deixe em branco"
-                      className="w-full max-w-xs rounded-xl border border-black/[0.08] bg-[#fafafa] px-3 py-2.5 text-sm text-[#1d1d1f] outline-none transition focus:border-[#0071e3]/40 focus:ring-2 focus:ring-[#0071e3]/12"
-                    />
-                    <p className="text-[11px] text-[#86868b]">
-                      Valor fixo somado ao subtotal do carrinho na mensagem enviada ao WhatsApp.
-                    </p>
-                  </div>
+                  <TaxasZonasForm value={cfgTaxasZonas} onChange={setCfgTaxasZonas} />
 
-                  <div className="rounded-xl border border-black/[0.06] bg-[#fafafa] p-4">
-                    <p className="text-xs font-semibold uppercase tracking-wide text-[#86868b]">
-                      Cor da marca
-                    </p>
-                    <p className="mt-1 text-[11px] leading-relaxed text-[#86868b]">
-                      Usada nos destaques do cardápio público e no painel (botões e detalhes).
-                    </p>
-                    <div className="mt-3 flex flex-wrap gap-2">
+                  <div className="space-y-3">
+                    <p className="text-xs font-semibold uppercase tracking-wide text-[#86868b]">Cor</p>
+                    <div className="flex flex-wrap items-center gap-3">
                       {PRESET_CORES_TEMA.map((hex) => (
                         <button
                           key={hex}
@@ -1865,27 +1836,19 @@ function AdminPageInner() {
                           aria-pressed={normalizeCorTema(cfgCor) === hex}
                         />
                       ))}
-                    </div>
-                    <div className="mt-4 flex flex-wrap items-center gap-3">
                       <input
                         type="color"
-                        aria-label="Seletor de cor"
+                        aria-label="Cor personalizada"
                         value={normalizeCorTema(cfgCor)}
                         onChange={(e) => setCfgCor(normalizeCorTema(e.target.value))}
-                        className="h-11 w-14 cursor-pointer overflow-hidden rounded-lg border border-black/[0.1] bg-white p-0.5"
+                        className="h-9 w-12 cursor-pointer overflow-hidden rounded-lg border-0 bg-transparent p-0"
                       />
                       <input
                         type="text"
                         value={cfgCor}
                         onChange={(e) => setCfgCor(e.target.value)}
                         spellCheck={false}
-                        className="min-w-[7rem] flex-1 rounded-xl border border-black/[0.08] bg-white px-3 py-2 font-mono text-sm text-[#1d1d1f] outline-none transition focus:border-[#0071e3]/40"
-                        placeholder="#0d9488"
-                      />
-                      <span
-                        className="h-10 w-10 shrink-0 rounded-xl border border-black/[0.08] shadow-inner"
-                        style={{ backgroundColor: normalizeCorTema(cfgCor) }}
-                        aria-hidden
+                        className="w-28 rounded-lg border-0 bg-[#f5f5f7] px-2 py-1.5 font-mono text-xs text-[#1d1d1f] outline-none ring-1 ring-black/[0.06] focus:ring-[#0071e3]/35"
                       />
                     </div>
                   </div>
@@ -1895,7 +1858,8 @@ function AdminPageInner() {
                       className={
                         cfgMsg === "Configurações salvas com sucesso."
                           ? "text-sm font-medium text-emerald-700"
-                          : cfgMsg.startsWith("Horário e taxa não foram gravados")
+                          : cfgMsg.startsWith("Horário e taxa não foram gravados") ||
+                              cfgMsg.startsWith("Parte dos dados")
                             ? "text-sm font-medium text-amber-800"
                             : "text-sm font-medium text-red-600"
                       }
@@ -1905,36 +1869,6 @@ function AdminPageInner() {
                     </p>
                   ) : null}
                 </div>
-              </div>
-
-              <div className="rounded-2xl border border-dashed border-black/[0.12] bg-white/80 p-6 sm:p-8">
-                <h3 className="text-sm font-semibold text-[#1d1d1f]">Identificação da URL</h3>
-                <p className="mt-2 text-sm leading-relaxed text-[#6e6e73]">
-                  O slug do cardápio é fixo após o cadastro. Para alterá-lo, entre em contato com o
-                  suporte da plataforma.
-                </p>
-                <p className="mt-3 inline-flex rounded-lg bg-[#f5f5f7] px-3 py-2 font-mono text-sm font-medium text-[#424245]">
-                  {restaurante.slug}
-                </p>
-              </div>
-
-              <div className="rounded-2xl border border-black/[0.06] bg-[#fafafa] p-6 sm:p-8">
-                <h3 className="text-sm font-semibold text-[#1d1d1f]">Integrações</h3>
-                <ul className="mt-3 list-disc space-y-2 pl-5 text-sm leading-relaxed text-[#6e6e73]">
-                  <li>
-                    <strong className="font-medium text-[#424245]">Stripe</strong> — cobrança da
-                    assinatura e faturamento do SaaS; não é necessário configurar chaves aqui.
-                  </li>
-                  <li>
-                    <strong className="font-medium text-[#424245]">WhatsApp</strong> — o número
-                    acima recebe o texto do pedido gerado pelo cliente; use um número atendido pela
-                    equipe ou WhatsApp Business.
-                  </li>
-                  <li>
-                    <strong className="font-medium text-[#424245]">Supabase</strong> — dados do
-                    cardápio e pedidos ficam na sua instância; o painel usa sua sessão autenticada.
-                  </li>
-                </ul>
               </div>
             </section>
           ) : null}

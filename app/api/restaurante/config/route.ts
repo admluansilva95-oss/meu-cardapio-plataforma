@@ -3,7 +3,13 @@ import { cookies } from "next/headers";
 import { NextResponse, type NextRequest } from "next/server";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { normalizeCorTema } from "@/lib/restaurante/cor-tema";
+import {
+  type FuncionamentoSemana,
+  validarFuncionamentoSemana,
+} from "@/lib/restaurante/funcionamento-semana";
 import { createAdminSupabaseClient } from "@/lib/supabase/admin";
+import type { TaxaEntregaZona } from "@/lib/restaurante/taxas-entrega-zonas";
+import { validarTaxasZonas } from "@/lib/restaurante/taxas-entrega-zonas";
 
 type CookieToSet = { name: string; value: string; options: CookieOptions };
 
@@ -23,10 +29,12 @@ type ConfigBody = {
   taxa_entrega?: number | null;
   vitrine_fechada?: boolean;
   mensagem_fechado?: string | null;
+  funcionamento_semana?: FuncionamentoSemana;
+  taxas_entrega_zonas?: TaxaEntregaZona[] | null;
 };
 
 const MIGRATION_HINT =
-  "Horário, taxa e aviso de fechado não foram gravados: faltam colunas no Supabase. No SQL Editor, execute em ordem: supabase/migrations/20260608120000_restaurantes_tenant_settings.sql e depois 20260610120000_restaurantes_vitrine_fechada.sql. Nome, WhatsApp e cor já foram salvos.";
+  "Parte dos dados não foi gravada no banco (colunas em falta). No SQL Editor do Supabase, execute em ordem as migrações: 20260608120000_restaurantes_tenant_settings.sql, 20260610120000_restaurantes_vitrine_fechada.sql e 20260611120000_restaurantes_funcionamento_taxas_json.sql. Nome, WhatsApp e cor já foram salvos.";
 
 function isSchemaColumnError(err: { message?: string; code?: string; details?: string } | null): boolean {
   if (!err) return false;
@@ -47,70 +55,92 @@ function isRlsError(message: string): boolean {
   );
 }
 
-async function updateRestauranteConfig(
+async function runUpdate(
   client: SupabaseClient,
   opts: { id: string; ownerFilter: string | null },
-  base: Record<string, unknown>,
+  payload: Record<string, unknown>,
+) {
+  let q = client.from("restaurantes").update(payload).eq("id", opts.id);
+  if (opts.ownerFilter) {
+    q = q.eq("owner_id", opts.ownerFilter);
+  }
+  return q.select("id");
+}
+
+type Interpret =
+  | { ok: true }
+  | { ok: false; message: string; code?: "rls" | "other" };
+
+function interpretUpdate(
+  res: Awaited<ReturnType<typeof runUpdate>>,
+): Interpret {
+  const { data, error } = res;
+  if (error) {
+    return {
+      ok: false,
+      message: error.message,
+      code: isRlsError(error.message) ? "rls" : "other",
+    };
+  }
+  if (!data?.length) {
+    return {
+      ok: false,
+      message:
+        "Nenhuma linha foi atualizada (permissão negada ou restaurante inexistente). Verifique se você é o dono do estabelecimento.",
+      code: "rls",
+    };
+  }
+  return { ok: true };
+}
+
+async function applyLegacyExtras(
+  client: SupabaseClient,
+  opts: { id: string; ownerFilter: string | null },
   extras: {
     horario_funcionamento: string | null;
     taxa_entrega: number | null;
     vitrine_fechada: boolean;
     mensagem_fechado: string | null;
   },
-): Promise<
-  { ok: true; extrasSkipped?: boolean } | { ok: false; message: string; code?: "rls" | "other" }
-> {
-  const run = async (payload: Record<string, unknown>) => {
-    let q = client.from("restaurantes").update(payload).eq("id", opts.id);
-    if (opts.ownerFilter) {
-      q = q.eq("owner_id", opts.ownerFilter);
-    }
-    return q.select("id");
-  };
-
-  const interpret = (
-    res: Awaited<ReturnType<typeof run>>,
-  ): { ok: true } | { ok: false; message: string; code?: "rls" | "other" } => {
-    const { data, error } = res;
-    if (error) {
-      return {
-        ok: false,
-        message: error.message,
-        code: isRlsError(error.message) ? "rls" : "other",
-      };
-    }
-    if (!data?.length) {
-      return {
-        ok: false,
-        message:
-          "Nenhuma linha foi atualizada (permissão negada ou restaurante inexistente). Verifique se você é o dono do estabelecimento.",
-        code: "rls",
-      };
-    }
-    return { ok: true };
-  };
-
-  const baseRes = await run(base);
-  const rBase = interpret(baseRes);
-  if (!rBase.ok) return rBase;
-
-  const extraPayload: Record<string, unknown> = {
+): Promise<{ ok: true; skipped?: boolean } | { ok: false; message: string; code?: "rls" | "other" }> {
+  const payload: Record<string, unknown> = {
     horario_funcionamento: extras.horario_funcionamento,
     taxa_entrega: extras.taxa_entrega,
     vitrine_fechada: extras.vitrine_fechada,
     mensagem_fechado: extras.mensagem_fechado,
   };
+  const res = await runUpdate(client, opts, payload);
+  if (!res.error) {
+    const r = interpretUpdate(res);
+    if (r.ok) return { ok: true };
+    return r;
+  }
+  if (isSchemaColumnError(res.error)) {
+    return { ok: true, skipped: true };
+  }
+  return interpretUpdate(res);
+}
 
-  const extraRes = await run(extraPayload);
-  if (!extraRes.error) {
-    const rExtra = interpret(extraRes);
-    if (rExtra.ok) return { ok: true };
-    return rExtra;
+async function applyJsonExtras(
+  client: SupabaseClient,
+  opts: { id: string; ownerFilter: string | null },
+  funcionamento_semana: FuncionamentoSemana,
+  taxas_entrega_zonas: TaxaEntregaZona[] | null,
+): Promise<{ ok: true; skipped?: boolean } | { ok: false; message: string; code?: "rls" | "other" }> {
+  const payload: Record<string, unknown> = {
+    funcionamento_semana,
+    taxas_entrega_zonas: taxas_entrega_zonas,
+  };
+  const res = await runUpdate(client, opts, payload);
+  if (!res.error) {
+    const r = interpretUpdate(res);
+    if (r.ok) return { ok: true };
+    return r;
   }
-  if (isSchemaColumnError(extraRes.error)) {
-    return { ok: true, extrasSkipped: true };
+  if (isSchemaColumnError(res.error)) {
+    return { ok: true, skipped: true };
   }
-  return interpret(extraRes);
+  return interpretUpdate(res);
 }
 
 export async function POST(request: NextRequest) {
@@ -199,6 +229,16 @@ export async function POST(request: NextRequest) {
     typeof body.mensagem_fechado === "string" ? body.mensagem_fechado.trim().slice(0, 400) : "";
   const mensagem_fechado = vitrineFechada && mensagemFechadoRaw.length > 0 ? mensagemFechadoRaw : null;
 
+  const funcionamento_semana = body.funcionamento_semana;
+  const taxasBody = body.taxas_entrega_zonas;
+  const taxas_zonas = Array.isArray(taxasBody)
+    ? (taxasBody as TaxaEntregaZona[]).map((z) => ({
+        id: String(z.id ?? ""),
+        nome: String(z.nome ?? "").trim(),
+        valor: Math.max(0, Math.round(Number(z.valor) * 100) / 100) || 0,
+      }))
+    : null;
+
   if (!restauranteId) {
     const res = NextResponse.json({ error: "restauranteId é obrigatório." }, { status: 400 });
     return applyAuthCookies(res, authCookieWrites);
@@ -215,16 +255,57 @@ export async function POST(request: NextRequest) {
     return applyAuthCookies(res, authCookieWrites);
   }
 
+  if (!funcionamento_semana || typeof funcionamento_semana !== "object") {
+    const res = NextResponse.json({ error: "Dados de funcionamento semanal inválidos." }, { status: 400 });
+    return applyAuthCookies(res, authCookieWrites);
+  }
+  const errF = validarFuncionamentoSemana(funcionamento_semana);
+  if (errF) {
+    const res = NextResponse.json({ error: errF }, { status: 400 });
+    return applyAuthCookies(res, authCookieWrites);
+  }
+  const funcionamentoSemanaGravar: FuncionamentoSemana = funcionamento_semana;
+  const listaZonas = taxas_zonas ?? [];
+  const errZ = validarTaxasZonas(listaZonas);
+  if (errZ) {
+    const res = NextResponse.json({ error: errZ }, { status: 400 });
+    return applyAuthCookies(res, authCookieWrites);
+  }
+
   const cor_tema = normalizeCorTema(corRaw);
   const base = { nome, whatsapp, cor_tema };
-  const extras = {
+  const legacyExtras = {
     horario_funcionamento: horario,
     taxa_entrega: taxa,
     vitrine_fechada: vitrineFechada,
     mensagem_fechado: vitrineFechada ? mensagem_fechado : null,
   };
 
+  const jsonZonas = listaZonas.length > 0 ? listaZonas : null;
+
   const admin = createAdminSupabaseClient();
+
+  async function runAll(client: SupabaseClient, ownerFilter: string | null) {
+    let q = client.from("restaurantes").update(base).eq("id", restauranteId);
+    if (ownerFilter) q = q.eq("owner_id", ownerFilter);
+    const baseRes = await q.select("id");
+    const r0 = interpretUpdate(baseRes);
+    if (!r0.ok) return { error: r0.message, code: r0.code } as const;
+
+    const r1 = await applyLegacyExtras(client, { id: restauranteId, ownerFilter }, legacyExtras);
+    if (!r1.ok) return { error: r1.message, code: r1.code } as const;
+
+    const r2 = await applyJsonExtras(
+      client,
+      { id: restauranteId, ownerFilter },
+      funcionamentoSemanaGravar,
+      jsonZonas,
+    );
+    if (!r2.ok) return { error: r2.message, code: r2.code } as const;
+
+    const partial = Boolean(r1.skipped || r2.skipped);
+    return { partial } as const;
+  }
 
   if (admin) {
     const { data: row, error: selErr } = await admin
@@ -249,45 +330,37 @@ export async function POST(request: NextRequest) {
       return applyAuthCookies(res, authCookieWrites);
     }
 
-    const result = await updateRestauranteConfig(
-      admin,
-      { id: restauranteId, ownerFilter: null },
-      base,
-      extras,
-    );
-    if (!result.ok) {
-      const res = NextResponse.json({ error: result.message }, { status: 500 });
+    const out = await runAll(admin, null);
+    if ("error" in out) {
+      const res = NextResponse.json(
+        { error: out.error },
+        { status: out.code === "rls" ? 403 : 500 },
+      );
       return applyAuthCookies(res, authCookieWrites);
     }
     const res = NextResponse.json({
       ok: true,
-      ...(result.extrasSkipped ? { warning: MIGRATION_HINT } : {}),
+      ...(out.partial ? { warning: MIGRATION_HINT } : {}),
     });
     return applyAuthCookies(res, authCookieWrites);
   }
 
-  const result = await updateRestauranteConfig(
-    supabase,
-    { id: restauranteId, ownerFilter: user.id },
-    base,
-    extras,
-  );
-
-  if (!result.ok) {
+  const out = await runAll(supabase, user.id);
+  if ("error" in out) {
     const hint =
-      result.code === "rls"
+      out.code === "rls"
         ? " Ative a política RLS de UPDATE para donos em `restaurantes` ou configure SUPABASE_SERVICE_ROLE_KEY no servidor (ex.: Vercel)."
         : "";
     const res = NextResponse.json(
-      { error: `${result.message}.${hint}` },
-      { status: result.code === "rls" ? 403 : 500 },
+      { error: `${out.error}.${hint}` },
+      { status: out.code === "rls" ? 403 : 500 },
     );
     return applyAuthCookies(res, authCookieWrites);
   }
 
   const res = NextResponse.json({
     ok: true,
-    ...(result.extrasSkipped ? { warning: MIGRATION_HINT } : {}),
+    ...(out.partial ? { warning: MIGRATION_HINT } : {}),
   });
   return applyAuthCookies(res, authCookieWrites);
 }

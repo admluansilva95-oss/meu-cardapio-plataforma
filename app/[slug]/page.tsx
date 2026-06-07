@@ -15,6 +15,13 @@ function mensagemErroCardapioParaCliente(message: string): string {
   return message;
 }
 import type { CarrinhoItem, Prato, Restaurante } from "@/types";
+import {
+  buildPedidoTextoWhatsApp,
+  taxaEntregaParaPedido,
+} from "@/lib/restaurante/pedido-texto-whatsapp";
+import { textoHorarioVitrine } from "@/lib/restaurante/horario-vitrine";
+import { parseFuncionamentoSemana } from "@/lib/restaurante/funcionamento-semana";
+import { parseTaxasEntregaZonas } from "@/lib/restaurante/taxas-entrega-zonas";
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -67,33 +74,6 @@ function waMeUrl(telefone: string, message: string) {
   return `https://wa.me/${d}?text=${text}`;
 }
 
-function buildPedidoTexto(restaurante: Restaurante, itens: CarrinhoItem[]) {
-  const linhasItens = itens.map(({ prato, quantidade }) => {
-    const sub = prato.preco * quantidade;
-    return `• ${quantidade}x ${prato.nome} — ${formatBRL(sub)}`;
-  });
-  const subtotal = itens.reduce((acc, { prato, quantidade }) => acc + prato.preco * quantidade, 0);
-  const taxa =
-    itens.length > 0 && restaurante.taxa_entrega && restaurante.taxa_entrega > 0
-      ? restaurante.taxa_entrega
-      : 0;
-  const total = subtotal + taxa;
-
-  const blocos: string[] = [
-    `Olá! Gostaria de fazer um pedido no *${restaurante.nome}*`,
-    "",
-    ...linhasItens,
-    "",
-  ];
-  if (taxa > 0) {
-    blocos.push(`*Subtotal:* ${formatBRL(subtotal)}`);
-    blocos.push(`*Taxa de entrega:* ${formatBRL(taxa)}`);
-    blocos.push("");
-  }
-  blocos.push(`*Total:* ${formatBRL(total)}`);
-  return blocos.join("\n");
-}
-
 type RestauranteRow = {
   id: string;
   nome: string;
@@ -105,6 +85,8 @@ type RestauranteRow = {
   taxa_entrega?: string | number | null;
   vitrine_fechada?: boolean | null;
   mensagem_fechado?: string | null;
+  funcionamento_semana?: unknown;
+  taxas_entrega_zonas?: unknown;
 };
 
 function mapRestauranteRow(row: RestauranteRow): Restaurante {
@@ -126,6 +108,8 @@ function mapRestauranteRow(row: RestauranteRow): Restaurante {
     taxa_entrega: taxaEntrega,
     vitrine_fechada: row.vitrine_fechada === true,
     mensagem_fechado: row.mensagem_fechado?.trim() || null,
+    funcionamento_semana: parseFuncionamentoSemana(row.funcionamento_semana) ?? undefined,
+    taxas_entrega_zonas: parseTaxasEntregaZonas(row.taxas_entrega_zonas) ?? undefined,
   };
 }
 
@@ -156,6 +140,10 @@ function mapPratoRow(row: PratoRow): Prato | null {
 
 function cartStorageKey(slug: string) {
   return `meu-cardapio:v1:cart:${slug}`;
+}
+
+function cartZonaStorageKey(slug: string) {
+  return `meu-cardapio:v1:cartZona:${slug}`;
 }
 
 function bucketName(p: Prato): string {
@@ -242,6 +230,7 @@ export default function PublicCardapioPage() {
   const [cart, setCart] = useState<CarrinhoItem[]>([]);
   const [cartHydrated, setCartHydrated] = useState(false);
   const [cartOpen, setCartOpen] = useState(false);
+  const [zonaEntregaId, setZonaEntregaId] = useState<string | null>(null);
 
   const fetchAbort = useRef<AbortController | null>(null);
 
@@ -335,6 +324,7 @@ export default function PublicCardapioPage() {
     if (!slug) return;
     setCart([]);
     setCartHydrated(false);
+    setZonaEntregaId(null);
   }, [slug]);
 
   useEffect(() => {
@@ -398,6 +388,45 @@ export default function PublicCardapioPage() {
     }
   }, [restaurante?.nome, slug]);
 
+  useEffect(() => {
+    if (!restaurante) return;
+    const zonas = restaurante.taxas_entrega_zonas ?? [];
+    if (zonas.length === 1) {
+      setZonaEntregaId(zonas[0].id);
+      return;
+    }
+    if (zonas.length === 0) {
+      setZonaEntregaId(null);
+      return;
+    }
+    if (!slug) return;
+    try {
+      const stored = localStorage.getItem(cartZonaStorageKey(slug));
+      if (stored && zonas.some((x) => x.id === stored)) {
+        setZonaEntregaId(stored);
+      } else {
+        setZonaEntregaId(null);
+      }
+    } catch {
+      setZonaEntregaId(null);
+    }
+  }, [restaurante, slug]);
+
+  useEffect(() => {
+    if (!slug || !cartHydrated || !restaurante) return;
+    const zonas = restaurante.taxas_entrega_zonas ?? [];
+    if (zonas.length <= 1) return;
+    try {
+      if (zonaEntregaId) {
+        localStorage.setItem(cartZonaStorageKey(slug), zonaEntregaId);
+      } else {
+        localStorage.removeItem(cartZonaStorageKey(slug));
+      }
+    } catch {
+      /* ignore */
+    }
+  }, [zonaEntregaId, slug, restaurante, cartHydrated]);
+
   const categorias = useMemo(() => groupPratosByCategoria(pratos), [pratos]);
 
   const subtotalCarrinho = useMemo(
@@ -406,10 +435,9 @@ export default function PublicCardapioPage() {
   );
 
   const taxaCarrinho = useMemo(() => {
-    const t = restaurante?.taxa_entrega;
-    if (t == null || t <= 0 || cart.length === 0) return 0;
-    return t;
-  }, [restaurante?.taxa_entrega, cart.length]);
+    if (!restaurante || cart.length === 0) return 0;
+    return taxaEntregaParaPedido(restaurante, zonaEntregaId).valor;
+  }, [restaurante, cart.length, zonaEntregaId]);
 
   const total = subtotalCarrinho + taxaCarrinho;
 
@@ -417,11 +445,13 @@ export default function PublicCardapioPage() {
 
   const waHref = useMemo(() => {
     if (!restaurante || cart.length === 0 || restaurante.vitrine_fechada) return null;
-    const msg = buildPedidoTexto(restaurante, cart);
+    const zonas = restaurante.taxas_entrega_zonas ?? [];
+    if (zonas.length > 1 && !zonaEntregaId) return null;
+    const msg = buildPedidoTextoWhatsApp(restaurante, cart, zonaEntregaId);
     const d = digitsOnly(restaurante.whatsapp);
     if (!d) return null;
     return waMeUrl(restaurante.whatsapp, msg);
-  }, [restaurante, cart]);
+  }, [restaurante, cart, zonaEntregaId]);
 
   const accent = restaurante?.cor_tema?.trim() || "#1d1d1f";
 
@@ -503,6 +533,8 @@ export default function PublicCardapioPage() {
   const textoAvisoFechado =
     restaurante.mensagem_fechado?.trim() || FECHADO_PADRAO_VITRINE;
 
+  const textoHor = textoHorarioVitrine(restaurante);
+
   return (
     <div className={shellClass}>
       <header className="border-b border-black/[0.06] bg-[#fbfbfd]/90 backdrop-blur-xl">
@@ -538,15 +570,42 @@ export default function PublicCardapioPage() {
                     Monte seu pedido com calma; finalize no carrinho e envie pelo WhatsApp.
                   </>
                 )}
-                {restaurante.taxa_entrega != null && restaurante.taxa_entrega > 0 ? (
-                  <>
-                    {" "}
-                    <span className="font-medium text-[#424245]">
-                      Taxa de entrega: {formatBRL(restaurante.taxa_entrega)}
-                    </span>
-                    .
-                  </>
-                ) : null}
+                {(() => {
+                  const zonasTx = restaurante.taxas_entrega_zonas ?? [];
+                  if (zonasTx.length === 1) {
+                    return (
+                      <>
+                        {" "}
+                        <span className="font-medium text-[#424245]">
+                          Taxa de entrega: {formatBRL(zonasTx[0].valor)}
+                        </span>
+                        .
+                      </>
+                    );
+                  }
+                  if (zonasTx.length > 1) {
+                    return (
+                      <>
+                        {" "}
+                        <span className="font-medium text-[#424245]">
+                          Taxa conforme a região — escolha no carrinho.
+                        </span>
+                      </>
+                    );
+                  }
+                  if (restaurante.taxa_entrega != null && restaurante.taxa_entrega > 0) {
+                    return (
+                      <>
+                        {" "}
+                        <span className="font-medium text-[#424245]">
+                          Taxa de entrega: {formatBRL(restaurante.taxa_entrega)}
+                        </span>
+                        .
+                      </>
+                    );
+                  }
+                  return null;
+                })()}
               </p>
             </div>
           </div>
@@ -569,7 +628,7 @@ export default function PublicCardapioPage() {
         </div>
       ) : null}
 
-      {(restaurante.horario_funcionamento || vitrineFechada) ? (
+      {(textoHor || vitrineFechada) ? (
         <div className="border-b border-black/[0.06] bg-white">
           <div className="mx-auto flex max-w-6xl gap-4 px-5 py-4 sm:px-8 sm:py-5">
             <div
@@ -584,8 +643,8 @@ export default function PublicCardapioPage() {
                 Horário de funcionamento
               </p>
               <p className="mt-1 text-sm font-medium leading-relaxed text-[#1d1d1f] sm:text-base">
-                {restaurante.horario_funcionamento?.trim() ? (
-                  restaurante.horario_funcionamento
+                {textoHor ? (
+                  textoHor
                 ) : (
                   <span className="font-normal text-[#86868b]">
                     Não informado neste cardápio. Se precisar de urgência, procure o restaurante pelos
@@ -784,6 +843,29 @@ export default function PublicCardapioPage() {
             </div>
 
             <div className="border-t border-black/[0.06] bg-white/80 px-6 py-6 backdrop-blur-md">
+              {cart.length > 0 && (restaurante.taxas_entrega_zonas?.length ?? 0) > 1 ? (
+                <div className="mb-4">
+                  <label
+                    htmlFor="zona-entrega"
+                    className="mb-1.5 block text-xs font-semibold uppercase tracking-wide text-[#86868b]"
+                  >
+                    Região de entrega
+                  </label>
+                  <select
+                    id="zona-entrega"
+                    value={zonaEntregaId ?? ""}
+                    onChange={(e) => setZonaEntregaId(e.target.value || null)}
+                    className="w-full rounded-xl border border-black/[0.08] bg-white px-3 py-2.5 text-sm text-[#1d1d1f] outline-none focus:border-[#0071e3]/40"
+                  >
+                    <option value="">Selecione sua região</option>
+                    {restaurante.taxas_entrega_zonas!.map((z) => (
+                      <option key={z.id} value={z.id}>
+                        {z.nome} — {formatBRL(z.valor)}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              ) : null}
               {taxaCarrinho > 0 ? (
                 <div className="mb-3 space-y-1.5 text-sm text-[#6e6e73]">
                   <div className="flex justify-between">
@@ -817,6 +899,12 @@ export default function PublicCardapioPage() {
                 <p className="rounded-2xl border border-amber-200/80 bg-amber-50 px-4 py-3 text-center text-sm font-medium leading-relaxed text-amber-950">
                   Pedidos pelo cardápio estão pausados. Você pode retirar itens do carrinho; para pedir,
                   volte quando o restaurante reabrir ou use outro canal combinado com eles.
+                </p>
+              ) : cart.length > 0 &&
+                (restaurante.taxas_entrega_zonas?.length ?? 0) > 1 &&
+                !zonaEntregaId ? (
+                <p className="rounded-2xl border border-black/[0.08] bg-[#fafafa] px-4 py-3 text-center text-sm leading-relaxed text-[#6e6e73]">
+                  Escolha a região de entrega acima para calcular o total e gerar o link do WhatsApp.
                 </p>
               ) : (
                 <p className="text-center text-xs leading-relaxed text-[#86868b]">

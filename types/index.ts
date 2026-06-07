@@ -3,6 +3,9 @@
  * Mantenha alinhado com as tabelas `restaurantes` e `pratos`.
  */
 
+import type { FuncionamentoSemana } from "@/lib/restaurante/funcionamento-semana";
+import type { TaxaEntregaZona } from "@/lib/restaurante/taxas-entrega-zonas";
+
 export type PratoStatus = "ativo" | "pausado";
 
 export interface Restaurante {
@@ -26,6 +29,10 @@ export interface Restaurante {
   vitrine_fechada?: boolean;
   /** Texto opcional no aviso de fechado; se vazio, a vitrine usa mensagem padrão. */
   mensagem_fechado?: string | null;
+  /** Agenda semanal (substitui gradualmente o texto livre de horário). */
+  funcionamento_semana?: FuncionamentoSemana | null;
+  /** Taxas por região/bairro (substitui taxa única quando preenchido). */
+  taxas_entrega_zonas?: TaxaEntregaZona[] | null;
 }
 
 export interface Prato {

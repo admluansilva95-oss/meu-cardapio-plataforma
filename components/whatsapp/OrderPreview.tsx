@@ -2,6 +2,10 @@
 
 import { useMemo } from "react";
 import type { CarrinhoItem, Restaurante } from "../../types";
+import {
+  buildPedidoTextoWhatsApp,
+  taxaEntregaParaPedido,
+} from "@/lib/restaurante/pedido-texto-whatsapp";
 
 export interface OrderPreviewProps {
   restaurante: Restaurante;
@@ -17,33 +21,6 @@ function formatBRL(value: number) {
   return value.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
 }
 
-function buildPedidoTexto(restaurante: Restaurante, itens: CarrinhoItem[]) {
-  const linhasItens = itens.map(({ prato, quantidade }) => {
-    const sub = prato.preco * quantidade;
-    return `• ${quantidade}x ${prato.nome} — ${formatBRL(sub)}`;
-  });
-  const subtotal = itens.reduce((acc, { prato, quantidade }) => acc + prato.preco * quantidade, 0);
-  const taxa =
-    itens.length > 0 && restaurante.taxa_entrega && restaurante.taxa_entrega > 0
-      ? restaurante.taxa_entrega
-      : 0;
-  const total = subtotal + taxa;
-
-  const blocos: string[] = [
-    `Olá! Gostaria de fazer um pedido no *${restaurante.nome}*`,
-    "",
-    ...linhasItens,
-    "",
-  ];
-  if (taxa > 0) {
-    blocos.push(`*Subtotal:* ${formatBRL(subtotal)}`);
-    blocos.push(`*Taxa de entrega:* ${formatBRL(taxa)}`);
-    blocos.push("");
-  }
-  blocos.push(`*Total:* ${formatBRL(total)}`);
-  return blocos.join("\n");
-}
-
 export function OrderPreview({
   restaurante,
   itens,
@@ -51,9 +28,12 @@ export function OrderPreview({
 }: OrderPreviewProps) {
   const waNumber = useMemo(() => onlyDigits(restaurante.whatsapp), [restaurante.whatsapp]);
 
+  const zonaUnica =
+    restaurante.taxas_entrega_zonas?.length === 1 ? restaurante.taxas_entrega_zonas[0].id : null;
+
   const textoPedido = useMemo(
-    () => buildPedidoTexto(restaurante, itens),
-    [restaurante, itens],
+    () => buildPedidoTextoWhatsApp(restaurante, itens, zonaUnica),
+    [restaurante, itens, zonaUnica],
   );
 
   const href = useMemo(() => {
@@ -63,11 +43,9 @@ export function OrderPreview({
   }, [waNumber, textoPedido]);
 
   const subtotal = itens.reduce((acc, { prato, quantidade }) => acc + prato.preco * quantidade, 0);
-  const taxa =
-    restaurante.taxa_entrega && restaurante.taxa_entrega > 0 && itens.length > 0
-      ? restaurante.taxa_entrega
-      : 0;
-  const total = subtotal + taxa;
+  const { valor: taxaBase } = taxaEntregaParaPedido(restaurante, zonaUnica);
+  const taxaExibir = itens.length > 0 ? taxaBase : 0;
+  const total = subtotal + taxaExibir;
 
   return (
     <div className="overflow-hidden rounded-2xl border border-slate-200 bg-gradient-to-b from-white to-slate-50/80 shadow-sm">
@@ -127,7 +105,7 @@ export function OrderPreview({
           </ul>
         )}
 
-        {itens.length > 0 && taxa > 0 ? (
+        {itens.length > 0 && taxaExibir > 0 ? (
           <div className="space-y-1 rounded-xl bg-slate-100 px-4 py-2 text-sm text-slate-600">
             <div className="flex justify-between">
               <span>Subtotal</span>
@@ -135,13 +113,13 @@ export function OrderPreview({
             </div>
             <div className="flex justify-between">
               <span>Taxa de entrega</span>
-              <span className="tabular-nums">{formatBRL(taxa)}</span>
+              <span className="tabular-nums">{formatBRL(taxaExibir)}</span>
             </div>
           </div>
         ) : null}
 
         <div className="flex items-center justify-between rounded-xl bg-slate-900 px-4 py-3 text-white">
-          <span className="text-sm font-medium">{taxa > 0 ? "Total" : "Total estimado"}</span>
+          <span className="text-sm font-medium">{taxaExibir > 0 ? "Total" : "Total estimado"}</span>
           <span className="text-base font-semibold tabular-nums">{formatBRL(total)}</span>
         </div>
 

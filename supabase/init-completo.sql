@@ -53,6 +53,12 @@ alter table public.restaurantes
 alter table public.restaurantes
   add column if not exists mensagem_fechado text null;
 
+alter table public.restaurantes
+  add column if not exists funcionamento_semana jsonb null;
+
+alter table public.restaurantes
+  add column if not exists taxas_entrega_zonas jsonb null;
+
 comment on table public.restaurantes is 'Tenant do cardápio (um registro por restaurante, após pagamento Stripe).';
 comment on column public.restaurantes.slug is 'URL pública: /{slug} e /admin?slug={slug}';
 comment on column public.restaurantes.owner_id is 'Dono (Supabase Auth). Preenchido no webhook checkout.session.completed.';
