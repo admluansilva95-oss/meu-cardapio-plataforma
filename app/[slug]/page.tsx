@@ -1061,32 +1061,64 @@ export default function PublicCardapioPage() {
                           {prato.descricao ? (
                             <p className="line-clamp-3 text-sm leading-relaxed text-zinc-500">{prato.descricao}</p>
                           ) : null}
-                          <div className="mt-auto flex justify-end pt-3">
-                            <button
-                              type="button"
-                              onClick={() => addToCart(prato)}
-                              disabled={pedidosBloqueados}
-                              title={
-                                pedidosBloqueados
-                                  ? vitrineFechada
-                                    ? "Pedidos pelo cardápio estão pausados."
-                                    : "Fora do horário de pedidos pelo cardápio."
-                                  : undefined
-                              }
-                              aria-label={
-                                pedidosBloqueados
-                                  ? "Adicionar indisponível — cardápio só para consulta"
-                                  : `Adicionar ${prato.nome} ao carrinho`
-                              }
-                              className={[
-                                "flex h-11 w-11 items-center justify-center rounded-full bg-zinc-900 text-xl font-light leading-none text-white shadow-md transition-transform duration-150 active:scale-95",
-                                pedidosBloqueados
-                                  ? "cursor-not-allowed opacity-35 shadow-none"
-                                  : "hover:bg-zinc-800 hover:shadow-lg",
-                              ].join(" ")}
-                            >
-                              <span aria-hidden>+</span>
-                            </button>
+                          <div className="mt-auto flex items-center justify-end gap-1.5 pt-3">
+                            {(() => {
+                              const qty = cart.find((x) => x.prato.id === prato.id)?.quantidade ?? 0;
+                              const bloqueado = pedidosBloqueados;
+                              return (
+                                <>
+                                  <button
+                                    type="button"
+                                    onClick={() => setQty(prato.id, qty - 1)}
+                                    disabled={qty < 1}
+                                    title={qty < 1 ? undefined : "Remover uma unidade"}
+                                    aria-label={qty < 1 ? "Nenhuma unidade no carrinho" : `Remover uma unidade de ${prato.nome}`}
+                                    className={[
+                                      "flex h-11 w-11 shrink-0 items-center justify-center rounded-full border text-lg font-light leading-none transition-transform duration-150 active:scale-95",
+                                      qty < 1
+                                        ? "cursor-not-allowed border-zinc-200/90 bg-zinc-50 text-zinc-300"
+                                        : "border-zinc-200/90 bg-white text-zinc-800 shadow-sm hover:bg-zinc-50",
+                                    ].join(" ")}
+                                  >
+                                    <span aria-hidden>−</span>
+                                  </button>
+                                  {qty > 0 ? (
+                                    <span className="min-w-[2.25rem] select-none text-center text-sm font-semibold tabular-nums text-zinc-800">
+                                      {qty}
+                                    </span>
+                                  ) : (
+                                    <span className="min-w-[2.25rem] select-none text-center text-sm tabular-nums text-transparent" aria-hidden>
+                                      ·
+                                    </span>
+                                  )}
+                                  <button
+                                    type="button"
+                                    onClick={() => addToCart(prato)}
+                                    disabled={bloqueado}
+                                    title={
+                                      bloqueado
+                                        ? vitrineFechada
+                                          ? "Pedidos pelo cardápio estão pausados."
+                                          : "Fora do horário de pedidos pelo cardápio."
+                                        : undefined
+                                    }
+                                    aria-label={
+                                      bloqueado
+                                        ? "Adicionar indisponível — cardápio só para consulta"
+                                        : `Adicionar ${prato.nome} ao carrinho`
+                                    }
+                                    className={[
+                                      "flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-zinc-900 text-xl font-light leading-none text-white shadow-md transition-transform duration-150 active:scale-95",
+                                      bloqueado
+                                        ? "cursor-not-allowed opacity-35 shadow-none"
+                                        : "hover:bg-zinc-800 hover:shadow-lg",
+                                    ].join(" ")}
+                                  >
+                                    <span aria-hidden>+</span>
+                                  </button>
+                                </>
+                              );
+                            })()}
                           </div>
                         </div>
                       </article>
