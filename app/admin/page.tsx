@@ -147,6 +147,16 @@ const BUCKET_RESTAURANT_LOGOS = "restaurant-logos";
 
 const UPLOAD_STORAGE_MAX_BYTES = Math.floor(4.5 * 1024 * 1024);
 
+/** Paths só com Latin-1 (evita `ByteString` no cliente ao chamar Storage). */
+function pathStorageLatin1Seguro(path: string): string {
+  let out = "";
+  for (let i = 0; i < path.length; i++) {
+    const c = path.charCodeAt(i);
+    if (c <= 255) out += path[i]!;
+  }
+  return out.replace(/\/{2,}/g, "/").replace(/^\/+/, "");
+}
+
 /** Segmentos do object path: apenas [A-Za-z0-9_-] (evita ?, #, espaços, barras extras). */
 function sanitizarSegmentoPathStorage(id: string, contexto: string): string {
   const s = id.trim().replace(/[^a-zA-Z0-9_-]/g, "");
@@ -177,14 +187,35 @@ function extensaoImagemSegura(file: File): string {
   return "jpg";
 }
 
+/** MIME só por extensão — evita `file.type` com caracteres fora de Latin-1 (ByteString no fetch). */
+function contentTypeSomenteAsciiPorExt(ext: string): string {
+  switch (ext) {
+    case "jpg":
+      return "image/jpeg";
+    case "png":
+      return "image/png";
+    case "webp":
+      return "image/webp";
+    case "gif":
+      return "image/gif";
+    default:
+      return "image/jpeg";
+  }
+}
+
 /**
- * Nomes com caracteres fora de Latin-1 (ex.: "•foto.png", emojis) podem gerar
+ * Nomes com caracteres fora de Latin-1 (ex.: "•foto.png", emojis) geram
  * `TypeError: Cannot convert argument to a ByteString` no multipart do `fetch` (Storage).
+ * Copiamos os bytes para um novo `File` com nome e `type` 100% ASCII.
  */
-function fileComNomeAsciiParaUpload(file: File, label: string): File {
+async function fileComNomeAsciiParaUpload(file: File, label: string): Promise<File> {
   const ext = extensaoImagemSegura(file);
-  const name = `${label}-${crypto.randomUUID()}.${ext}`;
-  return new File([file], name, { type: file.type, lastModified: file.lastModified });
+  const safeLabel = label.replace(/[^a-z]/gi, "").slice(0, 12) || "file";
+  const id = crypto.randomUUID().replace(/-/g, "");
+  const name = `${safeLabel}-${id}.${ext}`.toLowerCase();
+  const type = contentTypeSomenteAsciiPorExt(ext);
+  const buf = await file.arrayBuffer();
+  return new File([buf], name, { type, lastModified: file.lastModified });
 }
 
 /** Extrai o path dentro do bucket a partir da URL pública do Supabase Storage. */
@@ -192,7 +223,8 @@ function caminhoStorageDeUrlPublica(publicUrl: string): string | null {
   const marker = `/storage/v1/object/public/${BUCKET_IMAGENS_PRATOS}/`;
   const i = publicUrl.indexOf(marker);
   if (i === -1) return null;
-  return decodeURIComponent(publicUrl.slice(i + marker.length));
+  const raw = decodeURIComponent(publicUrl.slice(i + marker.length));
+  return pathStorageLatin1Seguro(raw);
 }
 
 async function enviarImagemAoBucketImagensPratos(
@@ -207,14 +239,11 @@ async function enviarImagemAoBucketImagensPratos(
     console.error("Erro no Upload do Storage:", err);
     throw err;
   }
-  const fileToSend = fileComNomeAsciiParaUpload(file, "prato");
+  const fileToSend = await fileComNomeAsciiParaUpload(file, "prato");
   const ext = extensaoImagemSegura(fileToSend);
   const pasta = sanitizarSegmentoPathStorage(restauranteId, "Upload de foto do prato");
-  const objectPath = `${pasta}/${crypto.randomUUID()}.${ext}`;
-  const contentType =
-    fileToSend.type && fileToSend.type.startsWith("image/")
-      ? fileToSend.type
-      : `image/${ext === "jpg" ? "jpeg" : ext}`;
+  const objectPath = `${pasta}/${crypto.randomUUID().replace(/-/g, "")}.${ext}`;
+  const contentType = contentTypeSomenteAsciiPorExt(ext);
   const { error } = await supabase.storage
     .from(BUCKET_IMAGENS_PRATOS)
     .upload(objectPath, fileToSend, { contentType, cacheControl: "3600", upsert: false });
@@ -238,7 +267,8 @@ function caminhoStorageLogoRestaurante(publicUrl: string): string | null {
   const marker = `/storage/v1/object/public/${BUCKET_RESTAURANT_LOGOS}/`;
   const i = publicUrl.indexOf(marker);
   if (i === -1) return null;
-  return decodeURIComponent(publicUrl.slice(i + marker.length));
+  const raw = decodeURIComponent(publicUrl.slice(i + marker.length));
+  return pathStorageLatin1Seguro(raw);
 }
 
 async function enviarLogoRestaurante(
@@ -253,17 +283,14 @@ async function enviarLogoRestaurante(
     console.error("Erro no Upload do Storage:", err);
     throw err;
   }
-  const fileToSend = fileComNomeAsciiParaUpload(file, "logo");
+  const fileToSend = await fileComNomeAsciiParaUpload(file, "logo");
   const ext = extensaoImagemSegura(fileToSend);
   if (ext === "gif") {
     throw new Error("Use JPG, PNG ou WebP para o logo.");
   }
   const pasta = sanitizarSegmentoPathStorage(restauranteId, "Upload de logo do restaurante");
-  const objectPath = `${pasta}/${crypto.randomUUID()}.${ext}`;
-  const contentType =
-    fileToSend.type && fileToSend.type.startsWith("image/")
-      ? fileToSend.type
-      : `image/${ext === "jpg" ? "jpeg" : ext}`;
+  const objectPath = `${pasta}/${crypto.randomUUID().replace(/-/g, "")}.${ext}`;
+  const contentType = contentTypeSomenteAsciiPorExt(ext);
   const { error } = await supabase.storage
     .from(BUCKET_RESTAURANT_LOGOS)
     .upload(objectPath, fileToSend, { contentType, cacheControl: "3600", upsert: false });
