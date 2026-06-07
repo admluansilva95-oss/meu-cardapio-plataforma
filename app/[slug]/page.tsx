@@ -628,17 +628,23 @@ export default function PublicCardapioPage() {
       <header className="sticky top-0 z-40 border-b border-zinc-200/80 bg-white/80 backdrop-blur-md">
         <div className="mx-auto max-w-6xl px-5 py-8 sm:flex sm:items-center sm:justify-between sm:px-8 sm:py-10">
           <div className="flex items-start gap-5 sm:items-center">
-            <div
-              className="flex h-16 w-16 shrink-0 items-center justify-center overflow-hidden rounded-2xl border border-zinc-100 bg-white text-xl font-semibold text-zinc-400 shadow-sm sm:h-20 sm:w-20 sm:rounded-3xl sm:text-2xl"
-              style={{
-                boxShadow: `0 0 0 1px color-mix(in srgb, ${accent} 18%, transparent), 0 12px 40px -24px rgba(0,0,0,0.12)`,
-              }}
-            >
+            <div className="shrink-0">
               {restaurante.logo ? (
                 // eslint-disable-next-line @next/next/no-img-element
-                <img src={restaurante.logo} alt="" className="h-full w-full object-cover" />
+                <img
+                  src={restaurante.logo}
+                  alt=""
+                  className="h-20 w-20 rounded-2xl border border-zinc-100 object-cover shadow-sm"
+                />
               ) : (
-                <span aria-hidden>{restaurante.nome.slice(0, 1).toUpperCase()}</span>
+                <div
+                  className="flex h-20 w-20 items-center justify-center rounded-2xl border border-zinc-100 bg-white text-xl font-semibold text-zinc-400 shadow-sm"
+                  style={{
+                    boxShadow: `0 0 0 1px color-mix(in srgb, ${accent} 18%, transparent), 0 8px 28px -18px rgba(0,0,0,0.12)`,
+                  }}
+                >
+                  <span aria-hidden>{restaurante.nome.slice(0, 1).toUpperCase()}</span>
+                </div>
               )}
             </div>
             <div className="min-w-0">

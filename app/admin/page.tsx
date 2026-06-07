@@ -42,6 +42,7 @@ import { EntregaComercialSection, taxaFixaInicialDeRestaurante, taxaFixaParaPers
 import { CategoriaPratoField } from "@/components/admin/CategoriaPratoField";
 import { BookOpen, ClipboardList, Palette, type LucideIcon } from "lucide-react";
 import { FuncionamentoSemanalForm } from "@/components/admin/FuncionamentoSemanalForm";
+import { RestauranteLogoUploadField } from "@/components/admin/RestauranteLogoUploadField";
 import { IosToggle } from "@/components/ui/IosToggle";
 
 function formatSlugToDisplayName(slug: string): string {
@@ -140,6 +141,7 @@ function mapPedidoRow(row: {
 }
 
 const BUCKET_IMAGENS_PRATOS = "imagens-pratos";
+const BUCKET_RESTAURANT_LOGOS = "restaurant-logos";
 
 function extensaoImagemSegura(file: File): string {
   const mime = file.type.toLowerCase();
@@ -178,6 +180,35 @@ async function enviarImagemAoBucketImagensPratos(
     .upload(objectPath, file, { contentType, cacheControl: "3600", upsert: false });
   if (error) throw error;
   const { data } = supabase.storage.from(BUCKET_IMAGENS_PRATOS).getPublicUrl(objectPath);
+  return data.publicUrl;
+}
+
+function caminhoStorageLogoRestaurante(publicUrl: string): string | null {
+  const marker = `/storage/v1/object/public/${BUCKET_RESTAURANT_LOGOS}/`;
+  const i = publicUrl.indexOf(marker);
+  if (i === -1) return null;
+  return decodeURIComponent(publicUrl.slice(i + marker.length));
+}
+
+async function enviarLogoRestaurante(
+  supabase: ReturnType<typeof createBrowserSupabaseClient>,
+  restauranteId: string,
+  file: File,
+): Promise<string> {
+  const ext = extensaoImagemSegura(file);
+  if (ext === "gif") {
+    throw new Error("Use JPG, PNG ou WebP para o logo.");
+  }
+  const objectPath = `${restauranteId}/${crypto.randomUUID()}.${ext}`;
+  const contentType =
+    file.type && file.type.startsWith("image/")
+      ? file.type
+      : `image/${ext === "jpg" ? "jpeg" : ext}`;
+  const { error } = await supabase.storage
+    .from(BUCKET_RESTAURANT_LOGOS)
+    .upload(objectPath, file, { contentType, cacheControl: "3600", upsert: false });
+  if (error) throw error;
+  const { data } = supabase.storage.from(BUCKET_RESTAURANT_LOGOS).getPublicUrl(objectPath);
   return data.publicUrl;
 }
 
@@ -846,6 +877,15 @@ function AdminPageInner() {
   const [cfgVitrineFechada, setCfgVitrineFechada] = useState(false);
   const [cfgMensagemFechado, setCfgMensagemFechado] = useState("");
   const [cfgMsg, setCfgMsg] = useState<string | null>(null);
+  const [cfgLogoUrl, setCfgLogoUrl] = useState<string | null>(null);
+  const [cfgLogoFile, setCfgLogoFile] = useState<File | null>(null);
+  const [cfgLogoDraftPreview, setCfgLogoDraftPreview] = useState<string | null>(null);
+
+  useEffect(() => {
+    return () => {
+      if (cfgLogoDraftPreview) URL.revokeObjectURL(cfgLogoDraftPreview);
+    };
+  }, [cfgLogoDraftPreview]);
 
   useEffect(() => {
     if (tenantSlug) return;
@@ -1070,6 +1110,9 @@ function AdminPageInner() {
 
     setCfgRetiradaBalcao(restaurante.retirada_balcao === true);
     setCfgCor(restaurante.cor_tema);
+    setCfgLogoUrl(restaurante.logo?.trim() || null);
+    setCfgLogoFile(null);
+    setCfgLogoDraftPreview(null);
     setCfgVitrineFechada(restaurante.vitrine_fechada === true);
     setCfgMensagemFechado(restaurante.mensagem_fechado ?? "");
     setCfgMsg(null);
@@ -1117,6 +1160,38 @@ function AdminPageInner() {
       cfgEntregaModo === "zonas" && cfgTaxasZonas.length > 0 ? cfgTaxasZonas : null;
     const corOk = normalizeCorTema(cfgCor);
 
+    let logoOut: string | null;
+    try {
+      if (cfgLogoFile) {
+        logoOut = await enviarLogoRestaurante(supabase, restaurante.id, cfgLogoFile);
+        const antiga = restaurante.logo?.trim() ?? "";
+        if (antiga && antiga !== logoOut) {
+          const pathOld = caminhoStorageLogoRestaurante(antiga);
+          if (pathOld) {
+            await supabase.storage.from(BUCKET_RESTAURANT_LOGOS).remove([pathOld]);
+          }
+        }
+      } else if (cfgLogoUrl === null) {
+        const antiga = restaurante.logo?.trim() ?? "";
+        if (antiga) {
+          const pathOld = caminhoStorageLogoRestaurante(antiga);
+          if (pathOld) {
+            await supabase.storage.from(BUCKET_RESTAURANT_LOGOS).remove([pathOld]);
+          }
+        }
+        logoOut = null;
+      } else {
+        logoOut = cfgLogoUrl ?? null;
+      }
+    } catch (err) {
+      const msg =
+        err && typeof err === "object" && "message" in err
+          ? String((err as { message: unknown }).message)
+          : "Não foi possível enviar o logo. Verifique o formato e tente de novo.";
+      setCfgMsg(msg);
+      return;
+    }
+
     setTenantSaving(true);
     setCfgMsg(null);
     setFetchError(null);
@@ -1151,6 +1226,7 @@ function AdminPageInner() {
           retirada_balcao: cfgRetiradaBalcao,
           entrega_modo: cfgEntregaModo,
           cardapio_categorias: cfgCardapioCategorias,
+          logo: logoOut,
         }),
       });
 
@@ -1182,6 +1258,8 @@ function AdminPageInner() {
     cfgCor,
     cfgVitrineFechada,
     cfgMensagemFechado,
+    cfgLogoUrl,
+    cfgLogoFile,
     supabase,
     loadData,
   ]);
@@ -1932,8 +2010,23 @@ function AdminPageInner() {
                     onRetiradaBalcao={setCfgRetiradaBalcao}
                   />
 
+                  <RestauranteLogoUploadField
+                    displayUrl={cfgLogoDraftPreview ?? cfgLogoUrl}
+                    hasPendingFile={cfgLogoFile !== null}
+                    disabled={tenantSaving}
+                    onSelectFile={(file) => {
+                      setCfgLogoFile(file);
+                      setCfgLogoDraftPreview(URL.createObjectURL(file));
+                    }}
+                    onClear={() => {
+                      setCfgLogoFile(null);
+                      setCfgLogoUrl(null);
+                      setCfgLogoDraftPreview(null);
+                    }}
+                  />
+
                   <div className="space-y-3">
-                    <p className="text-xs font-semibold uppercase tracking-wide text-zinc-500">Cor</p>
+                    <p className="text-xs font-semibold uppercase tracking-wide text-zinc-500">Cor da marca</p>
                     <div className="flex flex-wrap items-center gap-3">
                       {PRESET_CORES_TEMA.map((hex) => (
                         <button

@@ -31,6 +31,8 @@ type ConfigBody = {
   nome?: string;
   whatsapp?: string;
   cor_tema?: string;
+  /** URL pública (Storage) ou null para remover. */
+  logo?: string | null;
   horario_funcionamento?: string | null;
   taxa_entrega?: number | null;
   vitrine_fechada?: boolean;
@@ -43,7 +45,7 @@ type ConfigBody = {
 };
 
 const MIGRATION_HINT =
-  "Parte dos dados não foi gravada no banco (colunas em falta). No SQL Editor do Supabase, execute em ordem as migrações: 20260608120000_restaurantes_tenant_settings.sql, 20260610120000_restaurantes_vitrine_fechada.sql, 20260611120000_restaurantes_funcionamento_taxas_json.sql e 20260614120000_restaurantes_entrega_categorias.sql. Nome, WhatsApp e cor já foram salvos.";
+  "Parte dos dados não foi gravada no banco (colunas em falta). No SQL Editor do Supabase, execute em ordem as migrações: 20260608120000_restaurantes_tenant_settings.sql, 20260610120000_restaurantes_vitrine_fechada.sql, 20260611120000_restaurantes_funcionamento_taxas_json.sql, 20260614120000_restaurantes_entrega_categorias.sql e 20260607140000_storage_restaurant_logos.sql (bucket de logos). Nome, WhatsApp e cor já foram salvos.";
 
 function isSchemaColumnError(err: { message?: string; code?: string; details?: string } | null): boolean {
   if (!err) return false;
@@ -311,7 +313,37 @@ export async function POST(request: NextRequest) {
   const retirada_balcao = body.retirada_balcao === true;
 
   const cor_tema = normalizeCorTema(corRaw);
-  const base = { nome, whatsapp, cor_tema };
+
+  let logoGravar: string | null | undefined = undefined;
+  if (body.logo !== undefined) {
+    if (body.logo === null) {
+      logoGravar = null;
+    } else if (typeof body.logo !== "string") {
+      const res = NextResponse.json({ error: "Campo logo inválido." }, { status: 400 });
+      return applyAuthCookies(res, authCookieWrites);
+    } else {
+      const t = body.logo.trim();
+      if (!t) {
+        logoGravar = null;
+      } else if (t.length > 2500) {
+        const res = NextResponse.json({ error: "URL do logo muito longa." }, { status: 400 });
+        return applyAuthCookies(res, authCookieWrites);
+      } else if (!/^https:\/\//i.test(t)) {
+        const res = NextResponse.json(
+          { error: "A URL do logo deve ser HTTPS (ex.: link do Supabase Storage)." },
+          { status: 400 },
+        );
+        return applyAuthCookies(res, authCookieWrites);
+      } else {
+        logoGravar = t;
+      }
+    }
+  }
+
+  const base: Record<string, unknown> = { nome, whatsapp, cor_tema };
+  if (logoGravar !== undefined) {
+    base.logo = logoGravar;
+  }
   const legacyExtras = {
     horario_funcionamento: horario,
     taxa_entrega: taxa,
