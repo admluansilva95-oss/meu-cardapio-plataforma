@@ -54,7 +54,7 @@ export function montarTextoPedidoWhatsAppFormatado(p: PedidoWhatsAppFormatadoInp
   const linhasItens: string[] = [];
   for (const { prato, quantidade, observacoes } of p.itens) {
     const unit = formatBRL(prato.preco);
-    linhasItens.push(`• ${quantidade}x ${prato.nome} (${unit} cada)`);
+    linhasItens.push(`- ${quantidade}x ${prato.nome} (${unit} cada)`);
     const obs = observacoes?.trim();
     if (obs) {
       linhasItens.push(`  _Obs: ${obs}_`);
@@ -65,28 +65,28 @@ export function montarTextoPedidoWhatsAppFormatado(p: PedidoWhatsAppFormatadoInp
     "*🧾 NOVO PEDIDO RECEBIDO!*",
     "--------------------------------",
     "*👤 CLIENTE:*",
-    `• Nome: ${p.nomeCliente.trim()}`,
-    `• Telefone: ${p.telefoneCliente.trim()}`,
+    `- Nome: ${p.nomeCliente.trim()}`,
+    `- Telefone: ${p.telefoneCliente.trim()}`,
     "",
     "*📍 ENTREGA/RETIRADA:*",
-    `• Tipo: ${tipoLabel}`,
-    `• Endereço: ${p.enderecoLinha}`,
-    `• Bairro: ${p.bairroLinha}`,
-    `• Ref/Comp: ${p.refCompLinha}`,
+    `- Tipo: ${tipoLabel}`,
+    `- Endereço: ${p.enderecoLinha}`,
+    `- Bairro: ${p.bairroLinha}`,
+    `- Ref/Comp: ${p.refCompLinha}`,
     "",
     "*🍔 ITENS DO PEDIDO:*",
     ...linhasItens,
     "",
     "*💳 PAGAMENTO:*",
-    `• Forma: ${labelFormaPagamento(p.formaPagamento)}`,
-    `• Troco para: ${p.trocoParaTexto}`,
-    `• Valor do Troco: ${formatBRL(Math.max(0, p.valorTrocoReais))}`,
+    `- Forma: ${labelFormaPagamento(p.formaPagamento)}`,
+    `- Troco para: ${p.trocoParaTexto}`,
+    `- Valor do Troco: ${formatBRL(Math.max(0, p.valorTrocoReais))}`,
     "",
     "--------------------------------",
     "*💰 VALORES:*",
-    `• Subtotal Itens: ${formatBRL(p.subtotalItens)}`,
-    `• Taxa de Entrega: ${formatBRL(Math.max(0, p.taxaEntrega))}`,
-    `• *TOTAL GERAL: ${formatBRL(p.totalGeral)}*`,
+    `- Subtotal Itens: ${formatBRL(p.subtotalItens)}`,
+    `- Taxa de Entrega: ${formatBRL(Math.max(0, p.taxaEntrega))}`,
+    `- *TOTAL GERAL: ${formatBRL(p.totalGeral)}*`,
     "--------------------------------",
   ];
 

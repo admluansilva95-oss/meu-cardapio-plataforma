@@ -1,39 +1,115 @@
 import { jsonStringifyLatin1Wire, latin1SafeString } from "@/lib/restaurante/json-latin1-wire";
 
+export function cloneHeadersLatin1Safe(headers: Headers): Headers {
+  const fixed = new Headers();
+  headers.forEach((value, key) => {
+    fixed.set(latin1SafeString(key), latin1SafeString(value));
+  });
+  return fixed;
+}
+
+function sanitizeJsonBodyString(raw: string): string {
+  const t = raw.trim();
+  if (t.startsWith("{") || t.startsWith("[")) {
+    try {
+      return jsonStringifyLatin1Wire(JSON.parse(raw));
+    } catch {
+      return latin1SafeString(raw);
+    }
+  }
+  return latin1SafeString(raw);
+}
+
 /**
  * Ajusta `RequestInit` para evitar `TypeError: ByteString` ao chamar `fetch`:
- * cabeçalhos só podem ser Latin-1 em alguns engines; corpo JSON com •, emojis, etc.
+ * cabeçalhos só podem ser Latin-1 em alguns runtimes; corpo JSON com •, emojis, etc.
  * também pode disparar o erro quando o runtime trata o payload de forma estrita.
  */
 export function sanitizeFetchInit(init: RequestInit): RequestInit {
   const out: RequestInit = { ...init };
 
   if (typeof out.body === "string") {
-    const t = out.body.trim();
-    if (t.startsWith("{") || t.startsWith("[")) {
-      try {
-        out.body = jsonStringifyLatin1Wire(JSON.parse(out.body));
-      } catch {
-        out.body = latin1SafeString(out.body);
-      }
-    }
+    out.body = sanitizeJsonBodyString(out.body);
   }
 
   if (out.headers != null) {
-    const h = new Headers(out.headers as HeadersInit);
-    const fixed = new Headers();
-    h.forEach((value, key) => {
-      fixed.set(latin1SafeString(key), latin1SafeString(value));
-    });
-    out.headers = fixed;
+    out.headers = cloneHeadersLatin1Safe(new Headers(out.headers as HeadersInit));
   }
 
   return out;
 }
 
-/** `fetch` que sanitiza `init` antes de delegar (útil no cliente Supabase). */
+async function fetchWithSanitizedRequest(input: Request, baseFetch: typeof fetch): Promise<Response> {
+  const method = input.method;
+  const noBody = method === "GET" || method === "HEAD" || input.body == null;
+
+  if (noBody) {
+    const req = new Request(input.url, {
+      method,
+      headers: cloneHeadersLatin1Safe(input.headers),
+      mode: input.mode,
+      credentials: input.credentials,
+      cache: input.cache,
+      redirect: input.redirect,
+      referrer: input.referrer,
+      referrerPolicy: input.referrerPolicy,
+      integrity: input.integrity,
+      keepalive: input.keepalive,
+      signal: input.signal,
+    });
+    return baseFetch(req);
+  }
+
+  const ct = (input.headers.get("content-type") ?? "").toLowerCase();
+  if (ct.includes("multipart/") || ct.includes("application/octet-stream")) {
+    const req = new Request(input.url, {
+      method,
+      headers: cloneHeadersLatin1Safe(input.headers),
+      body: input.body,
+      mode: input.mode,
+      credentials: input.credentials,
+      cache: input.cache,
+      redirect: input.redirect,
+      referrer: input.referrer,
+      referrerPolicy: input.referrerPolicy,
+      integrity: input.integrity,
+      keepalive: input.keepalive,
+      signal: input.signal,
+    });
+    return baseFetch(req);
+  }
+
+  try {
+    const text = await input.clone().text();
+    const bodyOut = sanitizeJsonBodyString(text);
+    const req = new Request(input.url, {
+      method,
+      headers: cloneHeadersLatin1Safe(input.headers),
+      body: bodyOut,
+      mode: input.mode,
+      credentials: input.credentials,
+      cache: input.cache,
+      redirect: input.redirect,
+      referrer: input.referrer,
+      referrerPolicy: input.referrerPolicy,
+      integrity: input.integrity,
+      keepalive: input.keepalive,
+      signal: input.signal,
+    });
+    return baseFetch(req);
+  } catch {
+    return baseFetch(input);
+  }
+}
+
+/** `fetch` que sanitiza `init` e também `Request` usado sem segundo argumento (alguns SDKs). */
 export function createLatin1SafeFetch(
   baseFetch: typeof fetch = globalThis.fetch.bind(globalThis),
 ): typeof fetch {
-  return (input, init) => baseFetch(input, init == null ? init : sanitizeFetchInit(init));
+  return (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
+    if (input instanceof Request && init === undefined) {
+      return fetchWithSanitizedRequest(input, baseFetch);
+    }
+    return baseFetch(input, init == null ? init : sanitizeFetchInit(init));
+  };
 }

@@ -1004,6 +1004,10 @@ function ModalPrato(props: {
   );
 }
 
+const TOAST_ALTERACOES_SALVAS = "Suas alterações foram salvas.";
+const TOAST_PEDIDO_REMOVIDO = "Pedido removido.";
+const TOAST_ITEM_CARDAPIO_REMOVIDO = "Item removido do cardápio.";
+
 function AdminPageInner() {
   const router = useRouter();
   const supabase = useMemo(() => createBrowserSupabaseClient(), []);
@@ -1508,6 +1512,7 @@ function AdminPageInner() {
         setCfgMsg(json.error ?? `Falha ao salvar (${res.status}).`);
         return;
       }
+      setAdminToast(TOAST_ALTERACOES_SALVAS);
       const partesMsg: string[] = [];
       if (logoUploadWarning) partesMsg.push(logoUploadWarning);
       if (json.warning) partesMsg.push(json.warning);
@@ -1649,6 +1654,7 @@ function AdminPageInner() {
         .eq("id", restaurante.id);
       if (error) throw new Error(error.message);
       await loadData({ soft: true });
+      setAdminToast(TOAST_ALTERACOES_SALVAS);
     },
     [restaurante, supabase, loadData],
   );
@@ -1724,6 +1730,8 @@ function AdminPageInner() {
       if (error) {
         setFetchError(error.message);
         setPedidos(prev);
+      } else {
+        setAdminToast(TOAST_PEDIDO_REMOVIDO);
       }
     } finally {
       setPedidoBusyId(null);
@@ -1741,7 +1749,7 @@ function AdminPageInner() {
     const extra = patch.observacaoExtra.trim();
     const observacoes =
       extra.length > 0
-        ? [pedidoModal.observacoes.trim(), extra].filter(Boolean).join(" · ")
+        ? [pedidoModal.observacoes.trim(), extra].filter(Boolean).join(" | ")
         : pedidoModal.observacoes;
     const motoboy = patch.motoboy.trim() || pedidoModal.motoboy;
 
@@ -1770,6 +1778,7 @@ function AdminPageInner() {
         setPedidos(prevList);
         return;
       }
+      setAdminToast(TOAST_ALTERACOES_SALVAS);
       setPedidoModal(null);
     } finally {
       setPedidoModalSaving(false);
@@ -1927,6 +1936,7 @@ function AdminPageInner() {
         const mapped = mapPratoRow(data as Parameters<typeof mapPratoRow>[0]);
         if (mapped) setPratos((lista) => [mapped, ...lista]);
       }
+      setAdminToast(TOAST_ALTERACOES_SALVAS);
     } catch (dbErr) {
       if (novaUrlUploadedPersistivel) {
         const pathNovo = caminhoStorageDeUrlPublica(novaUrlUploadedPersistivel);
@@ -1958,6 +1968,8 @@ function AdminPageInner() {
         setPratos(prev);
         return;
       }
+
+      setAdminToast(TOAST_ITEM_CARDAPIO_REMOVIDO);
 
       if (fotoUrl) {
         const path = caminhoStorageDeUrlPublica(fotoUrl);
