@@ -15,6 +15,7 @@ import { getPublicAppUrl } from "@/lib/site-url";
 import { isRetryableSupabaseError, withRetry } from "@/lib/with-retry";
 import { mensagemErroSupabasePainel } from "@/lib/supabase/mensagem-erro";
 import { mensagemUploadStorageAmigavel } from "@/lib/restaurante/mensagem-upload-storage";
+import { jsonStringifyLatin1Wire } from "@/lib/restaurante/json-latin1-wire";
 import {
   normalizarPrecoCampoAoSair,
   parsePrecoBrasileiro,
@@ -1477,7 +1478,7 @@ function AdminPageInner() {
         },
         credentials: "include",
         cache: "no-store",
-        body: JSON.stringify({
+        body: jsonStringifyLatin1Wire({
           restauranteId: restaurante.id,
           nome: nomeLimpo,
           whatsapp: cfgWhatsapp.trim(),

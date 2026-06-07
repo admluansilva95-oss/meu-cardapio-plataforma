@@ -156,7 +156,7 @@ export function formatFuncionamentoResumo(f: FuncionamentoSemana | null): string
     const d = f[key];
     if (!d?.ativo || !d.faixas?.length) continue;
     const faixasTxt = d.faixas
-      .map((fa) => `${formatarHoraCurta(fa.abertura)}–${formatarHoraCurta(fa.fechamento)}`)
+      .map((fa) => `${formatarHoraCurta(fa.abertura)}-${formatarHoraCurta(fa.fechamento)}`)
       .join(", ");
     partes.push(`${short}: ${faixasTxt}`);
   }
@@ -164,7 +164,7 @@ export function formatFuncionamentoResumo(f: FuncionamentoSemana | null): string
   if (fechados.length && fechados.length < 7) {
     partes.push(`Fechado: ${fechados.join(", ")}`);
   }
-  return partes.join(" · ");
+  return partes.join(" | ");
 }
 
 /** Valida faixas no mesmo dia (sem virada de noite). */
