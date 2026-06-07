@@ -259,7 +259,7 @@ export default function PublicCardapioPage() {
         async () =>
           supabase
             .from("restaurantes")
-            .select("id, nome, slug, whatsapp, logo, cor_tema, horario_funcionamento, taxa_entrega")
+            .select("*")
             .eq("slug", slug)
             .maybeSingle(),
         { shouldRetry: (r) => isRetryableSupabaseError(r.error) },

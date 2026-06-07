@@ -13,6 +13,7 @@ import { computePedidoKpis } from "@/lib/admin/pedido-kpis";
 import { createBrowserSupabaseClient } from "@/lib/supabase";
 import { getPublicAppUrl } from "@/lib/site-url";
 import { isRetryableSupabaseError, withRetry } from "@/lib/with-retry";
+import { normalizeCorTema } from "@/lib/restaurante/cor-tema";
 
 function formatSlugToDisplayName(slug: string): string {
   const s = slug.trim();
@@ -238,19 +239,6 @@ function mapRestauranteRow(row: {
   };
 }
 
-/** Normaliza cor para hex #rrggbb (fallback teal). */
-function normalizeCorTema(cor: string): string {
-  const t = cor.trim();
-  if (/^#[0-9A-Fa-f]{6}$/.test(t)) return t.toLowerCase();
-  if (/^#[0-9A-Fa-f]{3}$/.test(t)) {
-    const r = t[1];
-    const g = t[2];
-    const b = t[3];
-    return `#${r}${r}${g}${g}${b}${b}`.toLowerCase();
-  }
-  return "#0d9488";
-}
-
 const PRESET_CORES_TEMA = [
   "#0d9488",
   "#0071e3",
@@ -339,7 +327,11 @@ function AdminSidebar(props: {
   const items: { id: AdminTab; label: string; hint: string }[] = [
     { id: "pedidos", label: "Pedidos", hint: "Esteira Kanban" },
     { id: "cardapio", label: "Cardápio", hint: "Lista de pratos" },
-    { id: "configuracoes", label: "Configurações", hint: "Tenant e integrações" },
+    {
+      id: "configuracoes",
+      label: "Configurações",
+      hint: "Marca, WhatsApp, horário e taxa",
+    },
   ];
   return (
     <aside className="flex w-full shrink-0 flex-col border-b border-black/[0.06] bg-[#f5f5f7]/90 backdrop-blur-xl lg:h-screen lg:w-64 lg:border-b-0 lg:border-r lg:border-black/[0.06]">
@@ -886,13 +878,7 @@ function AdminPageInner() {
 
       const { data: restRow, error: restErr } = await withRetry(
         async () =>
-          supabase
-            .from("restaurantes")
-            .select(
-              "id, nome, slug, whatsapp, logo, cor_tema, horario_funcionamento, taxa_entrega",
-            )
-            .eq("slug", tenantSlug)
-            .maybeSingle(),
+          supabase.from("restaurantes").select("*").eq("slug", tenantSlug).maybeSingle(),
         { shouldRetry: (r) => isRetryableSupabaseError(r.error) },
       );
 
@@ -1008,23 +994,39 @@ function AdminPageInner() {
     setCfgMsg(null);
     setFetchError(null);
     try {
-      const { error } = await supabase
-        .from("restaurantes")
-        .update({
+      const {
+        data: { session },
+      } = await supabase.auth.getSession();
+      const token = session?.access_token;
+      if (!token) {
+        setCfgMsg("Sessão expirada. Recarregue a página e entre de novo.");
+        return;
+      }
+
+      const res = await fetch("/api/restaurante/config", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        credentials: "include",
+        body: JSON.stringify({
+          restauranteId: restaurante.id,
           nome: nomeLimpo,
           whatsapp: cfgWhatsapp.trim(),
           cor_tema: corOk,
           horario_funcionamento: cfgHorario.trim() || null,
           taxa_entrega: taxaParsed,
-        })
-        .eq("id", restaurante.id);
+        }),
+      });
 
-      if (error) {
-        setCfgMsg(error.message);
+      const json = (await res.json()) as { error?: string };
+      if (!res.ok) {
+        setCfgMsg(json.error ?? `Falha ao salvar (${res.status}).`);
         return;
       }
       setCfgMsg("Configurações salvas com sucesso.");
-      window.setTimeout(() => setCfgMsg(null), 4000);
+      window.setTimeout(() => setCfgMsg(null), 6000);
       await loadData();
     } finally {
       setTenantSaving(false);
