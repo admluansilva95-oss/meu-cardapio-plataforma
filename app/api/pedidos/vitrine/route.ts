@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { parseFuncionamentoSemana } from "@/lib/restaurante/funcionamento-semana";
 import { statusAberturaPorRelogio } from "@/lib/restaurante/horario-vitrine";
+import { latin1SafeString } from "@/lib/restaurante/json-latin1-wire";
 import { createAdminSupabaseClient } from "@/lib/supabase/admin";
 import type { Restaurante } from "@/types";
 
@@ -26,7 +27,7 @@ type Body = {
   total?: number;
   formaPagamento?: FormaCheckout;
   itens?: unknown;
-  /** Texto completo enviado ao WhatsApp (resumo do pedido). */
+  /** Texto resumo para o painel (sem bullets U+2022); o cliente monta o WhatsApp à parte. */
   observacoes?: string;
 };
 
@@ -86,7 +87,7 @@ export async function POST(request: Request) {
   let itensJson: string[] = [];
   if (Array.isArray(body.itens)) {
     itensJson = body.itens
-      .map((x) => (typeof x === "string" ? x.trim() : ""))
+      .map((x) => (typeof x === "string" ? latin1SafeString(x.trim()) : ""))
       .filter(Boolean)
       .slice(0, 80);
   }
@@ -95,7 +96,9 @@ export async function POST(request: Request) {
   }
 
   const obsRaw = typeof body.observacoes === "string" ? body.observacoes : "";
-  const observacoes = obsRaw.length > 12000 ? obsRaw.slice(0, 12000) : obsRaw;
+  const observacoes = latin1SafeString(
+    obsRaw.length > 12000 ? obsRaw.slice(0, 12000) : obsRaw,
+  ).slice(0, 12000);
 
   const { data: rest, error: restErr } = await admin
     .from("restaurantes")
@@ -154,5 +157,8 @@ export async function POST(request: Request) {
     );
   }
 
-  return NextResponse.json({ ok: true, id: inserted?.id ?? null });
+  return NextResponse.json(
+    { ok: true, id: inserted?.id ?? null },
+    { headers: { "Content-Type": "application/json; charset=utf-8" } },
+  );
 }

@@ -15,6 +15,7 @@ import { getPublicAppUrl } from "@/lib/site-url";
 import { isRetryableSupabaseError, withRetry } from "@/lib/with-retry";
 import { mensagemErroSupabasePainel } from "@/lib/supabase/mensagem-erro";
 import { mensagemUploadStorageAmigavel } from "@/lib/restaurante/mensagem-upload-storage";
+import { sanitizarNomeArquivoStorageBase } from "@/lib/restaurante/sanitizar-nome-arquivo-storage";
 import { sanitizeFetchInit } from "@/lib/fetch-latin1-safe";
 import {
   normalizarPrecoCampoAoSair,
@@ -211,9 +212,11 @@ function contentTypeSomenteAsciiPorExt(ext: string): string {
  */
 async function fileComNomeAsciiParaUpload(file: File, label: string): Promise<File> {
   const ext = extensaoImagemSegura(file);
-  const safeLabel = label.replace(/[^a-z]/gi, "").slice(0, 12) || "file";
+  const slugOrig = sanitizarNomeArquivoStorageBase(file.name).replace(/[^a-z0-9-]/g, "");
+  const labelClean = label.replace(/[^a-z]/gi, "").slice(0, 8) || "file";
+  const slugPart = slugOrig ? `-${slugOrig.slice(0, 24)}` : "";
   const id = crypto.randomUUID().replace(/-/g, "");
-  const name = `${safeLabel}-${id}.${ext}`.toLowerCase();
+  const name = `${labelClean}${slugPart}-${id}.${ext}`.toLowerCase().replace(/[^a-z0-9.-]/g, "");
   const type = contentTypeSomenteAsciiPorExt(ext);
   const buf = await file.arrayBuffer();
   return new File([buf], name, { type, lastModified: file.lastModified });

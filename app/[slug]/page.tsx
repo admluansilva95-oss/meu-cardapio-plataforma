@@ -6,6 +6,7 @@ import {
   type TipoEntregaPedido,
 } from "@/lib/restaurante/pedido-texto-whatsapp";
 import {
+  montarTextoPedidoResumoParaApi,
   montarTextoPedidoWhatsAppFormatado,
   type FormaPagamentoPedidoCliente,
 } from "@/lib/restaurante/pedido-whatsapp-formatado";
@@ -720,7 +721,7 @@ export default function PublicCardapioPage() {
         ? Math.round((trocoParsed - totalGeral) * 100) / 100
         : 0;
 
-    const msg = montarTextoPedidoWhatsAppFormatado({
+    const payloadPedido = {
       nomeCliente: nomeOk,
       telefoneCliente: formatarTelefoneWhatsappBR(clienteTelefoneDisplay),
       tipoEntrega,
@@ -734,12 +735,15 @@ export default function PublicCardapioPage() {
       subtotalItens: subtotal,
       taxaEntrega: taxaAplicada,
       totalGeral,
-    });
+    } as const;
+
+    /** Só Latin-1: nunca enviar o modelo com `•` no JSON da API. */
+    const observacoesApi = montarTextoPedidoResumoParaApi(payloadPedido);
 
     const itensPedido = cart.map(({ prato, quantidade, observacoes }) => {
       const linha = `${quantidade}x ${prato.nome} (${formatBRL(prato.preco)} cada)`;
       const o = observacoes?.trim();
-      return o ? `${linha} · Obs: ${o}` : linha;
+      return o ? `${linha} | Obs: ${o}` : linha;
     });
 
     setCheckoutSubmitting(true);
@@ -748,7 +752,7 @@ export default function PublicCardapioPage() {
         "/api/pedidos/vitrine",
         sanitizeFetchInit({
           method: "POST",
-          headers: { "Content-Type": "application/json" },
+          headers: { "Content-Type": "application/json; charset=utf-8" },
           cache: "no-store",
           body: JSON.stringify({
             restauranteId: restaurante.id,
@@ -757,7 +761,7 @@ export default function PublicCardapioPage() {
             total: totalGeral,
             formaPagamento,
             itens: itensPedido,
-            observacoes: msg,
+            observacoes: observacoesApi,
           }),
         }),
       );
@@ -776,7 +780,8 @@ export default function PublicCardapioPage() {
         );
         return;
       }
-      const href = waMeUrl(restaurante.whatsapp, msg);
+      const textoWhatsAppComBullets = montarTextoPedidoWhatsAppFormatado(payloadPedido);
+      const href = waMeUrl(restaurante.whatsapp, textoWhatsAppComBullets);
       window.open(href, "_blank", "noopener,noreferrer");
     } catch (e) {
       console.error("[checkout] falha ao registrar pedido:", e);
