@@ -17,6 +17,8 @@ import {
   validarCardapioCategorias,
 } from "@/lib/restaurante/cardapio-categorias";
 
+export const dynamic = "force-dynamic";
+
 type CookieToSet = { name: string; value: string; options: CookieOptions };
 
 function applyAuthCookies(target: NextResponse, writes: CookieToSet[]) {
@@ -143,6 +145,7 @@ async function applyJsonExtras(
     entrega_modo: "fixa" | "zonas";
   },
 ): Promise<{ ok: true; skipped?: boolean } | { ok: false; message: string; code?: "rls" | "other" }> {
+  /** Valores JSON-serializáveis — o cliente Supabase persiste em colunas `jsonb` sem `JSON.stringify` manual. */
   const payload: Record<string, unknown> = {
     funcionamento_semana: extras.funcionamento_semana,
     taxas_entrega_zonas: extras.taxas_entrega_zonas,
@@ -194,6 +197,10 @@ export async function POST(request: NextRequest) {
             authCookieWrites.push({ name, value, options });
           });
         },
+      },
+      global: {
+        fetch: (input: RequestInfo | URL, init?: RequestInit) =>
+          fetch(input, { ...init, cache: "no-store" }),
       },
     },
   );

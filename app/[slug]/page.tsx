@@ -260,6 +260,7 @@ export default function PublicCardapioPage() {
   const [formaPagamento, setFormaPagamento] = useState<FormaPagamentoPedidoCliente>("pix");
   const [trocoParaInput, setTrocoParaInput] = useState("");
   const [checkoutErro, setCheckoutErro] = useState<string | null>(null);
+  const [checkoutSubmitting, setCheckoutSubmitting] = useState(false);
 
   const fetchAbort = useRef<AbortController | null>(null);
 
@@ -620,7 +621,7 @@ export default function PublicCardapioPage() {
     );
   };
 
-  const handleEnviarPedidoWhatsapp = useCallback(() => {
+  const handleEnviarPedidoWhatsapp = useCallback(async () => {
     setCheckoutErro(null);
     if (!restaurante || cart.length === 0 || pedidosBloqueados) return;
     if (digitsOnly(restaurante.whatsapp).length < 10) {
@@ -710,8 +711,51 @@ export default function PublicCardapioPage() {
       totalGeral,
     });
 
-    const href = waMeUrl(restaurante.whatsapp, msg);
-    window.open(href, "_blank", "noopener,noreferrer");
+    const itensPedido = cart.map(({ prato, quantidade, observacoes }) => {
+      const linha = `${quantidade}x ${prato.nome} (${formatBRL(prato.preco)} cada)`;
+      const o = observacoes?.trim();
+      return o ? `${linha} · Obs: ${o}` : linha;
+    });
+
+    setCheckoutSubmitting(true);
+    try {
+      const res = await fetch("/api/pedidos/vitrine", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        cache: "no-store",
+        body: JSON.stringify({
+          restauranteId: restaurante.id,
+          cliente: nomeOk,
+          telefone: formatarTelefoneWhatsappBR(clienteTelefoneDisplay),
+          total: totalGeral,
+          formaPagamento,
+          itens: itensPedido,
+          observacoes: msg,
+        }),
+      });
+      let json: { ok?: boolean; error?: string } = {};
+      try {
+        json = (await res.json()) as { ok?: boolean; error?: string };
+      } catch {
+        json = {};
+      }
+      if (!res.ok || !json.ok) {
+        setCheckoutErro(
+          json.error ??
+            (res.status === 503
+              ? "Não foi possível registrar o pedido no servidor. Tente enviar pelo WhatsApp manualmente."
+              : "Não foi possível registrar o pedido. Tente novamente."),
+        );
+        return;
+      }
+      const href = waMeUrl(restaurante.whatsapp, msg);
+      window.open(href, "_blank", "noopener,noreferrer");
+    } catch (e) {
+      console.error("[checkout] falha ao registrar pedido:", e);
+      setCheckoutErro("Falha de rede ao registrar o pedido. Verifique sua conexão e tente de novo.");
+    } finally {
+      setCheckoutSubmitting(false);
+    }
   }, [
     restaurante,
     cart,
@@ -1445,10 +1489,11 @@ export default function PublicCardapioPage() {
                   ) : (
                     <button
                       type="button"
-                      onClick={() => handleEnviarPedidoWhatsapp()}
-                      className="flex w-full items-center justify-center rounded-2xl bg-[#25D366] py-3.5 text-sm font-semibold text-white shadow-[0_12px_32px_-12px_rgba(37,211,102,0.55)] transition hover:bg-[#1ebe5a] active:scale-[0.99]"
+                      disabled={checkoutSubmitting}
+                      onClick={() => void handleEnviarPedidoWhatsapp()}
+                      className="flex w-full items-center justify-center rounded-2xl bg-[#25D366] py-3.5 text-sm font-semibold text-white shadow-[0_12px_32px_-12px_rgba(37,211,102,0.55)] transition hover:bg-[#1ebe5a] enabled:active:scale-[0.99] disabled:cursor-wait disabled:opacity-80"
                     >
-                      Enviar Pedido via WhatsApp
+                      {checkoutSubmitting ? "Registrando pedido…" : "Enviar Pedido via WhatsApp"}
                     </button>
                   )}
                 </>

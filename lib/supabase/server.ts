@@ -20,13 +20,20 @@ export async function createServerSupabaseClient() {
         setAll(cookiesToSet: CookieToSet[]) {
           try {
             cookiesToSet.forEach(({ name, value, options }) =>
-              cookieStore.set(name, value, options)
+              cookieStore.set(name, value, options),
             );
           } catch {
             // setAll pode falhar em Server Components estáticos; ignorar.
           }
         },
       },
-    }
+      global: {
+        fetch: (input: RequestInfo | URL, init?: RequestInit) =>
+          fetch(input, {
+            ...init,
+            cache: "no-store",
+          }),
+      },
+    },
   );
 }

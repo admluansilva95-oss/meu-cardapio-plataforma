@@ -40,7 +40,11 @@ export async function middleware(request: NextRequest) {
           });
         },
       },
-    }
+      global: {
+        fetch: (input: RequestInfo | URL, init?: RequestInit) =>
+          fetch(input, { ...init, cache: "no-store" }),
+      },
+    },
   );
 
   const {

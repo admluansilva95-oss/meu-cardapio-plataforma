@@ -1313,6 +1313,7 @@ function AdminPageInner() {
           Authorization: `Bearer ${token}`,
         },
         credentials: "include",
+        cache: "no-store",
         body: JSON.stringify({
           restauranteId: restaurante.id,
           nome: nomeLimpo,
@@ -1346,6 +1347,7 @@ function AdminPageInner() {
       }
       window.setTimeout(() => setCfgMsg(null), partesMsg.length ? 14000 : 6000);
       await loadData();
+      router.refresh();
       if (logoUploadWarning) {
         setCfgLogoFile(null);
         setCfgLogoDraftPreview(null);
@@ -1370,6 +1372,7 @@ function AdminPageInner() {
     cfgLogoFile,
     supabase,
     loadData,
+    router,
   ]);
 
   useEffect(() => {
@@ -1395,6 +1398,7 @@ function AdminPageInner() {
               if (prev.some((p) => p.id === mapped.id)) return prev;
               return [...prev, mapped];
             });
+            console.info("[realtime/pedidos] INSERT — novo pedido na esteira:", mapped.id);
             playNewOrderChime();
             return;
           }
@@ -1642,6 +1646,15 @@ function AdminPageInner() {
         .eq("id", payload.id);
 
       if (error) {
+        console.error("[pratos DB] Falha no UPDATE (tabela `pratos`, coluna `imagem` URL pública):", {
+          code: error.code,
+          message: error.message,
+          details: error.details,
+          hint: error.hint,
+          pratoId: payload.id,
+          imagemSalva: imagemParaDb,
+          raw: error,
+        });
         const msg = mensagemErroSupabasePainel(error.message);
         setFetchError(msg);
         throw new Error(msg);
@@ -1694,6 +1707,15 @@ function AdminPageInner() {
         .single();
 
       if (error) {
+        console.error("[pratos DB] Falha no INSERT (tabela `pratos`, coluna `imagem` URL pública):", {
+          code: error.code,
+          message: error.message,
+          details: error.details,
+          hint: error.hint,
+          restaurante_id: payload.restaurante_id,
+          imagemSalva: imagemParaDb,
+          raw: error,
+        });
         const msg = mensagemErroSupabasePainel(error.message);
         setFetchError(msg);
         throw new Error(msg);
