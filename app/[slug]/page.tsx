@@ -287,7 +287,7 @@ export default function PublicCardapioPage() {
   const fetchAbort = useRef<AbortController | null>(null);
 
   useEffect(() => {
-    const id = window.setInterval(() => setAgoraTick(Date.now()), 60_000);
+    const id = window.setInterval(() => setAgoraTick(Date.now()), 30_000);
     return () => window.clearInterval(id);
   }, []);
 
@@ -849,6 +849,10 @@ export default function PublicCardapioPage() {
   const mensagemFechadoCustom = restaurante.mensagem_fechado?.trim() ?? "";
 
   const textoHor = textoHorarioVitrine(restaurante);
+  const statusRelogio = statusAberturaPorRelogio(restaurante, relogio);
+
+  const fechadoPorHorario = !vitrineFechada && statusRelogio === "fechado";
+  const fechadoManual = vitrineFechada;
 
   const textoVitrineAbertoPadrao = "Faça seu pedido e receba em instantes.";
   const textoVitrineFechadoPadrao = "No momento estamos fechados. Veja nosso cardápio!";
@@ -856,6 +860,20 @@ export default function PublicCardapioPage() {
   const badgeLinhaStatus = pedidosBloqueados
     ? (restaurante.texto_vitrine_fechado?.trim() || textoVitrineFechadoPadrao)
     : (restaurante.texto_vitrine_aberto?.trim() || textoVitrineAbertoPadrao);
+
+  const rotuloStatusPrincipal = fechadoManual
+    ? "Fechado"
+    : fechadoPorHorario
+      ? "Fechado"
+      : "Aberto";
+
+  const tituloTooltipStatus = fechadoManual
+    ? "Pedidos pausados no painel do estabelecimento."
+    : fechadoPorHorario
+      ? "Fora do horário de funcionamento cadastrado."
+      : statusRelogio === "aberto"
+        ? "Dentro do horário de funcionamento cadastrado."
+        : "Sem grade semanal no painel — horário exibido abaixo é informativo; pedidos seguem as regras do estabelecimento.";
 
   const boasVindasTexto =
     restaurante.mensagem_boas_vindas?.trim() ||
@@ -925,30 +943,32 @@ export default function PublicCardapioPage() {
 
           <div className="mt-8 flex justify-center sm:mt-9" role="status" aria-live="polite">
             <div
+              title={tituloTooltipStatus}
               className={[
-                "inline-flex max-w-full items-center gap-2.5 rounded-full border px-4 py-2 sm:px-5 sm:py-2.5",
+                "inline-flex max-w-full cursor-default select-none items-center gap-2.5 rounded-full border px-5 py-2.5 text-left shadow-lg sm:gap-3 sm:px-7 sm:py-3",
                 pedidosBloqueados
-                  ? "border-red-200/65 bg-white/[0.92] text-red-950 shadow-[0_1px_0_rgba(255,255,255,0.6)_inset]"
-                  : "border-emerald-200/60 bg-white/[0.92] text-emerald-950 shadow-[0_1px_0_rgba(255,255,255,0.6)_inset]",
+                  ? "border-red-800/25 bg-red-600 text-white shadow-red-600/35 ring-1 ring-white/15"
+                  : "border-emerald-800/20 bg-emerald-500 text-white shadow-emerald-600/35 ring-1 ring-white/15",
               ].join(" ")}
             >
+              <span className="sr-only">{tituloTooltipStatus}</span>
               <span className="relative flex h-2.5 w-2.5 shrink-0" aria-hidden>
                 {!pedidosBloqueados ? (
-                  <span className="absolute inset-0 animate-ping rounded-full bg-emerald-500/40" />
+                  <span className="absolute inset-0 animate-ping rounded-full bg-white/50" />
                 ) : (
-                  <span className="absolute inset-0 animate-ping rounded-full bg-red-500/35" />
+                  <span className="absolute inset-0 animate-ping rounded-full bg-white/40" />
                 )}
                 <span
                   className={[
-                    "relative inline-flex h-2.5 w-2.5 rounded-full ring-[2px] ring-white",
-                    pedidosBloqueados ? "bg-red-500" : "bg-emerald-500",
+                    "relative inline-flex h-2.5 w-2.5 rounded-full ring-2 ring-white/90",
+                    pedidosBloqueados ? "bg-red-200" : "bg-emerald-100",
                   ].join(" ")}
                 />
               </span>
-              <p className="min-w-0 text-left text-[13px] font-medium leading-snug tracking-tight text-zinc-800 sm:text-sm">
-                <span className="font-semibold text-zinc-950">{pedidosBloqueados ? "Fechado" : "Aberto"}</span>
-                <span className="mx-1.5 font-light text-zinc-400">·</span>
-                <span>{badgeLinhaStatus}</span>
+              <p className="min-w-0 text-[13px] font-semibold leading-snug tracking-tight sm:text-sm">
+                <span className="text-white">{rotuloStatusPrincipal}</span>
+                <span className="mx-1.5 font-light text-white/70">·</span>
+                <span className="font-medium text-white/95">{badgeLinhaStatus}</span>
               </p>
             </div>
           </div>

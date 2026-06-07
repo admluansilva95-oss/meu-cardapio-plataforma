@@ -11,6 +11,17 @@ export function mensagemUploadStorageAmigavel(err: unknown): string {
     raw = err;
   }
   const msg = raw.toLowerCase();
+  if (
+    /bucket not found/i.test(msg) ||
+    (/\b404\b/.test(raw) && /bucket|storage\.objects|object\/public/i.test(msg))
+  ) {
+    return (
+      "O bucket de imagens não existe neste projeto Supabase (erro 404). No SQL Editor, execute as migrações " +
+      "`supabase/migrations/20260607140000_storage_restaurant_logos.sql` (bucket `restaurant-logos`) e " +
+      "`supabase/migrations/20260621120000_storage_imagens_pratos_bucket.sql` (bucket `imagens-pratos`), " +
+      "ou o bloco “STORAGE” em `supabase/init-completo.sql`. Os nomes precisam ser exatamente esses."
+    );
+  }
   if (/413|payload too large|too large|entity too large|body exceeded/i.test(msg)) {
     return "A imagem é grande demais. Tente uma foto menor (por exemplo até 4 MB) ou outro arquivo.";
   }

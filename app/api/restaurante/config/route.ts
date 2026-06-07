@@ -51,7 +51,7 @@ type ConfigBody = {
 };
 
 const MIGRATION_HINT =
-  "Parte dos dados não foi gravada no banco (colunas em falta). No SQL Editor do Supabase, execute em ordem as migrações: 20260608120000_restaurantes_tenant_settings.sql, 20260610120000_restaurantes_vitrine_fechada.sql, 20260611120000_restaurantes_funcionamento_taxas_json.sql, 20260614120000_restaurantes_entrega_categorias.sql, 20260615120000_restaurantes_vitrine_textos.sql e 20260607140000_storage_restaurant_logos.sql (bucket de logos). Nome, WhatsApp e cor já foram salvos.";
+  "Parte dos dados não foi gravada no banco (colunas em falta). No SQL Editor do Supabase, execute em ordem as migrações: 20260608120000_restaurantes_tenant_settings.sql, 20260610120000_restaurantes_vitrine_fechada.sql, 20260611120000_restaurantes_funcionamento_taxas_json.sql, 20260614120000_restaurantes_entrega_categorias.sql, 20260615120000_restaurantes_vitrine_textos.sql, 20260607140000_storage_restaurant_logos.sql, 20260621120000_storage_imagens_pratos_bucket.sql (buckets de Storage). Nome, WhatsApp e cor já foram salvos.";
 
 function isSchemaColumnError(err: { message?: string; code?: string; details?: string } | null): boolean {
   if (!err) return false;
@@ -119,9 +119,9 @@ async function applyLegacyExtras(
     vitrine_fechada: boolean;
     mensagem_fechado: string | null;
     mensagem_boas_vindas: string | null;
-    texto_vitrine_aberto: string | null;
-    texto_vitrine_fechado: string | null;
-    mensagem_fora_horario: string | null;
+    texto_vitrine_aberto?: string | null;
+    texto_vitrine_fechado?: string | null;
+    mensagem_fora_horario?: string | null;
   },
 ): Promise<{ ok: true; skipped?: boolean } | { ok: false; message: string; code?: "rls" | "other" }> {
   const payload: Record<string, unknown> = {
@@ -130,10 +130,10 @@ async function applyLegacyExtras(
     vitrine_fechada: extras.vitrine_fechada,
     mensagem_fechado: extras.mensagem_fechado,
     mensagem_boas_vindas: extras.mensagem_boas_vindas,
-    texto_vitrine_aberto: extras.texto_vitrine_aberto,
-    texto_vitrine_fechado: extras.texto_vitrine_fechado,
-    mensagem_fora_horario: extras.mensagem_fora_horario,
   };
+  if ("texto_vitrine_aberto" in extras) payload.texto_vitrine_aberto = extras.texto_vitrine_aberto;
+  if ("texto_vitrine_fechado" in extras) payload.texto_vitrine_fechado = extras.texto_vitrine_fechado;
+  if ("mensagem_fora_horario" in extras) payload.mensagem_fora_horario = extras.mensagem_fora_horario;
   const res = await runUpdate(client, opts, payload);
   if (!res.error) {
     const r = interpretUpdate(res);
@@ -266,9 +266,21 @@ export async function POST(request: NextRequest) {
   const normTxt = (v: unknown, max: number) =>
     typeof v === "string" ? v.trim().slice(0, max) || null : null;
   const mensagem_boas_vindas = normTxt(body.mensagem_boas_vindas, 500);
-  const texto_vitrine_aberto = normTxt(body.texto_vitrine_aberto, 200);
-  const texto_vitrine_fechado = normTxt(body.texto_vitrine_fechado, 200);
-  const mensagem_fora_horario = normTxt(body.mensagem_fora_horario, 400);
+
+  const legacyVitrineOpcional: {
+    texto_vitrine_aberto?: string | null;
+    texto_vitrine_fechado?: string | null;
+    mensagem_fora_horario?: string | null;
+  } = {};
+  if ("texto_vitrine_aberto" in body) {
+    legacyVitrineOpcional.texto_vitrine_aberto = normTxt(body.texto_vitrine_aberto, 200);
+  }
+  if ("texto_vitrine_fechado" in body) {
+    legacyVitrineOpcional.texto_vitrine_fechado = normTxt(body.texto_vitrine_fechado, 200);
+  }
+  if ("mensagem_fora_horario" in body) {
+    legacyVitrineOpcional.mensagem_fora_horario = normTxt(body.mensagem_fora_horario, 400);
+  }
 
   const funcionamento_semana = body.funcionamento_semana;
   const taxasBody = body.taxas_entrega_zonas;
@@ -372,9 +384,7 @@ export async function POST(request: NextRequest) {
     vitrine_fechada: vitrineFechada,
     mensagem_fechado: vitrineFechada ? mensagem_fechado : null,
     mensagem_boas_vindas,
-    texto_vitrine_aberto,
-    texto_vitrine_fechado,
-    mensagem_fora_horario,
+    ...legacyVitrineOpcional,
   };
 
   const jsonZonas = listaZonas.length > 0 ? listaZonas : null;
