@@ -9,33 +9,43 @@ export type Plan = {
   priceId: string;
   features: string[];
   highlighted?: boolean;
+  /**
+   * Limite de pedidos por mês (janela calendário) para comunicação e futura cobrança no app.
+   * `null` = sem limite declarado (plano superior).
+   */
+  monthlyOrderLimit: number | null;
 };
 
 const envPrice = (key: string, fallback: string) =>
   process.env[key]?.trim() || fallback;
 
+/** Teto de pedidos/mês do Essencial (única fonte para copy e futura regra no app). */
+const ESSENCIAL_MONTHLY_ORDER_LIMIT = 150;
+
 export const PLANS: Plan[] = [
   {
     id: "essencial",
     name: "Essencial",
-    description: "Cardápio digital profissional para começar a vender hoje.",
+    description: "Cardápio digital profissional com volume de pedidos ideal para quem está começando.",
     priceLabel: "R$ 49,90",
     priceCents: 4990,
     priceId: envPrice(
       "NEXT_PUBLIC_STRIPE_PRICE_ESSENCIAL",
       "price_essencial_placeholder"
     ),
+    monthlyOrderLimit: ESSENCIAL_MONTHLY_ORDER_LIMIT,
     features: [
       "Cardápio público com URL personalizada",
       "Gestão de pratos e categorias",
       "Pedidos via WhatsApp",
       "Painel admin completo",
+      `Até ${ESSENCIAL_MONTHLY_ORDER_LIMIT} pedidos por mês`,
     ],
   },
   {
     id: "premium",
     name: "Premium",
-    description: "Tudo do Essencial com recursos para escalar o delivery.",
+    description: "Tudo do Essencial com esteira Kanban e volume de pedidos sem teto para escalar.",
     priceLabel: "R$ 89,90",
     priceCents: 8990,
     priceId: envPrice(
@@ -43,10 +53,11 @@ export const PLANS: Plan[] = [
       "price_premium_placeholder"
     ),
     highlighted: true,
+    monthlyOrderLimit: null,
     features: [
       "Tudo do plano Essencial",
       "Esteira Kanban de pedidos",
-      "Upload de imagens dos pratos",
+      "Pedidos ilimitados por mês",
       "Suporte prioritário",
     ],
   },

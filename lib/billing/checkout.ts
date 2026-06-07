@@ -48,7 +48,7 @@ export async function createSubscriptionCheckoutSession(
 
   const restaurantName = input.restaurantName.trim() || slug;
   const whatsapp = input.whatsapp?.trim() ?? "";
-  const appUrl = getPublicAppUrl();
+  const baseUrl = getPublicAppUrl();
 
   let stripe: Stripe;
   try {
@@ -75,8 +75,8 @@ export async function createSubscriptionCheckoutSession(
       mode: "subscription",
       customer_email: input.userEmail,
       line_items: [{ price: input.priceId, quantity: 1 }],
-      success_url: `${appUrl}/admin?checkout=success`,
-      cancel_url: `${appUrl}/cadastro?priceId=${encodeURIComponent(input.priceId)}&canceled=1`,
+      success_url: `${baseUrl}/admin?checkout=success&success=true`,
+      cancel_url: `${baseUrl}/assinar?canceled=true&priceId=${encodeURIComponent(input.priceId)}`,
       metadata,
       subscription_data: {
         metadata: {
