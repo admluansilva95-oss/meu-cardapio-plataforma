@@ -14,6 +14,7 @@ import { createBrowserSupabaseClient } from "@/lib/supabase";
 import { getPublicAppUrl } from "@/lib/site-url";
 import { isRetryableSupabaseError, withRetry } from "@/lib/with-retry";
 import { normalizeCorTema } from "@/lib/restaurante/cor-tema";
+import { BookOpen, ClipboardList, Palette, type LucideIcon } from "lucide-react";
 
 function formatSlugToDisplayName(slug: string): string {
   const s = slug.trim();
@@ -324,17 +325,19 @@ function AdminSidebar(props: {
   onTab: (t: AdminTab) => void;
 }) {
   const { restaurante, tab, onTab } = props;
-  const items: { id: AdminTab; label: string; hint: string }[] = [
-    { id: "pedidos", label: "Pedidos", hint: "Esteira Kanban" },
-    { id: "cardapio", label: "Cardápio", hint: "Lista de pratos" },
+  /** Ordem: pedidos → marca (meio, mais visível no scroll horizontal mobile) → cardápio */
+  const items: { id: AdminTab; label: string; hint: string; Icon: LucideIcon }[] = [
+    { id: "pedidos", label: "Pedidos", hint: "Esteira ao vivo", Icon: ClipboardList },
     {
       id: "configuracoes",
-      label: "Configurações",
-      hint: "Marca, WhatsApp, horário e taxa",
+      label: "Marca e vitrine",
+      hint: "WhatsApp, cor, link e taxa",
+      Icon: Palette,
     },
+    { id: "cardapio", label: "Cardápio", hint: "Pratos e preços", Icon: BookOpen },
   ];
   return (
-    <aside className="flex w-full shrink-0 flex-col border-b border-black/[0.06] bg-[#f5f5f7]/90 backdrop-blur-xl lg:h-screen lg:w-64 lg:border-b-0 lg:border-r lg:border-black/[0.06]">
+    <aside className="flex w-full shrink-0 flex-col border-b border-black/[0.06] bg-[#f5f5f7]/90 backdrop-blur-xl lg:h-screen lg:w-72 lg:border-b-0 lg:border-r lg:border-black/[0.06]">
       <div className="border-b border-black/[0.06] px-5 py-6">
         <div className="flex items-center gap-3">
           <div
@@ -349,23 +352,35 @@ function AdminSidebar(props: {
           </div>
         </div>
       </div>
-      <nav className="flex flex-1 flex-row gap-1 overflow-x-auto px-2 py-3 lg:flex-col lg:px-3">
+      <nav className="flex flex-1 snap-x snap-mandatory flex-row gap-1.5 overflow-x-auto px-2 py-3 lg:snap-none lg:flex-col lg:px-3">
         {items.map((it) => {
           const active = tab === it.id;
+          const Icon = it.Icon;
           return (
             <button
               key={it.id}
               type="button"
               onClick={() => onTab(it.id)}
               className={[
-                "flex min-w-[8.5rem] flex-col rounded-xl px-3 py-2.5 text-left transition lg:min-w-0",
+                "flex min-w-[10.5rem] snap-start flex-col rounded-xl px-3 py-2.5 text-left transition sm:min-w-[9.5rem] lg:min-w-0",
                 active
                   ? "bg-white text-[#1d1d1f] shadow-[0_1px_3px_rgba(0,0,0,0.08)] ring-1 ring-black/[0.04]"
                   : "text-[#6e6e73] hover:bg-white/70 hover:text-[#1d1d1f]",
               ].join(" ")}
             >
-              <span className="text-sm font-semibold">{it.label}</span>
-              <span className="text-[11px] text-[#86868b]">{it.hint}</span>
+              <span className="flex items-center gap-2">
+                <Icon
+                  className={[
+                    "h-4 w-4 shrink-0",
+                    active ? "text-[#0071e3]" : "text-[#86868b]",
+                  ].join(" ")}
+                  aria-hidden
+                />
+                <span className="text-sm font-semibold leading-tight">{it.label}</span>
+              </span>
+              <span className="mt-1 pl-6 text-[11px] leading-snug text-[#86868b]">
+                {it.hint}
+              </span>
             </button>
           );
         })}
@@ -1421,16 +1436,29 @@ function AdminPageInner() {
                   ? "Painel de operações"
                   : tab === "cardapio"
                     ? "Cardápio"
-                    : "Configurações"}
+                    : "Marca e vitrine"}
               </h1>
               <p className="mt-1 text-sm text-[#86868b]">
-                Tenant: <span className="font-medium text-[#424245]">{restaurante.nome}</span>
-                {tab === "pedidos" && !loading ? (
-                  <span className="ml-2 text-xs text-[#aeaeb2]">· KPIs e esteira ao vivo</span>
-                ) : null}
-                {loading ? (
-                  <span className="ml-2 text-xs text-[#aeaeb2]">· sincronizando…</span>
-                ) : null}
+                {tab === "configuracoes" ? (
+                  <>
+                    <span className="text-[#6e6e73]">
+                      Link público, WhatsApp dos pedidos, horário, taxa e cor — o que o cliente vê no
+                      cardápio.
+                    </span>{" "}
+                    <span className="text-[#aeaeb2]">·</span>{" "}
+                    <span className="font-medium text-[#424245]">{restaurante.nome}</span>
+                  </>
+                ) : (
+                  <>
+                    Tenant: <span className="font-medium text-[#424245]">{restaurante.nome}</span>
+                    {tab === "pedidos" && !loading ? (
+                      <span className="ml-2 text-xs text-[#aeaeb2]">· KPIs e esteira ao vivo</span>
+                    ) : null}
+                    {loading ? (
+                      <span className="ml-2 text-xs text-[#aeaeb2]">· sincronizando…</span>
+                    ) : null}
+                  </>
+                )}
               </p>
             </div>
             {tab === "cardapio" ? (
