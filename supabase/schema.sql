@@ -25,6 +25,12 @@ create index if not exists idx_restaurantes_slug on public.restaurantes (slug);
 comment on table public.restaurantes is 'Tenant do cardápio (um registro por restaurante).';
 comment on column public.restaurantes.slug is 'Identificador único na URL (ex.: casa-do-sabor).';
 
+alter table public.restaurantes
+  add column if not exists horario_funcionamento text null;
+
+comment on column public.restaurantes.horario_funcionamento is
+  'Texto livre exibido na vitrine (ex.: Ter–Dom 11h–23h).';
+
 -- -----------------------------------------------------------------------------
 -- pratos
 -- -----------------------------------------------------------------------------
