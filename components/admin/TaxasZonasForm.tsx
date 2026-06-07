@@ -7,8 +7,9 @@ import { parsePrecoBrasileiro } from "@/lib/restaurante/preco-input";
 export function TaxasZonasForm(props: {
   value: TaxaEntregaZona[];
   onChange: (next: TaxaEntregaZona[]) => void;
+  adicionarLabel?: string;
 }) {
-  const { value, onChange } = props;
+  const { value, onChange, adicionarLabel = "+ Nova taxa" } = props;
 
   return (
     <div className="space-y-2">
@@ -23,7 +24,7 @@ export function TaxasZonasForm(props: {
           }
           className="rounded-full bg-[#1d1d1f] px-3 py-1.5 text-xs font-semibold text-white transition hover:bg-black"
         >
-          + Nova taxa
+          {adicionarLabel}
         </button>
       </div>
       {value.length === 0 ? (

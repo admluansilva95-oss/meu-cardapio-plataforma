@@ -2,7 +2,7 @@
 
 import { Suspense, useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import type { Prato, PratoStatus, Restaurante } from "../../types";
+import type { EntregaModo, Prato, PratoStatus, Restaurante } from "../../types";
 import { PedidosDashboardSkeleton } from "@/components/admin/PedidosDashboardSkeleton";
 import { PedidosEmptyState } from "@/components/admin/PedidosEmptyState";
 import { PedidosKpiBar } from "@/components/admin/PedidosKpiBar";
@@ -33,9 +33,15 @@ import {
   zonasFromLegacyTaxa,
   type TaxaEntregaZona,
 } from "@/lib/restaurante/taxas-entrega-zonas";
+import {
+  categoriasDistintasDosPratos,
+  parseCardapioCategorias,
+  validarCardapioCategorias,
+} from "@/lib/restaurante/cardapio-categorias";
+import { EntregaComercialSection, taxaFixaInicialDeRestaurante, taxaFixaParaPersistir } from "@/components/admin/EntregaComercialSection";
+import { CategoriaPratoField } from "@/components/admin/CategoriaPratoField";
 import { BookOpen, ClipboardList, Palette, type LucideIcon } from "lucide-react";
 import { FuncionamentoSemanalForm } from "@/components/admin/FuncionamentoSemanalForm";
-import { TaxasZonasForm } from "@/components/admin/TaxasZonasForm";
 
 function formatSlugToDisplayName(slug: string): string {
   const s = slug.trim();
@@ -210,6 +216,9 @@ function mapRestauranteRow(row: {
   mensagem_fechado?: string | null;
   funcionamento_semana?: unknown;
   taxas_entrega_zonas?: unknown;
+  entrega_modo?: string | null;
+  retirada_balcao?: boolean | null;
+  cardapio_categorias?: unknown;
 }): Restaurante {
   const rawNome = row.nome?.trim() ?? "";
   const taxaRaw = row.taxa_entrega;
@@ -217,6 +226,15 @@ function mapRestauranteRow(row: {
     taxaRaw == null || taxaRaw === ""
       ? null
       : Math.max(0, Math.round(toNumber(taxaRaw) * 100) / 100);
+  const zonasParsed = parseTaxasEntregaZonas(row.taxas_entrega_zonas);
+  const rawModo = row.entrega_modo;
+  const entrega_modo: EntregaModo =
+    rawModo === "zonas" || rawModo === "fixa"
+      ? rawModo
+      : zonasParsed && zonasParsed.length > 1
+        ? "zonas"
+        : "fixa";
+  const cardapio_categorias = parseCardapioCategorias(row.cardapio_categorias);
   return {
     id: row.id,
     rawNome,
@@ -230,7 +248,10 @@ function mapRestauranteRow(row: {
     vitrine_fechada: row.vitrine_fechada === true,
     mensagem_fechado: row.mensagem_fechado?.trim() || null,
     funcionamento_semana: parseFuncionamentoSemana(row.funcionamento_semana) ?? undefined,
-    taxas_entrega_zonas: parseTaxasEntregaZonas(row.taxas_entrega_zonas) ?? undefined,
+    taxas_entrega_zonas: zonasParsed ?? undefined,
+    entrega_modo,
+    retirada_balcao: row.retirada_balcao === true,
+    cardapio_categorias: cardapio_categorias.length > 0 ? cardapio_categorias : null,
   };
 }
 
@@ -331,7 +352,7 @@ function AdminSidebar(props: {
     { id: "cardapio", label: "Cardápio", hint: "Pratos e preços", Icon: BookOpen },
   ];
   return (
-    <aside className="flex w-full shrink-0 flex-col border-b border-black/[0.06] bg-[#f5f5f7]/90 backdrop-blur-xl lg:h-screen lg:w-72 lg:border-b-0 lg:border-r lg:border-black/[0.06]">
+    <aside className="flex w-full shrink-0 flex-col border-b border-zinc-200/80 bg-white/90 backdrop-blur-xl lg:h-screen lg:w-72 lg:border-b-0 lg:border-r lg:border-zinc-200/80">
       <div className="border-b border-black/[0.06] px-5 py-6">
         <div className="flex items-center gap-3">
           <div
@@ -583,6 +604,8 @@ function ModalPrato(props: {
   mode: "create" | "edit";
   restauranteId: string;
   initial: Prato | null;
+  categoriasOpcoes: string[];
+  onNovaCategoria: (nome: string) => Promise<void>;
   onClose: () => void;
   onSubmit: (payload: {
     id?: string;
@@ -596,7 +619,8 @@ function ModalPrato(props: {
     imagemAtual: string | null;
   }) => void | Promise<void>;
 }) {
-  const { open, mode, restauranteId, initial, onClose, onSubmit } = props;
+  const { open, mode, restauranteId, initial, categoriasOpcoes, onNovaCategoria, onClose, onSubmit } =
+    props;
   const [form, setForm] = useState(emptyPratoForm);
   const [arquivoImagem, setArquivoImagem] = useState<File | null>(null);
   const [submitting, setSubmitting] = useState(false);
@@ -659,35 +683,30 @@ function ModalPrato(props: {
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/25 p-4 backdrop-blur-sm sm:items-center">
-      <div className="w-full max-w-md rounded-2xl border border-black/[0.06] bg-[#fbfbfd] p-6 shadow-[0_24px_80px_-24px_rgba(0,0,0,0.25)]">
-        <h2 className="text-lg font-semibold tracking-tight text-[#1d1d1f]">
+    <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/30 p-4 backdrop-blur-sm sm:items-center">
+      <div className="w-full max-w-md rounded-3xl border border-zinc-100 bg-white p-6 shadow-xl">
+        <h2 className="text-lg font-semibold tracking-tight text-zinc-900">
           {mode === "create" ? "Novo prato" : "Editar prato"}
         </h2>
-        <form onSubmit={handleSubmit} className="mt-4 space-y-3">
-          <div className="space-y-1">
-            <label className="text-xs font-medium text-[#86868b]">Nome</label>
+        <form onSubmit={handleSubmit} className="mt-5 space-y-4">
+          <div className="space-y-1.5">
+            <label className="text-xs font-semibold uppercase tracking-wide text-zinc-500">Nome</label>
             <input
               value={form.nome}
               onChange={(e) => setForm((f) => ({ ...f, nome: e.target.value }))}
-              className="w-full rounded-xl border border-black/[0.08] bg-white px-3 py-2.5 text-sm text-[#1d1d1f] shadow-[0_1px_0_rgba(0,0,0,0.04)] outline-none transition focus:border-[#0071e3]/40 focus:ring-2 focus:ring-[#0071e3]/15"
+              className="w-full rounded-2xl border border-zinc-200 bg-zinc-50/50 px-4 py-3 text-sm text-zinc-900 outline-none transition focus:border-transparent focus:ring-2 focus:ring-zinc-900"
               required
             />
           </div>
-          <div className="space-y-1">
-            <label className="text-xs font-medium text-[#86868b]">Categoria</label>
-            <input
-              value={form.categoria}
-              onChange={(e) => setForm((f) => ({ ...f, categoria: e.target.value }))}
-              placeholder="Ex.: Entradas, Burgers, Bebidas"
-              className="w-full rounded-xl border border-black/[0.08] bg-white px-3 py-2.5 text-sm text-[#1d1d1f] shadow-[0_1px_0_rgba(0,0,0,0.04)] outline-none transition placeholder:text-[#aeaeb2] focus:border-[#0071e3]/40 focus:ring-2 focus:ring-[#0071e3]/15"
-            />
-            <p className="text-[11px] leading-relaxed text-[#86868b]">
-              Aparece agrupada na vitrine pública. Deixe em branco para ir em &quot;Cardápio&quot;.
-            </p>
-          </div>
-          <div className="space-y-1">
-            <label className="text-xs font-medium text-[#86868b]">Preço (R$)</label>
+          <CategoriaPratoField
+            value={form.categoria?.trim() ? form.categoria.trim() : "Cardápio"}
+            onChange={(c) => setForm((f) => ({ ...f, categoria: c === "Cardápio" ? "" : c }))}
+            opcoes={categoriasOpcoes}
+            onNovaCategoria={onNovaCategoria}
+            disabled={submitting}
+          />
+          <div className="space-y-1.5">
+            <label className="text-xs font-semibold uppercase tracking-wide text-zinc-500">Preço (R$)</label>
             <input
               type="text"
               inputMode="decimal"
@@ -703,25 +722,25 @@ function ModalPrato(props: {
                 )
               }
               placeholder="Ex.: 24,90"
-              className="w-full rounded-xl border border-black/[0.08] bg-white px-3 py-2.5 text-sm text-[#1d1d1f] shadow-[0_1px_0_rgba(0,0,0,0.04)] outline-none transition focus:border-[#0071e3]/40 focus:ring-2 focus:ring-[#0071e3]/15"
+              className="w-full rounded-2xl border border-zinc-200 bg-zinc-50/50 px-4 py-3 text-sm text-zinc-900 outline-none transition focus:border-transparent focus:ring-2 focus:ring-zinc-900"
               required
             />
-            <p className="text-[11px] leading-relaxed text-[#86868b]">
+            <p className="text-[11px] leading-relaxed text-zinc-500">
               Ponto (.) vira vírgula automaticamente; ao sair do campo o valor é ajustado com duas
               casas decimais.
             </p>
           </div>
-          <div className="space-y-1">
-            <label className="text-xs font-medium text-[#86868b]">Descrição</label>
+          <div className="space-y-1.5">
+            <label className="text-xs font-semibold uppercase tracking-wide text-zinc-500">Descrição</label>
             <textarea
               value={form.descricao}
               onChange={(e) => setForm((f) => ({ ...f, descricao: e.target.value }))}
               rows={3}
-              className="w-full resize-none rounded-xl border border-black/[0.08] bg-white px-3 py-2.5 text-sm text-[#1d1d1f] shadow-[0_1px_0_rgba(0,0,0,0.04)] outline-none transition focus:border-[#0071e3]/40 focus:ring-2 focus:ring-[#0071e3]/15"
+              className="w-full resize-none rounded-2xl border border-zinc-200 bg-zinc-50/50 px-4 py-3 text-sm text-zinc-900 outline-none transition focus:border-transparent focus:ring-2 focus:ring-zinc-900"
             />
           </div>
-          <div className="space-y-1">
-            <label className="text-xs font-medium text-[#86868b]" htmlFor="prato-imagem-arquivo">
+          <div className="space-y-1.5">
+            <label className="text-xs font-semibold uppercase tracking-wide text-zinc-500" htmlFor="prato-imagem-arquivo">
               Foto do prato
             </label>
             <input
@@ -733,25 +752,25 @@ function ModalPrato(props: {
                 const f = e.target.files?.[0] ?? null;
                 setArquivoImagem(f);
               }}
-              className="block w-full text-xs text-[#6e6e73] file:mr-3 file:rounded-lg file:border-0 file:bg-[#f5f5f7] file:px-3 file:py-1.5 file:text-xs file:font-medium file:text-[#1d1d1f] hover:file:bg-[#e8e8ed]"
+              className="block w-full text-xs text-zinc-500 file:mr-3 file:rounded-xl file:border-0 file:bg-zinc-100 file:px-3 file:py-2 file:text-xs file:font-semibold file:text-zinc-900 hover:file:bg-zinc-200"
             />
             {mode === "edit" && initial?.imagem && !arquivoImagem ? (
-              <p className="text-[11px] text-[#86868b]">
+              <p className="text-[11px] text-zinc-500">
                 Imagem atual no cardápio. Envie um arquivo acima para substituir.
               </p>
             ) : null}
             {arquivoImagem ? (
-              <p className="truncate text-[11px] text-[#6e6e73]" title={arquivoImagem.name}>
+              <p className="truncate text-[11px] text-zinc-500" title={arquivoImagem.name}>
                 Selecionado: {arquivoImagem.name}
               </p>
             ) : null}
           </div>
-          <div className="space-y-1">
-            <label className="text-xs font-medium text-[#86868b]">Status</label>
+          <div className="space-y-1.5">
+            <label className="text-xs font-semibold uppercase tracking-wide text-zinc-500">Status</label>
             <select
               value={form.status}
               onChange={(e) => setForm((f) => ({ ...f, status: e.target.value as PratoStatus }))}
-              className="w-full rounded-xl border border-black/[0.08] bg-white px-3 py-2.5 text-sm text-[#1d1d1f] shadow-[0_1px_0_rgba(0,0,0,0.04)] outline-none transition focus:border-[#0071e3]/40 focus:ring-2 focus:ring-[#0071e3]/15"
+              className="w-full rounded-2xl border border-zinc-200 bg-zinc-50/50 px-4 py-3 text-sm text-zinc-900 outline-none transition focus:border-transparent focus:ring-2 focus:ring-zinc-900"
             >
               <option value="ativo">Ativo</option>
               <option value="pausado">Pausado</option>
@@ -762,14 +781,14 @@ function ModalPrato(props: {
               type="button"
               onClick={onClose}
               disabled={submitting}
-              className="rounded-xl border border-black/[0.08] bg-white px-4 py-2 text-xs font-medium text-[#1d1d1f] shadow-sm transition hover:bg-[#f5f5f7] disabled:opacity-50"
+              className="rounded-full border border-zinc-200 bg-white px-5 py-2.5 text-sm font-medium text-zinc-700 shadow-sm transition hover:bg-zinc-50 disabled:opacity-50"
             >
               Cancelar
             </button>
             <button
               type="submit"
               disabled={submitting}
-              className="rounded-xl bg-[#0071e3] px-4 py-2 text-xs font-semibold text-white shadow-sm transition hover:bg-[#0077ed] disabled:opacity-50"
+              className="rounded-full bg-zinc-900 px-5 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-zinc-800 disabled:opacity-50"
             >
               {submitting ? "Salvando…" : "Salvar"}
             </button>
@@ -819,6 +838,10 @@ function AdminPageInner() {
     criarFuncionamentoSemanaVazio(),
   );
   const [cfgTaxasZonas, setCfgTaxasZonas] = useState<TaxaEntregaZona[]>([]);
+  const [cfgEntregaModo, setCfgEntregaModo] = useState<EntregaModo>("fixa");
+  const [cfgTaxaFixaTexto, setCfgTaxaFixaTexto] = useState("");
+  const [cfgRetiradaBalcao, setCfgRetiradaBalcao] = useState(false);
+  const [cfgCardapioCategorias, setCfgCardapioCategorias] = useState<string[]>([]);
   const [cfgVitrineFechada, setCfgVitrineFechada] = useState(false);
   const [cfgMensagemFechado, setCfgMensagemFechado] = useState("");
   const [cfgMsg, setCfgMsg] = useState<string | null>(null);
@@ -1015,19 +1038,41 @@ function AdminPageInner() {
     setCfgWhatsapp(restaurante.whatsapp);
     const parsedFn = restaurante.funcionamento_semana;
     setCfgFuncionamento(parsedFn ?? criarFuncionamentoSemanaVazio());
-    const tz = restaurante.taxas_entrega_zonas;
-    if (tz && tz.length > 0) {
-      setCfgTaxasZonas(tz);
-    } else if (restaurante.taxa_entrega != null && restaurante.taxa_entrega > 0) {
-      setCfgTaxasZonas(zonasFromLegacyTaxa(restaurante.taxa_entrega) ?? []);
+
+    const modo: EntregaModo =
+      restaurante.entrega_modo === "zonas"
+        ? "zonas"
+        : restaurante.entrega_modo === "fixa"
+          ? "fixa"
+          : (restaurante.taxas_entrega_zonas?.length ?? 0) > 1
+            ? "zonas"
+            : "fixa";
+    setCfgEntregaModo(modo);
+    if (modo === "zonas") {
+      const tz = restaurante.taxas_entrega_zonas;
+      setCfgTaxasZonas(
+        tz && tz.length > 0 ? tz : zonasFromLegacyTaxa(restaurante.taxa_entrega) ?? [],
+      );
+      setCfgTaxaFixaTexto("");
     } else {
       setCfgTaxasZonas([]);
+      setCfgTaxaFixaTexto(
+        taxaFixaInicialDeRestaurante(restaurante.taxa_entrega, restaurante.taxas_entrega_zonas),
+      );
     }
+
+    const from = parseCardapioCategorias(restaurante.cardapio_categorias);
+    const fromP = categoriasDistintasDosPratos(pratos);
+    const ord = from.length > 0 ? from : fromP;
+    const extra = fromP.filter((x) => !ord.includes(x));
+    setCfgCardapioCategorias([...new Set([...ord, ...extra])]);
+
+    setCfgRetiradaBalcao(restaurante.retirada_balcao === true);
     setCfgCor(restaurante.cor_tema);
     setCfgVitrineFechada(restaurante.vitrine_fechada === true);
     setCfgMensagemFechado(restaurante.mensagem_fechado ?? "");
     setCfgMsg(null);
-  }, [tab, restaurante]);
+  }, [tab, restaurante, pratos]);
 
   const salvarConfiguracoesTenant = useCallback(async () => {
     if (!restaurante) return;
@@ -1045,14 +1090,30 @@ function AdminPageInner() {
       setCfgMsg(errF);
       return;
     }
-    const errZ = validarTaxasZonas(cfgTaxasZonas);
+    const errZ =
+      cfgEntregaModo === "zonas" ? validarTaxasZonas(cfgTaxasZonas) : validarTaxasZonas([]);
     if (errZ) {
       setCfgMsg(errZ);
       return;
     }
+    if (cfgEntregaModo === "zonas" && cfgTaxasZonas.length === 0) {
+      setCfgMsg("Em taxas por bairro, adicione ao menos uma região com nome e valor.");
+      return;
+    }
+    const errCat = validarCardapioCategorias(cfgCardapioCategorias);
+    if (errCat) {
+      setCfgMsg(errCat);
+      return;
+    }
     const resumoHorario = formatFuncionamentoResumo(cfgFuncionamento).trim() || null;
     const taxaSync =
-      cfgTaxasZonas.length === 1 ? Math.round(cfgTaxasZonas[0].valor * 100) / 100 : null;
+      cfgEntregaModo === "fixa"
+        ? taxaFixaParaPersistir(cfgTaxaFixaTexto)
+        : cfgTaxasZonas.length === 1
+          ? Math.round(cfgTaxasZonas[0].valor * 100) / 100
+          : null;
+    const zonasApi =
+      cfgEntregaModo === "zonas" && cfgTaxasZonas.length > 0 ? cfgTaxasZonas : null;
     const corOk = normalizeCorTema(cfgCor);
 
     setTenantSaving(true);
@@ -1085,7 +1146,10 @@ function AdminPageInner() {
           vitrine_fechada: cfgVitrineFechada,
           mensagem_fechado: cfgVitrineFechada ? cfgMensagemFechado.trim() || null : null,
           funcionamento_semana: cfgFuncionamento,
-          taxas_entrega_zonas: cfgTaxasZonas.length > 0 ? cfgTaxasZonas : null,
+          taxas_entrega_zonas: zonasApi,
+          retirada_balcao: cfgRetiradaBalcao,
+          entrega_modo: cfgEntregaModo,
+          cardapio_categorias: cfgCardapioCategorias,
         }),
       });
 
@@ -1110,6 +1174,10 @@ function AdminPageInner() {
     cfgWhatsapp,
     cfgFuncionamento,
     cfgTaxasZonas,
+    cfgEntregaModo,
+    cfgTaxaFixaTexto,
+    cfgRetiradaBalcao,
+    cfgCardapioCategorias,
     cfgCor,
     cfgVitrineFechada,
     cfgMensagemFechado,
@@ -1196,6 +1264,30 @@ function AdminPageInner() {
   }, [pedidos]);
 
   const kpisPedidos = useMemo(() => computePedidoKpis(pedidos), [pedidos]);
+
+  const categoriasOpcoesModal = useMemo(() => {
+    const fromRest = parseCardapioCategorias(restaurante?.cardapio_categorias ?? null);
+    const fromP = categoriasDistintasDosPratos(pratos);
+    return [...new Set([...fromRest, ...fromP, "Cardápio"])].sort((a, b) =>
+      a.localeCompare(b, "pt-BR"),
+    );
+  }, [restaurante?.cardapio_categorias, pratos]);
+
+  const adicionarCategoriaCardapio = useCallback(
+    async (nome: string) => {
+      if (!restaurante?.id) throw new Error("Restaurante não carregado.");
+      const t = nome.trim();
+      const base = parseCardapioCategorias(restaurante.cardapio_categorias ?? null);
+      const next = [...new Set([...base, t])];
+      const { error } = await supabase
+        .from("restaurantes")
+        .update({ cardapio_categorias: next })
+        .eq("id", restaurante.id);
+      if (error) throw new Error(error.message);
+      await loadData();
+    },
+    [restaurante, supabase, loadData],
+  );
 
   const atualizarColunaPedido = async (pedidoId: string, nova: KanbanCol) => {
     const anterior = pedidos.find((p) => p.id === pedidoId);
@@ -1491,7 +1583,7 @@ function AdminPageInner() {
   }
 
   return (
-    <div className="flex min-h-screen bg-[#f5f5f7] font-sans text-[#1d1d1f] antialiased">
+    <div className="flex min-h-screen bg-zinc-50 font-sans text-zinc-900 antialiased">
       <AdminSidebar restaurante={restaurante} tab={tab} onTab={setTab} />
 
       <main className="flex min-h-0 flex-1 flex-col">
@@ -1712,8 +1804,8 @@ function AdminPageInner() {
           ) : null}
 
           {tab === "configuracoes" ? (
-            <section className="mx-auto max-w-xl space-y-8">
-              <div className="rounded-2xl border border-black/[0.06] bg-white px-5 py-6 sm:px-6 sm:py-7">
+            <section className="mx-auto max-w-2xl space-y-6">
+              <div className="rounded-3xl border border-zinc-100 bg-white px-5 py-6 shadow-sm sm:px-7 sm:py-8">
                 <p className="text-xs font-medium uppercase tracking-wide text-[#86868b]">Link público</p>
                 <div className="mt-3 flex flex-col gap-3 sm:flex-row sm:items-center">
                   <a
@@ -1754,14 +1846,14 @@ function AdminPageInner() {
                 </div>
               </div>
 
-              <div className="rounded-2xl border border-black/[0.06] bg-white px-5 py-6 sm:px-6 sm:py-7">
-                <div className="flex flex-col gap-4 border-b border-black/[0.06] pb-5 sm:flex-row sm:items-center sm:justify-between">
-                  <h2 className="text-lg font-semibold tracking-tight text-[#1d1d1f]">Estabelecimento</h2>
+              <div className="rounded-3xl border border-zinc-100 bg-white px-5 py-6 shadow-sm sm:px-7 sm:py-8">
+                <div className="flex flex-col gap-4 border-b border-zinc-100 pb-5 sm:flex-row sm:items-center sm:justify-between">
+                  <h2 className="text-lg font-semibold tracking-tight text-zinc-900">Estabelecimento</h2>
                   <button
                     type="button"
                     disabled={tenantSaving}
                     onClick={() => void salvarConfiguracoesTenant()}
-                    className="rounded-full bg-[#1d1d1f] px-5 py-2 text-sm font-semibold text-white transition hover:bg-black disabled:cursor-not-allowed disabled:opacity-50"
+                    className="rounded-full bg-zinc-900 px-5 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-zinc-800 disabled:cursor-not-allowed disabled:opacity-50"
                   >
                     {tenantSaving ? "Salvando…" : "Salvar"}
                   </button>
@@ -1824,7 +1916,16 @@ function AdminPageInner() {
                     ) : null}
                   </div>
 
-                  <TaxasZonasForm value={cfgTaxasZonas} onChange={setCfgTaxasZonas} />
+                  <EntregaComercialSection
+                    entregaModo={cfgEntregaModo}
+                    onEntregaModo={setCfgEntregaModo}
+                    taxaFixaTexto={cfgTaxaFixaTexto}
+                    onTaxaFixaTexto={setCfgTaxaFixaTexto}
+                    zonas={cfgTaxasZonas}
+                    onZonas={setCfgTaxasZonas}
+                    retiradaBalcao={cfgRetiradaBalcao}
+                    onRetiradaBalcao={setCfgRetiradaBalcao}
+                  />
 
                   <div className="space-y-3">
                     <p className="text-xs font-semibold uppercase tracking-wide text-[#86868b]">Cor</p>
@@ -1897,6 +1998,8 @@ function AdminPageInner() {
         mode={pratoModalMode}
         restauranteId={restaurante.id}
         initial={editingPrato}
+        categoriasOpcoes={categoriasOpcoesModal}
+        onNovaCategoria={adicionarCategoriaCardapio}
         onClose={() => setPratoModalOpen(false)}
         onSubmit={handleSavePrato}
       />

@@ -8,6 +8,8 @@ import type { TaxaEntregaZona } from "@/lib/restaurante/taxas-entrega-zonas";
 
 export type PratoStatus = "ativo" | "pausado";
 
+export type EntregaModo = "fixa" | "zonas";
+
 export interface Restaurante {
   id: string;
   /** Valor salvo em `restaurantes.nome` (pode estar vazio; a UI usa fallback a partir do slug). */
@@ -33,6 +35,12 @@ export interface Restaurante {
   funcionamento_semana?: FuncionamentoSemana | null;
   /** Taxas por região/bairro (substitui taxa única quando preenchido). */
   taxas_entrega_zonas?: TaxaEntregaZona[] | null;
+  /** fixa = uma taxa (`taxa_entrega`); zonas = várias taxas em `taxas_entrega_zonas`. */
+  entrega_modo?: EntregaModo;
+  /** Cliente pode escolher retirada no balcão (sem taxa de entrega). */
+  retirada_balcao?: boolean;
+  /** Ordem das seções do cardápio público (nomes de categoria). */
+  cardapio_categorias?: string[] | null;
 }
 
 export interface Prato {

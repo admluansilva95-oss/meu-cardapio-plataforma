@@ -59,6 +59,22 @@ alter table public.restaurantes
 alter table public.restaurantes
   add column if not exists taxas_entrega_zonas jsonb null;
 
+alter table public.restaurantes
+  add column if not exists retirada_balcao boolean not null default false;
+
+alter table public.restaurantes
+  add column if not exists entrega_modo text not null default 'fixa';
+
+alter table public.restaurantes
+  add column if not exists cardapio_categorias jsonb not null default '[]'::jsonb;
+
+alter table public.restaurantes
+  drop constraint if exists restaurantes_entrega_modo_check;
+
+alter table public.restaurantes
+  add constraint restaurantes_entrega_modo_check
+  check (entrega_modo in ('fixa', 'zonas'));
+
 comment on table public.restaurantes is 'Tenant do cardápio (um registro por restaurante, após pagamento Stripe).';
 comment on column public.restaurantes.slug is 'URL pública: /{slug} e /admin?slug={slug}';
 comment on column public.restaurantes.owner_id is 'Dono (Supabase Auth). Preenchido no webhook checkout.session.completed.';

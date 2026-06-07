@@ -10,6 +10,10 @@ import {
 import { createAdminSupabaseClient } from "@/lib/supabase/admin";
 import type { TaxaEntregaZona } from "@/lib/restaurante/taxas-entrega-zonas";
 import { validarTaxasZonas } from "@/lib/restaurante/taxas-entrega-zonas";
+import {
+  parseCardapioCategorias,
+  validarCardapioCategorias,
+} from "@/lib/restaurante/cardapio-categorias";
 
 type CookieToSet = { name: string; value: string; options: CookieOptions };
 
@@ -31,10 +35,13 @@ type ConfigBody = {
   mensagem_fechado?: string | null;
   funcionamento_semana?: FuncionamentoSemana;
   taxas_entrega_zonas?: TaxaEntregaZona[] | null;
+  cardapio_categorias?: string[] | null;
+  retirada_balcao?: boolean;
+  entrega_modo?: "fixa" | "zonas";
 };
 
 const MIGRATION_HINT =
-  "Parte dos dados não foi gravada no banco (colunas em falta). No SQL Editor do Supabase, execute em ordem as migrações: 20260608120000_restaurantes_tenant_settings.sql, 20260610120000_restaurantes_vitrine_fechada.sql e 20260611120000_restaurantes_funcionamento_taxas_json.sql. Nome, WhatsApp e cor já foram salvos.";
+  "Parte dos dados não foi gravada no banco (colunas em falta). No SQL Editor do Supabase, execute em ordem as migrações: 20260608120000_restaurantes_tenant_settings.sql, 20260610120000_restaurantes_vitrine_fechada.sql, 20260611120000_restaurantes_funcionamento_taxas_json.sql e 20260614120000_restaurantes_entrega_categorias.sql. Nome, WhatsApp e cor já foram salvos.";
 
 function isSchemaColumnError(err: { message?: string; code?: string; details?: string } | null): boolean {
   if (!err) return false;
@@ -124,12 +131,20 @@ async function applyLegacyExtras(
 async function applyJsonExtras(
   client: SupabaseClient,
   opts: { id: string; ownerFilter: string | null },
-  funcionamento_semana: FuncionamentoSemana,
-  taxas_entrega_zonas: TaxaEntregaZona[] | null,
+  extras: {
+    funcionamento_semana: FuncionamentoSemana;
+    taxas_entrega_zonas: TaxaEntregaZona[] | null;
+    cardapio_categorias: string[];
+    retirada_balcao: boolean;
+    entrega_modo: "fixa" | "zonas";
+  },
 ): Promise<{ ok: true; skipped?: boolean } | { ok: false; message: string; code?: "rls" | "other" }> {
   const payload: Record<string, unknown> = {
-    funcionamento_semana,
-    taxas_entrega_zonas: taxas_entrega_zonas,
+    funcionamento_semana: extras.funcionamento_semana,
+    taxas_entrega_zonas: extras.taxas_entrega_zonas,
+    cardapio_categorias: extras.cardapio_categorias,
+    retirada_balcao: extras.retirada_balcao,
+    entrega_modo: extras.entrega_modo,
   };
   const res = await runUpdate(client, opts, payload);
   if (!res.error) {
@@ -272,6 +287,26 @@ export async function POST(request: NextRequest) {
     return applyAuthCookies(res, authCookieWrites);
   }
 
+  const cardapio_categorias = Array.isArray(body.cardapio_categorias)
+    ? body.cardapio_categorias.map((x) => String(x ?? "").trim()).filter(Boolean)
+    : parseCardapioCategorias(body.cardapio_categorias);
+  const errC = validarCardapioCategorias(cardapio_categorias);
+  if (errC) {
+    const res = NextResponse.json({ error: errC }, { status: 400 });
+    return applyAuthCookies(res, authCookieWrites);
+  }
+
+  const entrega_modo = body.entrega_modo === "zonas" ? "zonas" : "fixa";
+  if (entrega_modo === "zonas" && listaZonas.length === 0) {
+    const res = NextResponse.json(
+      { error: "Em taxas por bairro, adicione ao menos uma região com nome e valor." },
+      { status: 400 },
+    );
+    return applyAuthCookies(res, authCookieWrites);
+  }
+
+  const retirada_balcao = body.retirada_balcao === true;
+
   const cor_tema = normalizeCorTema(corRaw);
   const base = { nome, whatsapp, cor_tema };
   const legacyExtras = {
@@ -295,12 +330,13 @@ export async function POST(request: NextRequest) {
     const r1 = await applyLegacyExtras(client, { id: restauranteId, ownerFilter }, legacyExtras);
     if (!r1.ok) return { error: r1.message, code: r1.code } as const;
 
-    const r2 = await applyJsonExtras(
-      client,
-      { id: restauranteId, ownerFilter },
-      funcionamentoSemanaGravar,
-      jsonZonas,
-    );
+    const r2 = await applyJsonExtras(client, { id: restauranteId, ownerFilter }, {
+      funcionamento_semana: funcionamentoSemanaGravar,
+      taxas_entrega_zonas: jsonZonas,
+      cardapio_categorias,
+      retirada_balcao,
+      entrega_modo,
+    });
     if (!r2.ok) return { error: r2.message, code: r2.code } as const;
 
     const partial = Boolean(r1.skipped || r2.skipped);

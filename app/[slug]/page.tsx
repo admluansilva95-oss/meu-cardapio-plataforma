@@ -14,14 +14,20 @@ function mensagemErroCardapioParaCliente(message: string): string {
   }
   return message;
 }
-import type { CarrinhoItem, Prato, Restaurante } from "@/types";
+import type { CarrinhoItem, Prato, Restaurante, EntregaModo } from "@/types";
 import {
   buildPedidoTextoWhatsApp,
   taxaEntregaParaPedido,
+  type TipoEntregaPedido,
 } from "@/lib/restaurante/pedido-texto-whatsapp";
 import { textoHorarioVitrine } from "@/lib/restaurante/horario-vitrine";
 import { parseFuncionamentoSemana } from "@/lib/restaurante/funcionamento-semana";
 import { parseTaxasEntregaZonas } from "@/lib/restaurante/taxas-entrega-zonas";
+import {
+  ordenarSecoesCardapio,
+  parseCardapioCategorias,
+  slugifySecaoCardapio,
+} from "@/lib/restaurante/cardapio-categorias";
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -87,6 +93,9 @@ type RestauranteRow = {
   mensagem_fechado?: string | null;
   funcionamento_semana?: unknown;
   taxas_entrega_zonas?: unknown;
+  entrega_modo?: string | null;
+  retirada_balcao?: boolean | null;
+  cardapio_categorias?: unknown;
 };
 
 function mapRestauranteRow(row: RestauranteRow): Restaurante {
@@ -96,6 +105,15 @@ function mapRestauranteRow(row: RestauranteRow): Restaurante {
     taxaRaw == null || taxaRaw === ""
       ? null
       : Math.max(0, Math.round(toNumber(taxaRaw) * 100) / 100);
+  const zonasParsed = parseTaxasEntregaZonas(row.taxas_entrega_zonas);
+  const rawModo = row.entrega_modo;
+  const entrega_modo: EntregaModo =
+    rawModo === "zonas" || rawModo === "fixa"
+      ? rawModo
+      : zonasParsed && zonasParsed.length > 1
+        ? "zonas"
+        : "fixa";
+  const cardapio_categorias = parseCardapioCategorias(row.cardapio_categorias);
   return {
     id: row.id,
     rawNome,
@@ -109,7 +127,10 @@ function mapRestauranteRow(row: RestauranteRow): Restaurante {
     vitrine_fechada: row.vitrine_fechada === true,
     mensagem_fechado: row.mensagem_fechado?.trim() || null,
     funcionamento_semana: parseFuncionamentoSemana(row.funcionamento_semana) ?? undefined,
-    taxas_entrega_zonas: parseTaxasEntregaZonas(row.taxas_entrega_zonas) ?? undefined,
+    taxas_entrega_zonas: zonasParsed ?? undefined,
+    entrega_modo,
+    retirada_balcao: row.retirada_balcao === true,
+    cardapio_categorias: cardapio_categorias.length > 0 ? cardapio_categorias : null,
   };
 }
 
@@ -146,28 +167,8 @@ function cartZonaStorageKey(slug: string) {
   return `meu-cardapio:v1:cartZona:${slug}`;
 }
 
-function bucketName(p: Prato): string {
-  const c = p.categoria?.trim();
-  return c && c.length > 0 ? c : "Cardápio";
-}
-
-function groupPratosByCategoria(pratos: Prato[]): [string, Prato[]][] {
-  const map = new Map<string, Prato[]>();
-  for (const p of pratos) {
-    const k = bucketName(p);
-    const arr = map.get(k) ?? [];
-    arr.push(p);
-    map.set(k, arr);
-  }
-  for (const [, arr] of map) {
-    arr.sort((a, b) => a.nome.localeCompare(b.nome, "pt-BR"));
-  }
-  const keys = [...map.keys()].sort((a, b) => {
-    if (a === "Cardápio" && b !== "Cardápio") return 1;
-    if (b === "Cardápio" && a !== "Cardápio") return -1;
-    return a.localeCompare(b, "pt-BR");
-  });
-  return keys.map((k) => [k, map.get(k)!]);
+function cartTipoEntregaStorageKey(slug: string) {
+  return `meu-cardapio:v1:cartTipoEntrega:${slug}`;
 }
 
 type StoredCartLine = { i: string; q: number };
@@ -191,7 +192,7 @@ function CartIcon(props: { className?: string }) {
 }
 
 const shellClass =
-  "min-h-screen bg-[#f5f5f7] font-sans text-[#1d1d1f] antialiased selection:bg-black/10";
+  "min-h-screen bg-zinc-50 font-sans text-zinc-900 antialiased selection:bg-zinc-900/10";
 
 function RestauranteNaoEncontradoView(props: { subtitle?: string }) {
   return (
@@ -231,6 +232,8 @@ export default function PublicCardapioPage() {
   const [cartHydrated, setCartHydrated] = useState(false);
   const [cartOpen, setCartOpen] = useState(false);
   const [zonaEntregaId, setZonaEntregaId] = useState<string | null>(null);
+  const [tipoEntrega, setTipoEntrega] = useState<TipoEntregaPedido>("entrega");
+  const [activeCategoriaId, setActiveCategoriaId] = useState<string | null>(null);
 
   const fetchAbort = useRef<AbortController | null>(null);
 
@@ -325,6 +328,8 @@ export default function PublicCardapioPage() {
     setCart([]);
     setCartHydrated(false);
     setZonaEntregaId(null);
+    setTipoEntrega("entrega");
+    setActiveCategoriaId(null);
   }, [slug]);
 
   useEffect(() => {
@@ -427,7 +432,38 @@ export default function PublicCardapioPage() {
     }
   }, [zonaEntregaId, slug, restaurante, cartHydrated]);
 
-  const categorias = useMemo(() => groupPratosByCategoria(pratos), [pratos]);
+  useEffect(() => {
+    if (!slug || !cartHydrated || !restaurante) return;
+    try {
+      if (restaurante.retirada_balcao) {
+        localStorage.setItem(cartTipoEntregaStorageKey(slug), tipoEntrega);
+      } else {
+        localStorage.removeItem(cartTipoEntregaStorageKey(slug));
+      }
+    } catch {
+      /* ignore */
+    }
+  }, [tipoEntrega, slug, restaurante, cartHydrated]);
+
+  useEffect(() => {
+    if (!slug || !restaurante || !cartHydrated) return;
+    if (!restaurante.retirada_balcao) {
+      setTipoEntrega("entrega");
+      return;
+    }
+    try {
+      const raw = localStorage.getItem(cartTipoEntregaStorageKey(slug));
+      if (raw === "retirada" || raw === "entrega") setTipoEntrega(raw);
+      else setTipoEntrega("entrega");
+    } catch {
+      setTipoEntrega("entrega");
+    }
+  }, [slug, restaurante, cartHydrated]);
+
+  const categorias = useMemo(
+    () => ordenarSecoesCardapio(restaurante?.cardapio_categorias ?? null, pratos),
+    [restaurante?.cardapio_categorias, pratos],
+  );
 
   const subtotalCarrinho = useMemo(
     () => cart.reduce((acc, { prato, quantidade }) => acc + prato.preco * quantidade, 0),
@@ -436,8 +472,8 @@ export default function PublicCardapioPage() {
 
   const taxaCarrinho = useMemo(() => {
     if (!restaurante || cart.length === 0) return 0;
-    return taxaEntregaParaPedido(restaurante, zonaEntregaId).valor;
-  }, [restaurante, cart.length, zonaEntregaId]);
+    return taxaEntregaParaPedido(restaurante, zonaEntregaId, { tipo: tipoEntrega }).valor;
+  }, [restaurante, cart.length, zonaEntregaId, tipoEntrega]);
 
   const total = subtotalCarrinho + taxaCarrinho;
 
@@ -446,12 +482,12 @@ export default function PublicCardapioPage() {
   const waHref = useMemo(() => {
     if (!restaurante || cart.length === 0 || restaurante.vitrine_fechada) return null;
     const zonas = restaurante.taxas_entrega_zonas ?? [];
-    if (zonas.length > 1 && !zonaEntregaId) return null;
-    const msg = buildPedidoTextoWhatsApp(restaurante, cart, zonaEntregaId);
+    if (tipoEntrega === "entrega" && zonas.length > 1 && !zonaEntregaId) return null;
+    const msg = buildPedidoTextoWhatsApp(restaurante, cart, zonaEntregaId, { tipoEntrega });
     const d = digitsOnly(restaurante.whatsapp);
     if (!d) return null;
     return waMeUrl(restaurante.whatsapp, msg);
-  }, [restaurante, cart, zonaEntregaId]);
+  }, [restaurante, cart, zonaEntregaId, tipoEntrega]);
 
   const accent = restaurante?.cor_tema?.trim() || "#1d1d1f";
 
@@ -535,15 +571,21 @@ export default function PublicCardapioPage() {
 
   const textoHor = textoHorarioVitrine(restaurante);
 
+  const irParaSecao = (titulo: string) => {
+    const id = `sec-${slugifySecaoCardapio(titulo)}`;
+    setActiveCategoriaId(id);
+    document.getElementById(id)?.scrollIntoView({ behavior: "smooth", block: "start" });
+  };
+
   return (
     <div className={shellClass}>
-      <header className="border-b border-black/[0.06] bg-[#fbfbfd]/90 backdrop-blur-xl">
-        <div className="mx-auto flex max-w-6xl flex-col gap-10 px-5 py-12 sm:flex-row sm:items-end sm:justify-between sm:px-8 sm:py-16">
-          <div className="flex items-start gap-6 sm:items-center">
+      <header className="sticky top-0 z-40 border-b border-zinc-200/80 bg-white/80 backdrop-blur-md">
+        <div className="mx-auto max-w-6xl px-5 py-8 sm:flex sm:items-center sm:justify-between sm:px-8 sm:py-10">
+          <div className="flex items-start gap-5 sm:items-center">
             <div
-              className="flex h-[4.5rem] w-[4.5rem] shrink-0 items-center justify-center overflow-hidden rounded-2xl border border-black/[0.06] bg-white text-2xl font-semibold tracking-tight text-[#86868b] shadow-[0_12px_40px_-20px_rgba(0,0,0,0.25)] sm:h-24 sm:w-24 sm:rounded-[1.35rem] sm:text-3xl"
+              className="flex h-16 w-16 shrink-0 items-center justify-center overflow-hidden rounded-2xl border border-zinc-100 bg-white text-xl font-semibold text-zinc-400 shadow-sm sm:h-20 sm:w-20 sm:rounded-3xl sm:text-2xl"
               style={{
-                boxShadow: `0 0 0 1px color-mix(in srgb, ${accent} 22%, transparent), 0 18px 50px -28px rgba(0,0,0,0.35)`,
+                boxShadow: `0 0 0 1px color-mix(in srgb, ${accent} 18%, transparent), 0 12px 40px -24px rgba(0,0,0,0.12)`,
               }}
             >
               {restaurante.logo ? (
@@ -554,29 +596,35 @@ export default function PublicCardapioPage() {
               )}
             </div>
             <div className="min-w-0">
-              <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-[#86868b]">Cardápio</p>
-              <h1 className="mt-2 text-3xl font-semibold tracking-tight text-[#1d1d1f] sm:text-[2.35rem] sm:leading-tight">
+              <p className="text-[11px] font-semibold uppercase tracking-wider text-zinc-500">Cardápio</p>
+              <h1 className="mt-1 text-2xl font-semibold tracking-tight text-zinc-900 sm:text-4xl sm:leading-tight">
                 {restaurante.nome}
               </h1>
-              <p className="mt-3 max-w-xl text-sm leading-relaxed text-[#6e6e73]">
+              <p className="mt-2 max-w-xl text-sm leading-relaxed text-zinc-500">
                 {vitrineFechada ? (
                   <>
-                    Você pode <strong className="font-medium text-[#424245]">consultar o cardápio</strong> abaixo.
-                    Pedidos novos pelo site estão <strong className="font-medium text-[#424245]">pausados</strong>{" "}
+                    Você pode <strong className="font-medium text-zinc-800">consultar o cardápio</strong> abaixo.
+                    Pedidos novos pelo site estão <strong className="font-medium text-zinc-800">pausados</strong>{" "}
                     neste momento.
                   </>
                 ) : (
-                  <>
-                    Monte seu pedido com calma; finalize no carrinho e envie pelo WhatsApp.
-                  </>
+                  <>Monte seu pedido com calma; finalize no carrinho e envie pelo WhatsApp.</>
                 )}
                 {(() => {
                   const zonasTx = restaurante.taxas_entrega_zonas ?? [];
+                  if (restaurante.retirada_balcao) {
+                    return (
+                      <>
+                        {" "}
+                        <span className="font-medium text-zinc-800">Retirada no balcão disponível.</span>
+                      </>
+                    );
+                  }
                   if (zonasTx.length === 1) {
                     return (
                       <>
                         {" "}
-                        <span className="font-medium text-[#424245]">
+                        <span className="font-medium text-zinc-800">
                           Taxa de entrega: {formatBRL(zonasTx[0].valor)}
                         </span>
                         .
@@ -587,7 +635,7 @@ export default function PublicCardapioPage() {
                     return (
                       <>
                         {" "}
-                        <span className="font-medium text-[#424245]">
+                        <span className="font-medium text-zinc-800">
                           Taxa conforme a região — escolha no carrinho.
                         </span>
                       </>
@@ -597,7 +645,7 @@ export default function PublicCardapioPage() {
                     return (
                       <>
                         {" "}
-                        <span className="font-medium text-[#424245]">
+                        <span className="font-medium text-zinc-800">
                           Taxa de entrega: {formatBRL(restaurante.taxa_entrega)}
                         </span>
                         .
@@ -610,6 +658,35 @@ export default function PublicCardapioPage() {
             </div>
           </div>
         </div>
+
+        {pratos.length > 0 && categorias.length > 0 ? (
+          <div className="border-t border-zinc-100/90">
+            <nav
+              className="mx-auto flex max-w-6xl gap-2 overflow-x-auto px-5 py-3 sm:px-8 sm:py-3.5"
+              aria-label="Seções do cardápio"
+            >
+              {categorias.map(({ titulo }) => {
+                const sid = `sec-${slugifySecaoCardapio(titulo)}`;
+                const active = activeCategoriaId === sid;
+                return (
+                  <button
+                    key={titulo}
+                    type="button"
+                    onClick={() => irParaSecao(titulo)}
+                    className={[
+                      "shrink-0 rounded-full px-4 py-2 text-sm font-semibold transition-all",
+                      active
+                        ? "bg-zinc-900 text-white shadow-sm"
+                        : "bg-zinc-100/80 text-zinc-600 hover:bg-zinc-200/80 hover:text-zinc-900",
+                    ].join(" ")}
+                  >
+                    {titulo}
+                  </button>
+                );
+              })}
+            </nav>
+          </div>
+        ) : null}
       </header>
 
       {vitrineFechada ? (
@@ -629,24 +706,24 @@ export default function PublicCardapioPage() {
       ) : null}
 
       {(textoHor || vitrineFechada) ? (
-        <div className="border-b border-black/[0.06] bg-white">
+        <div className="border-b border-zinc-100 bg-white/90">
           <div className="mx-auto flex max-w-6xl gap-4 px-5 py-4 sm:px-8 sm:py-5">
             <div
-              className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl border border-black/[0.06] bg-[#fafafa] text-[#424245]"
+              className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl border border-zinc-100 bg-zinc-50 text-zinc-600"
               style={{ color: accent }}
               aria-hidden
             >
               <Clock className="h-5 w-5" strokeWidth={2} />
             </div>
             <div className="min-w-0">
-              <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-[#86868b]">
+              <p className="text-[11px] font-semibold uppercase tracking-wider text-zinc-500">
                 Horário de funcionamento
               </p>
-              <p className="mt-1 text-sm font-medium leading-relaxed text-[#1d1d1f] sm:text-base">
+              <p className="mt-1 text-sm font-medium leading-relaxed text-zinc-900 sm:text-base">
                 {textoHor ? (
                   textoHor
                 ) : (
-                  <span className="font-normal text-[#86868b]">
+                  <span className="font-normal text-zinc-500">
                     Não informado neste cardápio. Se precisar de urgência, procure o restaurante pelos
                     canais habituais.
                   </span>
@@ -657,29 +734,31 @@ export default function PublicCardapioPage() {
         </div>
       ) : null}
 
-      <main className="mx-auto max-w-6xl px-5 pb-32 pt-12 sm:px-8 sm:pb-36 sm:pt-14">
+      <main className="mx-auto max-w-6xl px-5 pb-32 pt-10 sm:px-8 sm:pb-36 sm:pt-12">
         {pratos.length === 0 ? (
-          <p className="rounded-2xl border border-dashed border-black/[0.1] bg-white px-6 py-16 text-center text-sm text-[#86868b] shadow-[0_8px_30px_-24px_rgba(0,0,0,0.15)]">
+          <p className="rounded-3xl border border-dashed border-zinc-200 bg-white px-6 py-16 text-center text-sm text-zinc-500 shadow-sm">
             Este restaurante ainda não publicou itens ativos no cardápio.
           </p>
         ) : (
           <div className="space-y-16 sm:space-y-20">
-            {categorias.map(([titulo, lista]) => (
-              <section key={titulo} aria-labelledby={`cat-${titulo}`} className="scroll-mt-24">
-                <div className="mb-8 flex items-baseline justify-between gap-4 border-b border-black/[0.06] pb-4">
+            {categorias.map(({ titulo, lista }) => {
+              const secId = `sec-${slugifySecaoCardapio(titulo)}`;
+              return (
+              <section key={titulo} id={secId} aria-labelledby={`cat-${secId}`} className="scroll-mt-44 sm:scroll-mt-40">
+                <div className="mb-8 flex items-baseline justify-between gap-4 border-b border-zinc-100 pb-4">
                   <h2
-                    id={`cat-${titulo}`}
-                    className="text-xs font-semibold uppercase tracking-[0.22em] text-[#86868b]"
+                    id={`cat-${secId}`}
+                    className="text-xs font-semibold uppercase tracking-wider text-zinc-500"
                   >
                     {titulo}
                   </h2>
-                  <span className="text-[11px] font-medium tabular-nums text-[#aeaeb2]">{lista.length}</span>
+                  <span className="text-[11px] font-medium tabular-nums text-zinc-400">{lista.length}</span>
                 </div>
                 <ul className="grid gap-6 sm:grid-cols-2 lg:grid-cols-2 lg:gap-8">
                   {lista.map((prato) => (
                     <li key={prato.id}>
-                      <article className="group flex h-full flex-col overflow-hidden rounded-2xl border border-black/[0.06] bg-white shadow-[0_16px_50px_-36px_rgba(0,0,0,0.35)] transition duration-300 hover:-translate-y-0.5 hover:shadow-[0_24px_60px_-32px_rgba(0,0,0,0.38)]">
-                        <div className="relative aspect-[16/10] w-full overflow-hidden bg-[#ececee]">
+                      <article className="group flex h-full flex-col overflow-hidden rounded-3xl border border-zinc-100 bg-white shadow-sm transition duration-300 hover:shadow-md">
+                        <div className="relative aspect-[16/10] w-full overflow-hidden bg-zinc-100">
                           {prato.imagem ? (
                             // eslint-disable-next-line @next/next/no-img-element
                             <img
@@ -688,7 +767,7 @@ export default function PublicCardapioPage() {
                               className="h-full w-full object-cover transition duration-700 ease-out group-hover:scale-[1.02]"
                             />
                           ) : (
-                            <div className="flex h-full w-full items-center justify-center text-[#c7c7cc]">
+                            <div className="flex h-full w-full items-center justify-center text-zinc-300">
                               <span className="text-4xl font-extralight" aria-hidden>
                                 —
                               </span>
@@ -697,17 +776,17 @@ export default function PublicCardapioPage() {
                         </div>
                         <div className="flex flex-1 flex-col gap-3 p-6 sm:p-7">
                           <div className="flex flex-wrap items-start justify-between gap-3">
-                            <h3 className="text-lg font-semibold tracking-tight text-[#1d1d1f] sm:text-xl">
+                            <h3 className="text-lg font-semibold tracking-tight text-zinc-900 sm:text-xl">
                               {prato.nome}
                             </h3>
-                            <p className="shrink-0 text-base font-semibold tabular-nums tracking-tight text-[#1d1d1f]">
+                            <p className="shrink-0 text-base font-semibold tabular-nums tracking-tight text-zinc-900">
                               {formatBRL(prato.preco)}
                             </p>
                           </div>
                           {prato.descricao ? (
-                            <p className="line-clamp-3 text-sm leading-relaxed text-[#6e6e73]">{prato.descricao}</p>
+                            <p className="line-clamp-3 text-sm leading-relaxed text-zinc-500">{prato.descricao}</p>
                           ) : (
-                            <p className="text-sm italic text-[#aeaeb2]">Sem descrição</p>
+                            <p className="text-sm italic text-zinc-400">Sem descrição</p>
                           )}
                           <div className="mt-auto flex justify-end pt-2">
                             <button
@@ -725,10 +804,10 @@ export default function PublicCardapioPage() {
                                   : `Adicionar ${prato.nome} ao carrinho`
                               }
                               className={[
-                                "flex h-11 w-11 items-center justify-center rounded-full bg-[#1d1d1f] text-xl font-light leading-none text-white shadow-[0_8px_24px_-8px_rgba(0,0,0,0.45)] transition active:scale-[0.97]",
+                                "flex h-11 w-11 items-center justify-center rounded-full bg-zinc-900 text-xl font-light leading-none text-white shadow-sm transition active:scale-[0.97]",
                                 vitrineFechada
                                   ? "cursor-not-allowed opacity-35 shadow-none"
-                                  : "hover:bg-black",
+                                  : "hover:bg-zinc-800",
                               ].join(" ")}
                             >
                               <span aria-hidden>+</span>
@@ -740,7 +819,8 @@ export default function PublicCardapioPage() {
                   ))}
                 </ul>
               </section>
-            ))}
+            );
+            })}
           </div>
         )}
       </main>
@@ -776,22 +856,22 @@ export default function PublicCardapioPage() {
             onClick={() => setCartOpen(false)}
           />
           <aside
-            className="relative flex h-full w-full max-w-md flex-col border-l border-black/[0.06] bg-[#fbfbfd] shadow-[-24px_0_80px_-32px_rgba(0,0,0,0.35)]"
+            className="relative flex h-full w-full max-w-md flex-col border-l border-zinc-100 bg-white shadow-2xl shadow-zinc-900/10"
             role="dialog"
             aria-modal="true"
             aria-labelledby="cart-title"
           >
-            <div className="flex items-center justify-between border-b border-black/[0.06] px-6 py-5">
+            <div className="flex items-center justify-between border-b border-zinc-100 px-6 py-5">
               <div>
-                <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-[#86868b]">Seu pedido</p>
-                <h2 id="cart-title" className="mt-1 text-xl font-semibold tracking-tight text-[#1d1d1f]">
+                <p className="text-[11px] font-semibold uppercase tracking-wider text-zinc-500">Seu pedido</p>
+                <h2 id="cart-title" className="mt-1 text-xl font-semibold tracking-tight text-zinc-900">
                   Carrinho
                 </h2>
               </div>
               <button
                 type="button"
                 onClick={() => setCartOpen(false)}
-                className="flex h-10 w-10 items-center justify-center rounded-full text-[#6e6e73] transition hover:bg-black/[0.05] hover:text-[#1d1d1f]"
+                className="flex h-10 w-10 items-center justify-center rounded-full text-zinc-500 transition hover:bg-zinc-100 hover:text-zinc-900"
                 aria-label="Fechar"
               >
                 <span className="text-lg leading-none">×</span>
@@ -800,7 +880,7 @@ export default function PublicCardapioPage() {
 
             <div className="flex-1 overflow-y-auto px-6 py-5">
               {cart.length === 0 ? (
-                <p className="rounded-2xl border border-dashed border-black/[0.1] bg-white px-4 py-14 text-center text-sm leading-relaxed text-[#86868b]">
+                <p className="rounded-2xl border border-dashed border-zinc-200 bg-zinc-50/50 px-4 py-14 text-center text-sm leading-relaxed text-zinc-500">
                   Carrinho vazio. Toque em &quot;Adicionar&quot; nos pratos que desejar.
                 </p>
               ) : (
@@ -808,19 +888,19 @@ export default function PublicCardapioPage() {
                   {cart.map(({ prato, quantidade }) => (
                     <li
                       key={prato.id}
-                      className="flex gap-4 rounded-2xl border border-black/[0.06] bg-white p-4 shadow-[0_8px_24px_-18px_rgba(0,0,0,0.2)]"
+                      className="flex gap-4 rounded-2xl border border-zinc-100 bg-zinc-50/40 p-4 shadow-sm"
                     >
                       <div className="min-w-0 flex-1">
-                        <p className="font-semibold tracking-tight text-[#1d1d1f]">{prato.nome}</p>
-                        <p className="mt-1 text-xs text-[#86868b]">
+                        <p className="font-semibold tracking-tight text-zinc-900">{prato.nome}</p>
+                        <p className="mt-1 text-xs text-zinc-500">
                           {formatBRL(prato.preco)} cada · subtotal{" "}
-                          <span className="font-medium text-[#424245]">{formatBRL(prato.preco * quantidade)}</span>
+                          <span className="font-medium text-zinc-800">{formatBRL(prato.preco * quantidade)}</span>
                         </p>
                       </div>
                       <div className="flex shrink-0 items-center gap-1">
                         <button
                           type="button"
-                          className="flex h-9 w-9 items-center justify-center rounded-full border border-black/[0.08] bg-[#f5f5f7] text-[#1d1d1f] transition hover:bg-[#ececee]"
+                          className="flex h-9 w-9 items-center justify-center rounded-full border border-zinc-200 bg-white text-zinc-800 transition hover:bg-zinc-50"
                           onClick={() => setQty(prato.id, quantidade - 1)}
                           aria-label="Diminuir"
                         >
@@ -829,7 +909,7 @@ export default function PublicCardapioPage() {
                         <span className="w-8 text-center text-sm font-semibold tabular-nums">{quantidade}</span>
                         <button
                           type="button"
-                          className="flex h-9 w-9 items-center justify-center rounded-full border border-black/[0.08] bg-[#f5f5f7] text-[#1d1d1f] transition hover:bg-[#ececee]"
+                          className="flex h-9 w-9 items-center justify-center rounded-full border border-zinc-200 bg-white text-zinc-800 transition hover:bg-zinc-50"
                           onClick={() => setQty(prato.id, quantidade + 1)}
                           aria-label="Aumentar"
                         >
@@ -842,12 +922,42 @@ export default function PublicCardapioPage() {
               )}
             </div>
 
-            <div className="border-t border-black/[0.06] bg-white/80 px-6 py-6 backdrop-blur-md">
-              {cart.length > 0 && (restaurante.taxas_entrega_zonas?.length ?? 0) > 1 ? (
+            <div className="border-t border-zinc-100 bg-white/90 px-6 py-6 backdrop-blur-md">
+              {cart.length > 0 && restaurante.retirada_balcao ? (
+                <div className="mb-4 flex rounded-2xl border border-zinc-200 bg-zinc-50 p-1">
+                  <button
+                    type="button"
+                    onClick={() => setTipoEntrega("entrega")}
+                    className={[
+                      "flex-1 rounded-xl py-2.5 text-sm font-semibold transition-all",
+                      tipoEntrega === "entrega"
+                        ? "bg-white text-zinc-900 shadow-sm ring-1 ring-zinc-200/80"
+                        : "text-zinc-500 hover:text-zinc-800",
+                    ].join(" ")}
+                  >
+                    Entrega
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setTipoEntrega("retirada")}
+                    className={[
+                      "flex-1 rounded-xl py-2.5 text-sm font-semibold transition-all",
+                      tipoEntrega === "retirada"
+                        ? "bg-white text-zinc-900 shadow-sm ring-1 ring-zinc-200/80"
+                        : "text-zinc-500 hover:text-zinc-800",
+                    ].join(" ")}
+                  >
+                    Retirada no balcão
+                  </button>
+                </div>
+              ) : null}
+              {cart.length > 0 &&
+              tipoEntrega === "entrega" &&
+              (restaurante.taxas_entrega_zonas?.length ?? 0) > 1 ? (
                 <div className="mb-4">
                   <label
                     htmlFor="zona-entrega"
-                    className="mb-1.5 block text-xs font-semibold uppercase tracking-wide text-[#86868b]"
+                    className="mb-1.5 block text-xs font-semibold uppercase tracking-wide text-zinc-500"
                   >
                     Região de entrega
                   </label>
@@ -855,7 +965,7 @@ export default function PublicCardapioPage() {
                     id="zona-entrega"
                     value={zonaEntregaId ?? ""}
                     onChange={(e) => setZonaEntregaId(e.target.value || null)}
-                    className="w-full rounded-xl border border-black/[0.08] bg-white px-3 py-2.5 text-sm text-[#1d1d1f] outline-none focus:border-[#0071e3]/40"
+                    className="w-full rounded-2xl border border-zinc-200 bg-zinc-50/50 px-4 py-3 text-sm text-zinc-900 outline-none focus:ring-2 focus:ring-zinc-900"
                   >
                     <option value="">Selecione sua região</option>
                     {restaurante.taxas_entrega_zonas!.map((z) => (
@@ -866,23 +976,28 @@ export default function PublicCardapioPage() {
                   </select>
                 </div>
               ) : null}
-              {taxaCarrinho > 0 ? (
-                <div className="mb-3 space-y-1.5 text-sm text-[#6e6e73]">
+              {cart.length > 0 ? (
+                <div className="mb-3 space-y-1.5 text-sm text-zinc-500">
                   <div className="flex justify-between">
                     <span>Subtotal</span>
-                    <span className="tabular-nums text-[#424245]">{formatBRL(subtotalCarrinho)}</span>
+                    <span className="tabular-nums text-zinc-800">{formatBRL(subtotalCarrinho)}</span>
                   </div>
-                  <div className="flex justify-between">
-                    <span>Taxa de entrega</span>
-                    <span className="tabular-nums text-[#424245]">{formatBRL(taxaCarrinho)}</span>
-                  </div>
+                  {tipoEntrega === "retirada" ? (
+                    <div className="flex justify-between">
+                      <span>Entrega</span>
+                      <span className="text-right text-zinc-800">Retirada no balcão</span>
+                    </div>
+                  ) : taxaCarrinho > 0 ? (
+                    <div className="flex justify-between">
+                      <span>Taxa de entrega</span>
+                      <span className="tabular-nums text-zinc-800">{formatBRL(taxaCarrinho)}</span>
+                    </div>
+                  ) : null}
                 </div>
               ) : null}
               <div className="mb-5 flex items-end justify-between">
-                <span className="text-xs font-semibold uppercase tracking-wider text-[#86868b]">
-                  {taxaCarrinho > 0 ? "Total" : "Total estimado"}
-                </span>
-                <span className="text-2xl font-semibold tabular-nums tracking-tight text-[#1d1d1f]">
+                <span className="text-xs font-semibold uppercase tracking-wider text-zinc-500">Total</span>
+                <span className="text-2xl font-semibold tabular-nums tracking-tight text-zinc-900">
                   {formatBRL(total)}
                 </span>
               </div>
@@ -901,13 +1016,14 @@ export default function PublicCardapioPage() {
                   volte quando o restaurante reabrir ou use outro canal combinado com eles.
                 </p>
               ) : cart.length > 0 &&
+                tipoEntrega === "entrega" &&
                 (restaurante.taxas_entrega_zonas?.length ?? 0) > 1 &&
                 !zonaEntregaId ? (
-                <p className="rounded-2xl border border-black/[0.08] bg-[#fafafa] px-4 py-3 text-center text-sm leading-relaxed text-[#6e6e73]">
+                <p className="rounded-2xl border border-zinc-200 bg-zinc-50 px-4 py-3 text-center text-sm leading-relaxed text-zinc-600">
                   Escolha a região de entrega acima para calcular o total e gerar o link do WhatsApp.
                 </p>
               ) : (
-                <p className="text-center text-xs leading-relaxed text-[#86868b]">
+                <p className="text-center text-xs leading-relaxed text-zinc-500">
                   {cart.length === 0
                     ? "Adicione itens para enviar o pedido."
                     : "Cadastre um WhatsApp válido no restaurante."}

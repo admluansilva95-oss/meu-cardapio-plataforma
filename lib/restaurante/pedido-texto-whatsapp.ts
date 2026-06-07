@@ -1,5 +1,7 @@
 import type { CarrinhoItem, Restaurante } from "@/types";
 
+export type TipoEntregaPedido = "entrega" | "retirada";
+
 function formatBRL(value: number) {
   return value.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
 }
@@ -7,7 +9,11 @@ function formatBRL(value: number) {
 export function taxaEntregaParaPedido(
   restaurante: Restaurante,
   zonaId: string | null,
+  opts?: { tipo?: TipoEntregaPedido },
 ): { valor: number; linhaExtra: string | null } {
+  if (opts?.tipo === "retirada") {
+    return { valor: 0, linhaExtra: null };
+  }
   const zonas = restaurante.taxas_entrega_zonas;
   if (zonas && zonas.length > 0) {
     const z = zonaId ? zonas.find((x) => x.id === zonaId) : zonas.length === 1 ? zonas[0] : null;
@@ -26,13 +32,17 @@ export function buildPedidoTextoWhatsApp(
   restaurante: Restaurante,
   itens: CarrinhoItem[],
   zonaEntregaId: string | null,
+  opts?: { tipoEntrega?: TipoEntregaPedido },
 ): string {
+  const tipoEntrega = opts?.tipoEntrega ?? "entrega";
   const linhasItens = itens.map(({ prato, quantidade }) => {
     const sub = prato.preco * quantidade;
     return `• ${quantidade}x ${prato.nome} — ${formatBRL(sub)}`;
   });
   const subtotal = itens.reduce((acc, { prato, quantidade }) => acc + prato.preco * quantidade, 0);
-  const { valor: taxa, linhaExtra } = taxaEntregaParaPedido(restaurante, zonaEntregaId);
+  const { valor: taxa, linhaExtra } = taxaEntregaParaPedido(restaurante, zonaEntregaId, {
+    tipo: tipoEntrega,
+  });
   const taxaAplicada = itens.length > 0 ? taxa : 0;
   const total = subtotal + taxaAplicada;
 
@@ -42,6 +52,9 @@ export function buildPedidoTextoWhatsApp(
     ...linhasItens,
     "",
   ];
+  if (tipoEntrega === "retirada" && restaurante.retirada_balcao) {
+    blocos.push("*Retirada no balcão*", "");
+  }
   if (linhaExtra) blocos.push(linhaExtra, "");
   if (taxaAplicada > 0) {
     blocos.push(`*Subtotal:* ${formatBRL(subtotal)}`);
