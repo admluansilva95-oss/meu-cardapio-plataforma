@@ -198,10 +198,6 @@ export async function POST(request: NextRequest) {
           });
         },
       },
-      global: {
-        fetch: (input: RequestInfo | URL, init?: RequestInit) =>
-          fetch(input, { ...init, cache: "no-store" }),
-      },
     },
   );
 

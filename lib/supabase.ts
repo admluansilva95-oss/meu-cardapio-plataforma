@@ -5,13 +5,8 @@ import { createBrowserClient } from "@supabase/ssr";
  * Utiliza as variáveis de ambiente públicas configuradas no .env.local.
  */
 export function createBrowserSupabaseClient() {
-  return createBrowserClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!, {
-    global: {
-      fetch: (input: RequestInfo | URL, init?: RequestInit) =>
-        fetch(input, {
-          ...init,
-          cache: "no-store",
-        }),
-    },
-  });
+  return createBrowserClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+  );
 }

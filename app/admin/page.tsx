@@ -500,17 +500,27 @@ function PedidoCard(props: {
   onCancel: () => void;
   canAdvance: boolean;
   onDragEnd?: () => void;
+  /** Bloqueia ações durante mutação (evita clique duplo / corrida com Realtime). */
+  busy?: boolean;
+  busyLabel?: string;
 }) {
-  const { pedido, onAdvance, onEdit, onCancel, canAdvance, onDragEnd } = props;
+  const { pedido, onAdvance, onEdit, onCancel, canAdvance, onDragEnd, busy, busyLabel } = props;
   return (
     <article
-      draggable
+      draggable={!busy}
       onDragStart={(e) => {
+        if (busy) {
+          e.preventDefault();
+          return;
+        }
         e.dataTransfer.setData(DRAG_MIME, pedido.id);
         e.dataTransfer.effectAllowed = "move";
       }}
       onDragEnd={() => onDragEnd?.()}
-      className="cursor-grab rounded-2xl border border-black/[0.06] bg-white p-4 shadow-[0_8px_30px_-12px_rgba(0,0,0,0.12)] transition hover:shadow-[0_12px_40px_-12px_rgba(0,0,0,0.16)] active:cursor-grabbing"
+      className={[
+        "rounded-2xl border border-black/[0.06] bg-white p-4 shadow-[0_8px_30px_-12px_rgba(0,0,0,0.12)] transition hover:shadow-[0_12px_40px_-12px_rgba(0,0,0,0.16)]",
+        busy ? "pointer-events-none opacity-[0.72]" : "cursor-grab active:cursor-grabbing",
+      ].join(" ")}
     >
       <div className="flex items-start justify-between gap-2">
         <div>
@@ -522,8 +532,9 @@ function PedidoCard(props: {
         </div>
         <button
           type="button"
+          disabled={busy}
           onClick={onCancel}
-          className="rounded-lg px-2 py-1 text-[10px] font-medium text-[#86868b] transition hover:bg-red-50 hover:text-red-600"
+          className="rounded-lg px-2 py-1 text-[10px] font-medium text-[#86868b] transition hover:bg-red-50 hover:text-red-600 disabled:cursor-not-allowed disabled:opacity-50"
         >
           Cancelar
         </button>
@@ -552,10 +563,21 @@ function PedidoCard(props: {
         {canAdvance ? (
           <button
             type="button"
+            disabled={busy}
             onClick={onAdvance}
-            className="w-full rounded-xl bg-[#1d1d1f] px-3 py-2.5 text-xs font-semibold text-white shadow-sm transition hover:bg-black active:scale-[0.99]"
+            className="flex w-full items-center justify-center gap-2 rounded-xl bg-[#1d1d1f] px-3 py-2.5 text-xs font-semibold text-white shadow-sm transition hover:bg-black active:scale-[0.99] disabled:cursor-wait disabled:opacity-80"
           >
-            Avançar status + WhatsApp
+            {busy ? (
+              <>
+                <span
+                  className="h-3.5 w-3.5 shrink-0 animate-spin rounded-full border-2 border-white/25 border-t-white"
+                  aria-hidden
+                />
+                {busyLabel ?? "Atualizando…"}
+              </>
+            ) : (
+              "Avançar status + WhatsApp"
+            )}
           </button>
         ) : (
           <p className="rounded-xl border border-dashed border-black/[0.08] bg-[#fafafa] px-3 py-2 text-center text-[11px] text-[#86868b]">
@@ -564,8 +586,9 @@ function PedidoCard(props: {
         )}
         <button
           type="button"
+          disabled={busy}
           onClick={onEdit}
-          className="w-full rounded-xl border border-black/[0.08] bg-white px-3 py-2 text-xs font-semibold text-[#1d1d1f] shadow-sm transition hover:bg-[#f5f5f7]"
+          className="w-full rounded-xl border border-black/[0.08] bg-white px-3 py-2 text-xs font-semibold text-[#1d1d1f] shadow-sm transition hover:bg-[#f5f5f7] disabled:cursor-not-allowed disabled:opacity-50"
         >
           Editar detalhes
         </button>
@@ -578,9 +601,10 @@ function ModalPedido(props: {
   open: boolean;
   pedido: Pedido | null;
   onClose: () => void;
-  onSave: (patch: { motoboy: string; pagamento: FormaPagamento; observacaoExtra: string }) => void;
+  onSave: (patch: { motoboy: string; pagamento: FormaPagamento; observacaoExtra: string }) => void | Promise<void>;
+  saving?: boolean;
 }) {
-  const { open, pedido, onClose, onSave } = props;
+  const { open, pedido, onClose, onSave, saving } = props;
   const [motoboy, setMotoboy] = useState("");
   const [pagamento, setPagamento] = useState<FormaPagamento>("Pix");
   const [obsExtra, setObsExtra] = useState("");
@@ -612,8 +636,9 @@ function ModalPedido(props: {
           </div>
           <button
             type="button"
+            disabled={saving}
             onClick={onClose}
-            className="rounded-xl border border-black/[0.08] bg-white px-2 py-1 text-xs text-[#6e6e73] shadow-sm transition hover:bg-[#f5f5f7]"
+            className="rounded-xl border border-black/[0.08] bg-white px-2 py-1 text-xs text-[#6e6e73] shadow-sm transition hover:bg-[#f5f5f7] disabled:cursor-not-allowed disabled:opacity-50"
           >
             Fechar
           </button>
@@ -662,17 +687,29 @@ function ModalPedido(props: {
         <div className="mt-6 flex justify-end gap-2">
           <button
             type="button"
+            disabled={saving}
             onClick={onClose}
-            className="rounded-xl border border-black/[0.08] bg-white px-4 py-2 text-xs font-semibold text-[#1d1d1f] shadow-sm transition hover:bg-[#f5f5f7]"
+            className="rounded-xl border border-black/[0.08] bg-white px-4 py-2 text-xs font-semibold text-[#1d1d1f] shadow-sm transition hover:bg-[#f5f5f7] disabled:cursor-not-allowed disabled:opacity-50"
           >
             Descartar
           </button>
           <button
             type="button"
-            onClick={() => onSave({ motoboy, pagamento, observacaoExtra: obsExtra })}
-            className="rounded-xl bg-[#0071e3] px-4 py-2 text-xs font-semibold text-white shadow-sm transition hover:bg-[#0077ed]"
+            disabled={saving}
+            onClick={() => void onSave({ motoboy, pagamento, observacaoExtra: obsExtra })}
+            className="inline-flex min-w-[7.5rem] items-center justify-center gap-2 rounded-xl bg-[#0071e3] px-4 py-2 text-xs font-semibold text-white shadow-sm transition hover:bg-[#0077ed] disabled:cursor-wait disabled:opacity-80"
           >
-            Salvar
+            {saving ? (
+              <>
+                <span
+                  className="h-3.5 w-3.5 shrink-0 animate-spin rounded-full border-2 border-white/30 border-t-white"
+                  aria-hidden
+                />
+                Salvando…
+              </>
+            ) : (
+              "Salvar"
+            )}
           </button>
         </div>
       </div>
@@ -965,6 +1002,40 @@ function AdminPageInner() {
   const [cfgLogoFile, setCfgLogoFile] = useState<File | null>(null);
   const [cfgLogoDraftPreview, setCfgLogoDraftPreview] = useState<string | null>(null);
 
+  /** Evita UI defasada após `loadData()` — chave estável dos dados de “Marca e vitrine” vindos do servidor. */
+  const marcaVitrineDadosSyncKey = useMemo(() => {
+    if (!restaurante) return "";
+    const from = parseCardapioCategorias(restaurante.cardapio_categorias ?? null);
+    const fromP = categoriasDistintasDosPratos(pratos);
+    const ord = from.length > 0 ? from : fromP;
+    const extra = fromP.filter((x) => !ord.includes(x));
+    const mergedCats = [...new Set([...ord, ...extra])];
+    return JSON.stringify({
+      id: restaurante.id,
+      rawNome: restaurante.rawNome,
+      whatsapp: restaurante.whatsapp,
+      cor: restaurante.cor_tema,
+      logo: restaurante.logo,
+      hf: restaurante.horario_funcionamento,
+      fs: restaurante.funcionamento_semana,
+      te: restaurante.taxa_entrega,
+      tz: restaurante.taxas_entrega_zonas,
+      em: restaurante.entrega_modo,
+      rb: restaurante.retirada_balcao,
+      vf: restaurante.vitrine_fechada,
+      mf: restaurante.mensagem_fechado,
+      ccMerged: mergedCats,
+    });
+  }, [restaurante, pratos]);
+
+  const [pedidoBusyId, setPedidoBusyId] = useState<string | null>(null);
+  const [pedidoBusyKind, setPedidoBusyKind] = useState<"advance" | "cancel" | "column" | null>(null);
+  const [pedidoModalSaving, setPedidoModalSaving] = useState(false);
+  const [pratoDeletingId, setPratoDeletingId] = useState<string | null>(null);
+  const [serviceRoleConfigured, setServiceRoleConfigured] = useState<boolean | null>(null);
+  /** Atualização leve (ex.: botão “Atualizar pedidos”) sem esconder a esteira inteira. */
+  const [silentRefreshing, setSilentRefreshing] = useState(false);
+
   useEffect(() => {
     return () => {
       if (cfgLogoDraftPreview) URL.revokeObjectURL(cfgLogoDraftPreview);
@@ -1009,7 +1080,7 @@ function AdminPageInner() {
       if (cancelled) return;
 
       if (!error && data?.slug) {
-        // Preserva ?checkout=success da volta do Stripe; senão o middleware redireciona
+        // Preserva ?checkout=success da volta do Stripe; senão o proxy redireciona
         // para /cadastro antes do webhook gravar a assinatura (parece “travado”).
         const next = new URL("/admin", window.location.origin);
         next.searchParams.set("slug", data.slug);
@@ -1032,7 +1103,7 @@ function AdminPageInner() {
     };
   }, [tenantSlug, supabase, router]);
 
-  const loadData = useCallback(async () => {
+  const loadData = useCallback(async (opts?: { soft?: boolean }) => {
     if (!tenantSlug) {
       setLoading(false);
       setFetchError(null);
@@ -1042,7 +1113,11 @@ function AdminPageInner() {
       return;
     }
 
-    setLoading(true);
+    if (!opts?.soft) {
+      setLoading(true);
+    } else {
+      setSilentRefreshing(true);
+    }
     setFetchError(null);
     try {
       if (!isValidSlug(tenantSlug)) {
@@ -1155,7 +1230,11 @@ function AdminPageInner() {
     } catch (e) {
       setFetchError(e instanceof Error ? e.message : "Erro ao carregar dados.");
     } finally {
-      setLoading(false);
+      if (opts?.soft) {
+        setSilentRefreshing(false);
+      } else {
+        setLoading(false);
+      }
     }
   }, [supabase, tenantSlug]);
 
@@ -1206,9 +1285,43 @@ function AdminPageInner() {
     setCfgVitrineFechada(restaurante.vitrine_fechada === true);
     setCfgMensagemFechado(restaurante.mensagem_fechado ?? "");
     setCfgMsg(null);
-  }, [tab, restaurante, pratos]);
+  }, [tab, restaurante, marcaVitrineDadosSyncKey]);
+
+  useEffect(() => {
+    if (!restaurante) {
+      setServiceRoleConfigured(null);
+      return;
+    }
+    let cancelled = false;
+    void (async () => {
+      try {
+        const {
+          data: { session },
+        } = await supabase.auth.getSession();
+        const token = session?.access_token;
+        if (!token) return;
+        const res = await fetch("/api/admin/diagnostics", {
+          headers: { Authorization: `Bearer ${token}` },
+          credentials: "include",
+          cache: "no-store",
+        });
+        const j = (await res.json()) as {
+          ok?: boolean;
+          supabaseServiceRoleConfigured?: boolean;
+        };
+        if (cancelled || !res.ok || !j.ok) return;
+        setServiceRoleConfigured(Boolean(j.supabaseServiceRoleConfigured));
+      } catch {
+        if (!cancelled) setServiceRoleConfigured(null);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [restaurante?.id, supabase]);
 
   const salvarConfiguracoesTenant = useCallback(async () => {
+    if (tenantSaving) return;
     if (!restaurante) return;
     const nomeLimpo = cfgNome.trim();
     if (nomeLimpo.length < 2) {
@@ -1347,7 +1460,6 @@ function AdminPageInner() {
       }
       window.setTimeout(() => setCfgMsg(null), partesMsg.length ? 14000 : 6000);
       await loadData();
-      router.refresh();
       if (logoUploadWarning) {
         setCfgLogoFile(null);
         setCfgLogoDraftPreview(null);
@@ -1372,7 +1484,6 @@ function AdminPageInner() {
     cfgLogoFile,
     supabase,
     loadData,
-    router,
   ]);
 
   useEffect(() => {
@@ -1394,12 +1505,15 @@ function AdminPageInner() {
           if (payload.eventType === "INSERT") {
             const mapped = mapPedidoRow(payload.new as Parameters<typeof mapPedidoRow>[0]);
             if (!mapped) return;
+            const rawColuna = (payload.new as { coluna?: string }).coluna;
             setPedidos((prev) => {
               if (prev.some((p) => p.id === mapped.id)) return prev;
               return [...prev, mapped];
             });
-            console.info("[realtime/pedidos] INSERT — novo pedido na esteira:", mapped.id);
-            playNewOrderChime();
+            if (rawColuna === "recebidos") {
+              console.info("[realtime/pedidos] INSERT — novo pedido em recebidos:", mapped.id);
+              playNewOrderChime();
+            }
             return;
           }
           if (payload.eventType === "UPDATE") {
@@ -1475,62 +1589,86 @@ function AdminPageInner() {
         .update({ cardapio_categorias: next })
         .eq("id", restaurante.id);
       if (error) throw new Error(error.message);
-      await loadData();
+      await loadData({ soft: true });
     },
     [restaurante, supabase, loadData],
   );
 
   const atualizarColunaPedido = async (pedidoId: string, nova: KanbanCol) => {
+    if (pedidoBusyId) return;
     const anterior = pedidos.find((p) => p.id === pedidoId);
     if (!anterior || anterior.coluna === nova) return;
 
+    setPedidoBusyId(pedidoId);
+    setPedidoBusyKind("column");
     setPedidos((lista) =>
       lista.map((p) => (p.id === pedidoId ? { ...p, coluna: nova } : p)),
     );
 
-    const { error } = await supabase.from("pedidos").update({ coluna: nova }).eq("id", pedidoId);
-    if (error) {
-      setFetchError(error.message);
-      setPedidos((lista) =>
-        lista.map((p) => (p.id === pedidoId ? { ...p, coluna: anterior.coluna } : p)),
-      );
+    try {
+      const { error } = await supabase.from("pedidos").update({ coluna: nova }).eq("id", pedidoId);
+      if (error) {
+        setFetchError(error.message);
+        setPedidos((lista) =>
+          lista.map((p) => (p.id === pedidoId ? { ...p, coluna: anterior.coluna } : p)),
+        );
+      }
+    } finally {
+      setPedidoBusyId(null);
+      setPedidoBusyKind(null);
     }
   };
 
   const avancarPedido = async (id: string) => {
+    if (pedidoBusyId) return;
     const atual = pedidos.find((p) => p.id === id);
     if (!atual) return;
     const destino = nextColuna(atual.coluna);
     if (!destino) return;
 
     const prev = atual.coluna;
+    setPedidoBusyId(id);
+    setPedidoBusyKind("advance");
     setPedidos((lista) =>
       lista.map((p) => (p.id === id ? { ...p, coluna: destino } : p)),
     );
 
-    const { error } = await supabase.from("pedidos").update({ coluna: destino }).eq("id", id);
-    if (error) {
-      setFetchError(error.message);
-      setPedidos((lista) =>
-        lista.map((p) => (p.id === id ? { ...p, coluna: prev } : p)),
-      );
-      return;
-    }
+    try {
+      const { error } = await supabase.from("pedidos").update({ coluna: destino }).eq("id", id);
+      if (error) {
+        setFetchError(error.message);
+        setPedidos((lista) =>
+          lista.map((p) => (p.id === id ? { ...p, coluna: prev } : p)),
+        );
+        return;
+      }
 
-    const msg = mensagemParaColuna(atual, destino);
-    const url = waMeUrl(atual.telefone, msg);
-    window.open(url, "_blank", "noopener,noreferrer");
+      const msg = mensagemParaColuna(atual, destino);
+      const url = waMeUrl(atual.telefone, msg);
+      window.open(url, "_blank", "noopener,noreferrer");
+    } finally {
+      setPedidoBusyId(null);
+      setPedidoBusyKind(null);
+    }
   };
 
   const cancelarPedido = async (id: string) => {
+    if (pedidoBusyId) return;
     const prev = pedidos;
+    setPedidoBusyId(id);
+    setPedidoBusyKind("cancel");
     setPedidos((lista) => lista.filter((p) => p.id !== id));
     setPedidoModal((cur) => (cur?.id === id ? null : cur));
 
-    const { error } = await supabase.from("pedidos").delete().eq("id", id);
-    if (error) {
-      setFetchError(error.message);
-      setPedidos(prev);
+    try {
+      const { error } = await supabase.from("pedidos").delete().eq("id", id);
+      if (error) {
+        setFetchError(error.message);
+        setPedidos(prev);
+      }
+    } finally {
+      setPedidoBusyId(null);
+      setPedidoBusyKind(null);
     }
   };
 
@@ -1539,7 +1677,7 @@ function AdminPageInner() {
     pagamento: FormaPagamento;
     observacaoExtra: string;
   }) => {
-    if (!pedidoModal) return;
+    if (!pedidoModal || pedidoModalSaving) return;
     const id = pedidoModal.id;
     const extra = patch.observacaoExtra.trim();
     const observacoes =
@@ -1549,6 +1687,7 @@ function AdminPageInner() {
     const motoboy = patch.motoboy.trim() || pedidoModal.motoboy;
 
     const prevList = pedidos;
+    setPedidoModalSaving(true);
     setPedidos((lista) =>
       lista.map((p) =>
         p.id === id
@@ -1556,20 +1695,25 @@ function AdminPageInner() {
           : p,
       ),
     );
-    setPedidoModal(null);
 
-    const { error } = await supabase
-      .from("pedidos")
-      .update({
-        motoboy,
-        pagamento: patch.pagamento,
-        observacoes,
-      })
-      .eq("id", id);
+    try {
+      const { error } = await supabase
+        .from("pedidos")
+        .update({
+          motoboy,
+          pagamento: patch.pagamento,
+          observacoes,
+        })
+        .eq("id", id);
 
-    if (error) {
-      setFetchError(error.message);
-      setPedidos(prevList);
+      if (error) {
+        setFetchError(error.message);
+        setPedidos(prevList);
+        return;
+      }
+      setPedidoModal(null);
+    } finally {
+      setPedidoModalSaving(false);
     }
   };
 
@@ -1599,6 +1743,8 @@ function AdminPageInner() {
     const precoDb = Math.round(payload.preco * 100) / 100;
     let imagemFinal: string | null = payload.imagemAtual;
     let urlAntigaParaRemover: string | null = null;
+    /** Nova URL já enviada ao bucket — removida se o INSERT/UPDATE no Postgres falhar. */
+    let novaUrlUploadedPersistivel: string | null = null;
 
     if (payload.arquivoImagem) {
       try {
@@ -1621,6 +1767,7 @@ function AdminPageInner() {
           urlAntigaParaRemover = antiga;
         }
         imagemFinal = urlPersistivel;
+        novaUrlUploadedPersistivel = urlPersistivel;
       } catch (err) {
         console.error("Erro no Upload do Storage:", err);
         const friendly = mensagemUploadStorageAmigavel(err);
@@ -1632,126 +1779,145 @@ function AdminPageInner() {
 
     const imagemParaDb = imagemUrlSeguraParaColuna(imagemFinal);
 
-    if (payload.id) {
-      const { error } = await supabase
-        .from("pratos")
-        .update({
-          nome: payload.nome,
-          preco: precoDb,
-          descricao: payload.descricao,
-          categoria: payload.categoria,
-          status: payload.status,
-          imagem: imagemParaDb,
-        })
-        .eq("id", payload.id);
+    try {
+      if (payload.id) {
+        const { error } = await supabase
+          .from("pratos")
+          .update({
+            nome: payload.nome,
+            preco: precoDb,
+            descricao: payload.descricao,
+            categoria: payload.categoria,
+            status: payload.status,
+            imagem: imagemParaDb,
+          })
+          .eq("id", payload.id);
 
-      if (error) {
-        console.error("[pratos DB] Falha no UPDATE (tabela `pratos`, coluna `imagem` URL pública):", {
-          code: error.code,
-          message: error.message,
-          details: error.details,
-          hint: error.hint,
-          pratoId: payload.id,
-          imagemSalva: imagemParaDb,
-          raw: error,
-        });
-        const msg = mensagemErroSupabasePainel(error.message);
-        setFetchError(msg);
-        throw new Error(msg);
+        if (error) {
+          console.error("[pratos DB] Falha no UPDATE:", {
+            code: error.code,
+            message: error.message,
+            pratoId: payload.id,
+            imagemSalva: imagemParaDb,
+            raw: error,
+          });
+          const msg = mensagemErroSupabasePainel(error.message);
+          setFetchError(msg);
+          setAdminToast(msg);
+          throw new Error(msg);
+        }
+        if (urlAntigaParaRemover) {
+          const pathAntigo = caminhoStorageDeUrlPublica(urlAntigaParaRemover);
+          if (pathAntigo) {
+            const { error: remErr } = await supabase.storage
+              .from(BUCKET_IMAGENS_PRATOS)
+              .remove([pathAntigo]);
+            if (remErr) {
+              setFetchError(
+                (prev) =>
+                  prev
+                    ? `${prev} · Não foi possível remover a imagem antiga: ${remErr.message}`
+                    : `Não foi possível remover a imagem antiga: ${remErr.message}`,
+              );
+            }
+          }
+        }
+        setPratos((lista) =>
+          lista.map((p) =>
+            p.id === payload.id
+              ? {
+                  ...p,
+                  nome: payload.nome,
+                  preco: precoDb,
+                  descricao: payload.descricao,
+                  categoria: payload.categoria,
+                  status: payload.status,
+                  imagem: imagemParaDb,
+                }
+              : p,
+          ),
+        );
+      } else {
+        const { data, error } = await supabase
+          .from("pratos")
+          .insert({
+            restaurante_id: payload.restaurante_id,
+            nome: payload.nome,
+            preco: precoDb,
+            descricao: payload.descricao,
+            categoria: payload.categoria,
+            status: payload.status,
+            imagem: imagemParaDb,
+          })
+          .select("id, restaurante_id, nome, preco, descricao, imagem, status, categoria")
+          .single();
+
+        if (error) {
+          console.error("[pratos DB] Falha no INSERT:", {
+            code: error.code,
+            message: error.message,
+            restaurante_id: payload.restaurante_id,
+            imagemSalva: imagemParaDb,
+            raw: error,
+          });
+          const msg = mensagemErroSupabasePainel(error.message);
+          setFetchError(msg);
+          setAdminToast(msg);
+          throw new Error(msg);
+        }
+        const mapped = mapPratoRow(data as Parameters<typeof mapPratoRow>[0]);
+        if (mapped) setPratos((lista) => [mapped, ...lista]);
       }
-      if (urlAntigaParaRemover) {
-        const pathAntigo = caminhoStorageDeUrlPublica(urlAntigaParaRemover);
-        if (pathAntigo) {
-          const { error: remErr } = await supabase.storage
+    } catch (dbErr) {
+      if (novaUrlUploadedPersistivel) {
+        const pathNovo = caminhoStorageDeUrlPublica(novaUrlUploadedPersistivel);
+        if (pathNovo) {
+          const { error: rollErr } = await supabase.storage
             .from(BUCKET_IMAGENS_PRATOS)
-            .remove([pathAntigo]);
-          if (remErr) {
-            setFetchError(
-              (prev) =>
-                prev
-                  ? `${prev} · Não foi possível remover a imagem antiga: ${remErr.message}`
-                  : `Não foi possível remover a imagem antiga: ${remErr.message}`,
-            );
+            .remove([pathNovo]);
+          if (rollErr) {
+            console.warn("[pratos] rollback storage após falha no DB:", rollErr.message);
           }
         }
       }
-      setPratos((lista) =>
-        lista.map((p) =>
-          p.id === payload.id
-            ? {
-                ...p,
-                nome: payload.nome,
-                preco: precoDb,
-                descricao: payload.descricao,
-                categoria: payload.categoria,
-                status: payload.status,
-                imagem: imagemParaDb,
-              }
-            : p,
-        ),
-      );
-    } else {
-      /** RLS: `restaurante_id` obrigatório no insert para políticas `owners_insert_pratos`. */
-      const { data, error } = await supabase
-        .from("pratos")
-        .insert({
-          restaurante_id: payload.restaurante_id,
-          nome: payload.nome,
-          preco: precoDb,
-          descricao: payload.descricao,
-          categoria: payload.categoria,
-          status: payload.status,
-          imagem: imagemParaDb,
-        })
-        .select("id, restaurante_id, nome, preco, descricao, imagem, status, categoria")
-        .single();
-
-      if (error) {
-        console.error("[pratos DB] Falha no INSERT (tabela `pratos`, coluna `imagem` URL pública):", {
-          code: error.code,
-          message: error.message,
-          details: error.details,
-          hint: error.hint,
-          restaurante_id: payload.restaurante_id,
-          imagemSalva: imagemParaDb,
-          raw: error,
-        });
-        const msg = mensagemErroSupabasePainel(error.message);
-        setFetchError(msg);
-        throw new Error(msg);
-      }
-      const mapped = mapPratoRow(data as Parameters<typeof mapPratoRow>[0]);
-      if (mapped) setPratos((lista) => [mapped, ...lista]);
+      if (dbErr instanceof Error) throw dbErr;
+      throw new Error("Falha ao salvar o prato.");
     }
   };
 
   const handleDeletePrato = async (prato: Prato) => {
+    if (pratoDeletingId) return;
+    setPratoDeletingId(prato.id);
     const prev = pratos;
     const fotoUrl = prato.imagem?.trim() ?? null;
     setPratos((lista) => lista.filter((p) => p.id !== prato.id));
 
-    const { error } = await supabase.from("pratos").delete().eq("id", prato.id);
-    if (error) {
-      setFetchError(mensagemErroSupabasePainel(error.message));
-      setPratos(prev);
-      return;
-    }
+    try {
+      const { error } = await supabase.from("pratos").delete().eq("id", prato.id);
+      if (error) {
+        setFetchError(mensagemErroSupabasePainel(error.message));
+        setPratos(prev);
+        return;
+      }
 
-    if (fotoUrl) {
-      const path = caminhoStorageDeUrlPublica(fotoUrl);
-      if (path) {
-        const { error: stErr } = await supabase.storage
-          .from(BUCKET_IMAGENS_PRATOS)
-          .remove([path]);
-        if (stErr) {
-          setFetchError(
-            (cur) =>
-              cur
-                ? `${cur} · Foto não removida do storage: ${stErr.message}`
-                : `Foto não removida do storage: ${stErr.message}`,
-          );
+      if (fotoUrl) {
+        const path = caminhoStorageDeUrlPublica(fotoUrl);
+        if (path) {
+          const { error: stErr } = await supabase.storage
+            .from(BUCKET_IMAGENS_PRATOS)
+            .remove([path]);
+          if (stErr) {
+            setFetchError(
+              (cur) =>
+                cur
+                  ? `${cur} · Foto não removida do storage: ${stErr.message}`
+                  : `Foto não removida do storage: ${stErr.message}`,
+            );
+          }
         }
       }
+    } finally {
+      setPratoDeletingId(null);
     }
   };
 
@@ -1830,10 +1996,10 @@ function AdminPageInner() {
                 ) : (
                   <>
                     Tenant: <span className="font-medium text-[#424245]">{restaurante.nome}</span>
-                    {tab === "pedidos" && !loading ? (
+                    {tab === "pedidos" && !loading && !silentRefreshing ? (
                       <span className="ml-2 text-xs text-[#aeaeb2]">· KPIs e esteira ao vivo</span>
                     ) : null}
-                    {loading ? (
+                    {loading || silentRefreshing ? (
                       <span className="ml-2 text-xs text-[#aeaeb2]">· sincronizando…</span>
                     ) : null}
                   </>
@@ -1851,15 +2017,36 @@ function AdminPageInner() {
             ) : tab === "pedidos" ? (
               <button
                 type="button"
-                disabled={loading}
-                onClick={() => void loadData()}
-                className="inline-flex items-center justify-center rounded-xl border border-black/[0.08] bg-white px-4 py-2.5 text-sm font-semibold text-[#1d1d1f] shadow-sm transition hover:bg-[#fbfbfd] disabled:cursor-not-allowed disabled:opacity-50"
+                disabled={loading || silentRefreshing}
+                onClick={() => void loadData({ soft: true })}
+                className="inline-flex items-center justify-center gap-2 rounded-xl border border-black/[0.08] bg-white px-4 py-2.5 text-sm font-semibold text-[#1d1d1f] shadow-sm transition hover:bg-[#fbfbfd] disabled:cursor-not-allowed disabled:opacity-50"
               >
-                {loading ? "Atualizando…" : "Atualizar pedidos"}
+                {loading || silentRefreshing ? (
+                  <>
+                    <span
+                      className="h-4 w-4 shrink-0 animate-spin rounded-full border-2 border-zinc-200 border-t-zinc-800"
+                      aria-hidden
+                    />
+                    Atualizando…
+                  </>
+                ) : (
+                  "Atualizar pedidos"
+                )}
               </button>
             ) : null}
           </div>
         </header>
+
+        {serviceRoleConfigured === false ? (
+          <div className="border-b border-violet-200/90 bg-violet-50 px-5 py-2.5 text-center text-[11px] leading-relaxed text-violet-950 sm:px-8 sm:text-left">
+            <span className="font-semibold">Ambiente (dev):</span> a variável{" "}
+            <code className="rounded bg-violet-100/80 px-1 py-0.5 font-mono text-[10px]">
+              SUPABASE_SERVICE_ROLE_KEY
+            </code>{" "}
+            não está definida no servidor — o registro de pedidos vindos do cardápio público pode falhar (503).
+            Configure no Vercel / `.env.local` e faça redeploy.
+          </div>
+        ) : null}
 
         {fetchError ? (
           <div className="border-b border-amber-200/80 bg-amber-50 px-5 py-3 text-sm text-amber-900 sm:px-8">
@@ -1896,6 +2083,7 @@ function AdminPageInner() {
                         onDrop={(e) => {
                           e.preventDefault();
                           setDragOverCol(null);
+                          if (pedidoBusyId) return;
                           const id = e.dataTransfer.getData(DRAG_MIME);
                           if (!id) return;
                           void atualizarColunaPedido(id, col.id);
@@ -1925,6 +2113,16 @@ function AdminPageInner() {
                               onEdit={() => setPedidoModal(p)}
                               onCancel={() => void cancelarPedido(p.id)}
                               onDragEnd={() => setDragOverCol(null)}
+                              busy={pedidoBusyId === p.id}
+                              busyLabel={
+                                pedidoBusyId === p.id
+                                  ? pedidoBusyKind === "advance"
+                                    ? "Atualizando status…"
+                                    : pedidoBusyKind === "cancel"
+                                      ? "Cancelando…"
+                                      : "Movendo…"
+                                  : undefined
+                              }
                             />
                           ))}
                           {porColuna[col.id].length === 0 ? (
@@ -2000,17 +2198,29 @@ function AdminPageInner() {
                         <td className="whitespace-nowrap px-5 py-3 text-right">
                           <button
                             type="button"
+                            disabled={pratoDeletingId !== null}
                             onClick={() => openEditPrato(prato)}
-                            className="mr-2 rounded-lg px-2 py-1 text-xs font-semibold text-[#0071e3] transition hover:bg-[#0071e3]/8"
+                            className="mr-2 rounded-lg px-2 py-1 text-xs font-semibold text-[#0071e3] transition hover:bg-[#0071e3]/8 disabled:cursor-not-allowed disabled:opacity-40"
                           >
                             Editar
                           </button>
                           <button
                             type="button"
+                            disabled={pratoDeletingId !== null}
                             onClick={() => void handleDeletePrato(prato)}
-                            className="rounded-lg px-2 py-1 text-xs font-semibold text-red-600 transition hover:bg-red-50"
+                            className="inline-flex min-w-[4.5rem] items-center justify-center rounded-lg px-2 py-1 text-xs font-semibold text-red-600 transition hover:bg-red-50 disabled:cursor-wait disabled:opacity-60"
                           >
-                            Excluir
+                            {pratoDeletingId === prato.id ? (
+                              <>
+                                <span
+                                  className="mr-1.5 h-3.5 w-3.5 shrink-0 animate-spin rounded-full border-2 border-red-200 border-t-red-600"
+                                  aria-hidden
+                                />
+                                Excluindo…
+                              </>
+                            ) : (
+                              "Excluir"
+                            )}
                           </button>
                         </td>
                       </tr>
@@ -2071,13 +2281,26 @@ function AdminPageInner() {
                     type="button"
                     disabled={tenantSaving}
                     onClick={() => void salvarConfiguracoesTenant()}
-                    className="rounded-full bg-zinc-900 px-5 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-zinc-800 disabled:cursor-not-allowed disabled:opacity-50"
+                    className="inline-flex min-w-[8.5rem] items-center justify-center gap-2 rounded-full bg-zinc-900 px-5 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-zinc-800 disabled:cursor-wait disabled:opacity-80"
                   >
-                    {tenantSaving ? "Salvando…" : "Salvar"}
+                    {tenantSaving ? (
+                      <>
+                        <span
+                          className="h-4 w-4 shrink-0 animate-spin rounded-full border-2 border-white/30 border-t-white"
+                          aria-hidden
+                        />
+                        Salvando…
+                      </>
+                    ) : (
+                      "Salvar"
+                    )}
                   </button>
                 </div>
 
-                <div className="mt-6 space-y-8">
+                <fieldset
+                  disabled={tenantSaving}
+                  className="mt-6 min-w-0 space-y-8 border-0 p-0 disabled:pointer-events-none disabled:opacity-[0.72]"
+                >
                   <div className="space-y-2">
                     <label className="text-xs font-semibold uppercase tracking-wide text-zinc-500">Nome</label>
                     <input
@@ -2218,7 +2441,7 @@ function AdminPageInner() {
                       {cfgMsg}
                     </p>
                   ) : null}
-                </div>
+                </fieldset>
               </div>
             </section>
           ) : null}
@@ -2229,6 +2452,7 @@ function AdminPageInner() {
         open={pedidoModal !== null}
         pedido={pedidoModal}
         onClose={() => setPedidoModal(null)}
+        saving={pedidoModalSaving}
         onSave={(patch) => void salvarPedidoModal(patch)}
       />
 

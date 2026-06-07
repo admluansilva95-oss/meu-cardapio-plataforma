@@ -24,7 +24,6 @@ import {
   type FormaPagamentoPedidoCliente,
 } from "@/lib/restaurante/pedido-whatsapp-formatado";
 import { formatarTelefoneWhatsappBR, digitosTelefoneBR } from "@/lib/restaurante/br-telefone-mascara";
-import { buscarEnderecoPorCep } from "@/lib/viacep";
 import { parsePrecoBrasileiro } from "@/lib/restaurante/preco-input";
 import { statusAberturaPorRelogio, textoHorarioVitrine } from "@/lib/restaurante/horario-vitrine";
 import { parseFuncionamentoSemana } from "@/lib/restaurante/funcionamento-semana";
@@ -86,12 +85,6 @@ function waMeUrl(telefone: string, message: string) {
   }
   const text = encodeURIComponent(message);
   return `https://wa.me/${d}?text=${text}`;
-}
-
-function formatCepDisplay(digitsRaw: string): string {
-  const d = digitsRaw.replace(/\D/g, "").slice(0, 8);
-  if (d.length <= 5) return d;
-  return `${d.slice(0, 5)}-${d.slice(5)}`;
 }
 
 type RestauranteRow = {
@@ -252,11 +245,13 @@ export default function PublicCardapioPage() {
 
   const [clienteNome, setClienteNome] = useState("");
   const [clienteTelefoneDisplay, setClienteTelefoneDisplay] = useState("");
-  const [checkoutCep, setCheckoutCep] = useState("");
   const [checkoutRua, setCheckoutRua] = useState("");
   const [checkoutNumero, setCheckoutNumero] = useState("");
   const [checkoutComplemento, setCheckoutComplemento] = useState("");
-  const [cepBuscando, setCepBuscando] = useState(false);
+  /** Bairros vêm das taxas cadastradas no restaurante (mesma “cidade”/área de atendimento). */
+  const [entregaBairroModo, setEntregaBairroModo] = useState<"digitar" | "lista">("digitar");
+  const [bairroBuscaTexto, setBairroBuscaTexto] = useState("");
+  const [bairroLivreTexto, setBairroLivreTexto] = useState("");
   const [formaPagamento, setFormaPagamento] = useState<FormaPagamentoPedidoCliente>("pix");
   const [trocoParaInput, setTrocoParaInput] = useState("");
   const [checkoutErro, setCheckoutErro] = useState<string | null>(null);
@@ -456,6 +451,14 @@ export default function PublicCardapioPage() {
   }, [restaurante, slug]);
 
   useEffect(() => {
+    if (!restaurante) return;
+    const n = restaurante.taxas_entrega_zonas?.length ?? 0;
+    setBairroBuscaTexto("");
+    setBairroLivreTexto("");
+    setEntregaBairroModo(n > 1 ? "digitar" : "lista");
+  }, [restaurante?.id, restaurante?.taxas_entrega_zonas]);
+
+  useEffect(() => {
     if (!slug || !cartHydrated || !restaurante) return;
     const zonas = restaurante.taxas_entrega_zonas ?? [];
     if (zonas.length <= 1) return;
@@ -558,28 +561,16 @@ export default function PublicCardapioPage() {
     [trocoParaInput],
   );
 
-  const cepDigitsCheckout = useMemo(() => checkoutCep.replace(/\D/g, ""), [checkoutCep]);
+  const zonasEntrega = useMemo(
+    () => restaurante?.taxas_entrega_zonas ?? [],
+    [restaurante?.taxas_entrega_zonas],
+  );
 
-  useEffect(() => {
-    if (cepDigitsCheckout.length !== 8) return;
-    let cancelled = false;
-    const t = window.setTimeout(() => {
-      void (async () => {
-        setCepBuscando(true);
-        const data = await buscarEnderecoPorCep(cepDigitsCheckout);
-        if (cancelled) return;
-        setCepBuscando(false);
-        if (data?.logradouro?.trim()) {
-          setCheckoutRua(data.logradouro.trim());
-        }
-      })();
-    }, 400);
-    return () => {
-      cancelled = true;
-      window.clearTimeout(t);
-      setCepBuscando(false);
-    };
-  }, [cepDigitsCheckout]);
+  const zonasFiltradasPorBusca = useMemo(() => {
+    const q = bairroBuscaTexto.trim().toLowerCase();
+    if (!q) return zonasEntrega;
+    return zonasEntrega.filter((z) => z.nome.toLowerCase().includes(q));
+  }, [zonasEntrega, bairroBuscaTexto]);
 
   useEffect(() => {
     if (!cartOpen) setCheckoutErro(null);
@@ -636,16 +627,16 @@ export default function PublicCardapioPage() {
     }
     const zonas = restaurante.taxas_entrega_zonas ?? [];
     if (tipoEntrega === "entrega") {
-      if (checkoutCep.replace(/\D/g, "").length !== 8) {
-        setCheckoutErro("Informe um CEP válido (8 dígitos).");
-        return;
-      }
       if (!checkoutRua.trim() || !checkoutNumero.trim()) {
         setCheckoutErro("Preencha rua e número para a entrega.");
         return;
       }
       if (zonas.length > 1 && !zonaEntregaId) {
-        setCheckoutErro("Selecione o bairro de entrega na lista.");
+        setCheckoutErro("Selecione o bairro (busca ou lista) conforme as regiões atendidas pelo restaurante.");
+        return;
+      }
+      if (zonas.length === 0 && bairroLivreTexto.trim().length < 2) {
+        setCheckoutErro("Informe o bairro ou região da entrega.");
         return;
       }
     }
@@ -671,12 +662,10 @@ export default function PublicCardapioPage() {
         ? "N/A"
         : zonas.length > 0
           ? zonas.find((z) => z.id === zonaEntregaId)?.nome?.trim() || "N/A"
-          : "N/A";
+          : bairroLivreTexto.trim() || "N/A";
 
     const enderecoLinha =
       tipoEntrega === "retirada" ? "N/A" : `${checkoutRua.trim()}, ${checkoutNumero.trim()}`;
-
-    const cepLinha = tipoEntrega === "retirada" ? "N/A" : formatCepDisplay(checkoutCep);
 
     const refCompLinha =
       tipoEntrega === "retirada" ? "N/A" : checkoutComplemento.trim() || "N/A";
@@ -700,7 +689,6 @@ export default function PublicCardapioPage() {
       tipoEntrega,
       enderecoLinha,
       bairroLinha: bairroNome,
-      cepLinha,
       refCompLinha,
       itens: cart,
       formaPagamento,
@@ -763,10 +751,10 @@ export default function PublicCardapioPage() {
     clienteNome,
     clienteTelefoneDisplay,
     tipoEntrega,
-    checkoutCep,
     checkoutRua,
     checkoutNumero,
     checkoutComplemento,
+    bairroLivreTexto,
     zonaEntregaId,
     formaPagamento,
     trocoParaInput,
@@ -827,6 +815,32 @@ export default function PublicCardapioPage() {
   const textoHor = textoHorarioVitrine(restaurante);
   const statusRelogio = statusAberturaPorRelogio(restaurante, relogio);
 
+  /** Aviso verde/vermelho no topo: agenda do painel + pausa manual da vitrine. */
+  const avisoStatusCardapio =
+    vitrineFechada
+      ? {
+          cor: "vermelho" as const,
+          titulo: "Fechado",
+          subtitulo: "Pedidos pausados pelo restaurante.",
+        }
+      : statusRelogio === "fechado"
+        ? {
+            cor: "vermelho" as const,
+            titulo: "Fechado",
+            subtitulo: "Fora do horário de atendimento cadastrado.",
+          }
+        : statusRelogio === "aberto"
+          ? {
+              cor: "verde" as const,
+              titulo: "Aberto",
+              subtitulo: "Dentro do horário de atendimento.",
+            }
+          : {
+              cor: "neutro" as const,
+              titulo: "Horário",
+              subtitulo: "Agenda digital não configurada — confira o texto abaixo ou com o restaurante.",
+            };
+
   const irParaSecao = (titulo: string) => {
     const id = `sec-${slugifySecaoCardapio(titulo)}`;
     setActiveCategoriaId(id);
@@ -882,7 +896,64 @@ export default function PublicCardapioPage() {
               <h1 className="mt-1 text-2xl font-semibold tracking-tight text-zinc-900 sm:text-4xl sm:leading-tight">
                 {restaurante.nome}
               </h1>
-              <p className="mt-2 max-w-xl text-sm leading-relaxed text-zinc-500">
+              <div
+                className="mt-3 flex items-start gap-2.5 rounded-2xl border px-3 py-2.5 sm:mt-4 sm:gap-3 sm:px-4 sm:py-3"
+                role="status"
+                aria-live="polite"
+                style={{
+                  borderColor:
+                    avisoStatusCardapio.cor === "verde"
+                      ? "color-mix(in srgb, rgb(16 185 129) 35%, transparent)"
+                      : avisoStatusCardapio.cor === "vermelho"
+                        ? "color-mix(in srgb, rgb(239 68 68) 35%, transparent)"
+                        : "rgba(0,0,0,0.08)",
+                  backgroundColor:
+                    avisoStatusCardapio.cor === "verde"
+                      ? "color-mix(in srgb, rgb(16 185 129) 8%, white)"
+                      : avisoStatusCardapio.cor === "vermelho"
+                        ? "color-mix(in srgb, rgb(239 68 68) 7%, white)"
+                        : "rgba(244,244,245,0.9)",
+                }}
+              >
+                <span className="relative mt-0.5 flex h-3 w-3 shrink-0" aria-hidden>
+                  {avisoStatusCardapio.cor !== "neutro" ? (
+                    <span
+                      className={[
+                        "absolute inset-0 animate-ping rounded-full opacity-40",
+                        avisoStatusCardapio.cor === "verde" ? "bg-emerald-500" : "bg-red-500",
+                      ].join(" ")}
+                    />
+                  ) : null}
+                  <span
+                    className={[
+                      "relative inline-flex h-3 w-3 rounded-full ring-2 ring-white",
+                      avisoStatusCardapio.cor === "verde"
+                        ? "bg-emerald-500"
+                        : avisoStatusCardapio.cor === "vermelho"
+                          ? "bg-red-500"
+                          : "bg-zinc-400",
+                    ].join(" ")}
+                  />
+                </span>
+                <div className="min-w-0">
+                  <p
+                    className={[
+                      "text-sm font-semibold tracking-tight sm:text-base",
+                      avisoStatusCardapio.cor === "verde"
+                        ? "text-emerald-900"
+                        : avisoStatusCardapio.cor === "vermelho"
+                          ? "text-red-900"
+                          : "text-zinc-800",
+                    ].join(" ")}
+                  >
+                    {avisoStatusCardapio.titulo}
+                  </p>
+                  <p className="mt-0.5 text-xs leading-relaxed text-zinc-600 sm:text-sm">
+                    {avisoStatusCardapio.subtitulo}
+                  </p>
+                </div>
+              </div>
+              <p className="mt-2 max-w-xl text-sm leading-relaxed text-zinc-500 sm:mt-3">
                 {pedidosBloqueados ? (
                   <span className="text-zinc-600">
                     Explore o menu abaixo. Os pedidos pelo WhatsApp ficam indisponíveis até o restaurante reabrir ou
@@ -987,15 +1058,27 @@ export default function PublicCardapioPage() {
                 <p className="text-[11px] font-semibold uppercase tracking-wider text-zinc-500">
                   Horário de funcionamento
                 </p>
-                {statusRelogio === "aberto" ? (
-                  <span className="rounded-full bg-emerald-50 px-2.5 py-0.5 text-[11px] font-semibold text-emerald-800 ring-1 ring-emerald-200/70">
+                {vitrineFechada ? (
+                  <span className="inline-flex items-center gap-1.5 rounded-full bg-red-50 px-2.5 py-0.5 text-[11px] font-semibold text-red-800 ring-1 ring-red-200/70">
+                    <span className="h-1.5 w-1.5 rounded-full bg-red-500" aria-hidden />
+                    Pedidos pausados
+                  </span>
+                ) : statusRelogio === "aberto" ? (
+                  <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-50 px-2.5 py-0.5 text-[11px] font-semibold text-emerald-800 ring-1 ring-emerald-200/70">
+                    <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" aria-hidden />
                     Aberto agora
                   </span>
                 ) : statusRelogio === "fechado" ? (
-                  <span className="rounded-full bg-zinc-100 px-2.5 py-0.5 text-[11px] font-semibold text-zinc-700 ring-1 ring-zinc-200/80">
+                  <span className="inline-flex items-center gap-1.5 rounded-full bg-red-50 px-2.5 py-0.5 text-[11px] font-semibold text-red-800 ring-1 ring-red-200/70">
+                    <span className="h-1.5 w-1.5 rounded-full bg-red-500" aria-hidden />
                     Fechado agora
                   </span>
-                ) : null}
+                ) : (
+                  <span className="inline-flex items-center gap-1.5 rounded-full bg-zinc-100 px-2.5 py-0.5 text-[11px] font-semibold text-zinc-600 ring-1 ring-zinc-200/80">
+                    <span className="h-1.5 w-1.5 rounded-full bg-zinc-400" aria-hidden />
+                    Sem agenda digital
+                  </span>
+                )}
               </div>
               <p className="mt-1 text-sm font-medium leading-relaxed text-zinc-900 sm:text-base">
                 {textoHor ? (
@@ -1290,28 +1373,6 @@ export default function PublicCardapioPage() {
 
                       {tipoEntrega === "entrega" ? (
                         <div className="space-y-3 rounded-2xl border border-zinc-100 bg-white p-4 shadow-sm">
-                          <div>
-                            <label className="text-[11px] font-medium text-zinc-500" htmlFor="checkout-cep">
-                              CEP
-                            </label>
-                            <div className="relative mt-1">
-                              <input
-                                id="checkout-cep"
-                                type="text"
-                                inputMode="numeric"
-                                value={formatCepDisplay(checkoutCep)}
-                                onChange={(e) => setCheckoutCep(e.target.value.replace(/\D/g, "").slice(0, 8))}
-                                placeholder="00000-000"
-                                className="w-full rounded-xl border border-zinc-200 bg-zinc-50/40 px-4 py-3 pr-12 text-sm text-zinc-900 outline-none transition focus:bg-white focus:ring-2 focus:ring-zinc-950"
-                              />
-                              {cepBuscando ? (
-                                <span className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 animate-spin rounded-full border-2 border-zinc-200 border-t-zinc-900" />
-                              ) : null}
-                            </div>
-                            <p className="mt-1 text-[11px] leading-relaxed text-zinc-400">
-                              Endereço preenchido automaticamente pelo CEP quando disponível.
-                            </p>
-                          </div>
                           <div className="grid gap-3 sm:grid-cols-2">
                             <div className="sm:col-span-2">
                               <label className="text-[11px] font-medium text-zinc-500" htmlFor="checkout-rua">
@@ -1325,7 +1386,7 @@ export default function PublicCardapioPage() {
                                 className="mt-1 w-full rounded-xl border border-zinc-200 bg-white px-4 py-3 text-sm text-zinc-900 outline-none transition focus:ring-2 focus:ring-zinc-950"
                               />
                             </div>
-                            <div>
+                            <div className={zonasEntrega.length === 1 ? "" : "sm:col-span-2"}>
                               <label className="text-[11px] font-medium text-zinc-500" htmlFor="checkout-numero">
                                 Número
                               </label>
@@ -1338,34 +1399,136 @@ export default function PublicCardapioPage() {
                                 className="mt-1 w-full rounded-xl border border-zinc-200 bg-white px-4 py-3 text-sm text-zinc-900 outline-none transition focus:ring-2 focus:ring-zinc-950"
                               />
                             </div>
-                            <div>
-                              <label className="text-[11px] font-medium text-zinc-500" htmlFor="checkout-bairro-zona">
-                                Bairro
-                              </label>
-                              {(restaurante.taxas_entrega_zonas ?? []).length >= 1 ? (
-                                <select
-                                  id="checkout-bairro-zona"
-                                  value={zonaEntregaId ?? ""}
-                                  onChange={(e) => setZonaEntregaId(e.target.value || null)}
-                                  disabled={(restaurante.taxas_entrega_zonas ?? []).length === 1}
-                                  className="mt-1 w-full rounded-xl border border-zinc-200 bg-white px-4 py-3 text-sm text-zinc-900 outline-none transition focus:ring-2 focus:ring-zinc-950 disabled:cursor-default disabled:opacity-90"
+                            {zonasEntrega.length === 1 ? (
+                              <div>
+                                <span className="text-[11px] font-medium text-zinc-500">Bairro (taxa)</span>
+                                <div className="mt-1 rounded-xl border border-zinc-100 bg-zinc-50/80 px-4 py-3 text-sm text-zinc-800">
+                                  {zonasEntrega[0].nome} — {formatBRL(zonasEntrega[0].valor)}
+                                </div>
+                              </div>
+                            ) : null}
+                          </div>
+
+                          {zonasEntrega.length > 1 ? (
+                            <div className="space-y-2">
+                              <div className="flex rounded-2xl border border-zinc-200 bg-zinc-100/80 p-1">
+                                <button
+                                  type="button"
+                                  onClick={() => setEntregaBairroModo("digitar")}
+                                  className={[
+                                    "flex-1 rounded-xl py-2.5 text-sm font-semibold transition-all",
+                                    entregaBairroModo === "digitar"
+                                      ? "bg-white text-zinc-900 shadow-sm ring-1 ring-zinc-200/80"
+                                      : "text-zinc-500 hover:text-zinc-800",
+                                  ].join(" ")}
                                 >
-                                  {(restaurante.taxas_entrega_zonas ?? []).length > 1 ? (
-                                    <option value="">Selecione o bairro</option>
-                                  ) : null}
-                                  {(restaurante.taxas_entrega_zonas ?? []).map((z) => (
-                                    <option key={z.id} value={z.id}>
-                                      {z.nome} — {formatBRL(z.valor)}
-                                    </option>
-                                  ))}
-                                </select>
+                                  Digitar bairro
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => setEntregaBairroModo("lista")}
+                                  className={[
+                                    "flex-1 rounded-xl py-2.5 text-sm font-semibold transition-all",
+                                    entregaBairroModo === "lista"
+                                      ? "bg-white text-zinc-900 shadow-sm ring-1 ring-zinc-200/80"
+                                      : "text-zinc-500 hover:text-zinc-800",
+                                  ].join(" ")}
+                                >
+                                  Ver lista
+                                </button>
+                              </div>
+
+                              {entregaBairroModo === "digitar" ? (
+                                <div className="space-y-2">
+                                  <label className="text-[11px] font-medium text-zinc-500" htmlFor="checkout-bairro-busca">
+                                    Buscar nas regiões do restaurante
+                                  </label>
+                                  <input
+                                    id="checkout-bairro-busca"
+                                    type="text"
+                                    value={bairroBuscaTexto}
+                                    onChange={(e) => setBairroBuscaTexto(e.target.value.slice(0, 80))}
+                                    placeholder="Ex.: Centro, Jardim…"
+                                    className="w-full rounded-xl border border-zinc-200 bg-white px-4 py-3 text-sm text-zinc-900 outline-none transition focus:ring-2 focus:ring-zinc-950"
+                                  />
+                                  <div className="max-h-40 space-y-1 overflow-y-auto rounded-xl border border-zinc-100 bg-zinc-50/50 p-1">
+                                    {zonasFiltradasPorBusca.length === 0 ? (
+                                      <p className="px-3 py-2 text-xs leading-relaxed text-zinc-500">
+                                        Nenhuma região encontrada com esse texto. Ajuste a busca ou use a aba
+                                        &quot;Ver lista&quot;.
+                                      </p>
+                                    ) : (
+                                      zonasFiltradasPorBusca.map((z) => (
+                                        <button
+                                          key={z.id}
+                                          type="button"
+                                          onClick={() => setZonaEntregaId(z.id)}
+                                          className={[
+                                            "flex w-full items-center justify-between rounded-lg px-3 py-2.5 text-left text-sm font-medium transition",
+                                            zonaEntregaId === z.id
+                                              ? "bg-zinc-900 text-white"
+                                              : "text-zinc-800 hover:bg-white",
+                                          ].join(" ")}
+                                        >
+                                          <span>{z.nome}</span>
+                                          <span className="tabular-nums text-xs opacity-90">{formatBRL(z.valor)}</span>
+                                        </button>
+                                      ))
+                                    )}
+                                  </div>
+                                  {zonaEntregaId ? (
+                                    <p className="text-[11px] text-zinc-500">
+                                      Selecionado:{" "}
+                                      <span className="font-semibold text-zinc-800">
+                                        {zonasEntrega.find((z) => z.id === zonaEntregaId)?.nome}
+                                      </span>
+                                    </p>
+                                  ) : (
+                                    <p className="text-[11px] text-zinc-500">Toque em uma região para definir a taxa.</p>
+                                  )}
+                                </div>
                               ) : (
-                                <p className="mt-2 rounded-xl border border-dashed border-zinc-200 bg-zinc-50 px-3 py-2 text-xs text-zinc-500">
-                                  Taxa conforme cadastro do restaurante (sem bairros cadastrados).
-                                </p>
+                                <div>
+                                  <label className="text-[11px] font-medium text-zinc-500" htmlFor="checkout-bairro-zona">
+                                    Bairro / região
+                                  </label>
+                                  <select
+                                    id="checkout-bairro-zona"
+                                    value={zonaEntregaId ?? ""}
+                                    onChange={(e) => setZonaEntregaId(e.target.value || null)}
+                                    className="mt-1 w-full rounded-xl border border-zinc-200 bg-white px-4 py-3 text-sm text-zinc-900 outline-none transition focus:ring-2 focus:ring-zinc-950"
+                                  >
+                                    <option value="">Selecione o bairro</option>
+                                    {zonasEntrega.map((z) => (
+                                      <option key={z.id} value={z.id}>
+                                        {z.nome} — {formatBRL(z.valor)}
+                                      </option>
+                                    ))}
+                                  </select>
+                                </div>
                               )}
                             </div>
-                          </div>
+                          ) : null}
+
+                          {zonasEntrega.length === 0 ? (
+                            <div>
+                              <label className="text-[11px] font-medium text-zinc-500" htmlFor="checkout-bairro-livre">
+                                Bairro ou região
+                              </label>
+                              <input
+                                id="checkout-bairro-livre"
+                                type="text"
+                                value={bairroLivreTexto}
+                                onChange={(e) => setBairroLivreTexto(e.target.value.slice(0, 80))}
+                                placeholder="Informe o bairro da entrega"
+                                className="mt-1 w-full rounded-xl border border-zinc-200 bg-white px-4 py-3 text-sm text-zinc-900 outline-none transition placeholder:text-zinc-400 focus:ring-2 focus:ring-zinc-950"
+                              />
+                              <p className="mt-1 text-[11px] leading-relaxed text-zinc-400">
+                                Taxa de entrega conforme cadastro do restaurante (sem regiões listadas).
+                              </p>
+                            </div>
+                          ) : null}
+
                           <div>
                             <label className="text-[11px] font-medium text-zinc-500" htmlFor="checkout-comp">
                               Complemento / referência

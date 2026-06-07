@@ -1,5 +1,8 @@
 import { NextResponse } from "next/server";
+import { parseFuncionamentoSemana } from "@/lib/restaurante/funcionamento-semana";
+import { statusAberturaPorRelogio } from "@/lib/restaurante/horario-vitrine";
 import { createAdminSupabaseClient } from "@/lib/supabase/admin";
+import type { Restaurante } from "@/types";
 
 /**
  * Pedidos da vitrine → tabela PostgreSQL `public.pedidos` (não existe tabela `orders` neste projeto).
@@ -96,7 +99,7 @@ export async function POST(request: Request) {
 
   const { data: rest, error: restErr } = await admin
     .from("restaurantes")
-    .select("id, vitrine_fechada")
+    .select("id, vitrine_fechada, funcionamento_semana")
     .eq("id", restauranteId)
     .maybeSingle();
 
@@ -107,8 +110,16 @@ export async function POST(request: Request) {
   if (!rest) {
     return NextResponse.json({ error: "Restaurante não encontrado." }, { status: 404 });
   }
-  if (rest.vitrine_fechada === true) {
+
+  const row = rest as { id: string; vitrine_fechada?: boolean | null; funcionamento_semana?: unknown };
+  if (row.vitrine_fechada === true) {
     return NextResponse.json({ error: "Restaurante fechado para novos pedidos." }, { status: 409 });
+  }
+
+  const funcionamento_semana = parseFuncionamentoSemana(row.funcionamento_semana) ?? undefined;
+  const horarioStub = { funcionamento_semana } as Restaurante;
+  if (statusAberturaPorRelogio(horarioStub) === "fechado") {
+    return NextResponse.json({ error: "Fora do horário de atendimento." }, { status: 409 });
   }
 
   const pagamento = mapPagamentoPedidoDb(forma);

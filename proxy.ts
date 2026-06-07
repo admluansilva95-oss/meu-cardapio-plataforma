@@ -4,7 +4,7 @@ import { isValidSlug } from "@/lib/billing/slug";
 
 type CookieToSet = { name: string; value: string; options: CookieOptions };
 
-export async function middleware(request: NextRequest) {
+export async function proxy(request: NextRequest) {
   const { pathname, searchParams } = request.nextUrl;
 
   if (pathname !== "/admin") {
@@ -40,10 +40,6 @@ export async function middleware(request: NextRequest) {
           });
         },
       },
-      global: {
-        fetch: (input: RequestInfo | URL, init?: RequestInit) =>
-          fetch(input, { ...init, cache: "no-store" }),
-      },
     },
   );
 
@@ -67,7 +63,7 @@ export async function middleware(request: NextRequest) {
     .limit(1);
 
   if (assinaturasError) {
-    console.error("[middleware/admin] assinaturas:", assinaturasError.message);
+    console.error("[proxy/admin] assinaturas:", assinaturasError.message);
     return response;
   }
 
@@ -99,7 +95,7 @@ export async function middleware(request: NextRequest) {
       .maybeSingle();
 
     if (alvoErr) {
-      console.error("[middleware/admin] slug tenant:", alvoErr.message);
+      console.error("[proxy/admin] slug tenant:", alvoErr.message);
       return response;
     }
 
@@ -118,7 +114,7 @@ export async function middleware(request: NextRequest) {
       .maybeSingle();
 
     if (meuErr) {
-      console.error("[middleware/admin] meu restaurante:", meuErr.message);
+      console.error("[proxy/admin] meu restaurante:", meuErr.message);
       return response;
     }
     if (meu?.slug) {
@@ -143,7 +139,7 @@ export async function middleware(request: NextRequest) {
     .maybeSingle();
 
   if (error) {
-    console.error("[middleware/admin] restaurantes:", error.message);
+    console.error("[proxy/admin] restaurantes:", error.message);
     return response;
   }
 

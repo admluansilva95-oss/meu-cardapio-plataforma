@@ -142,7 +142,7 @@ export async function handleInvoicePaymentSucceeded(
 
 /**
  * Falha de cobrança na fatura: sincroniza `assinaturas` para `past_due` / `unpaid`
- * (ou outro status retornado pelo Stripe), para o middleware bloquear `/admin` quando aplicável.
+ * (ou outro status retornado pelo Stripe), para o proxy bloquear `/admin` quando aplicável.
  */
 export async function handleInvoicePaymentFailed(
   stripe: Stripe,

@@ -25,7 +25,7 @@ function applyAuthCookies(target: NextResponse, writes: CookieToSet[]) {
 export async function POST(request: NextRequest) {
   const cookieStore = await cookies();
 
-  // Instância única para acumular cookies de sessão/refresh (mesma ideia do middleware).
+  // Instância única para acumular cookies de sessão/refresh (mesma ideia do proxy em `proxy.ts`).
   const sessionResponse = NextResponse.next({
     request: { headers: request.headers },
   });

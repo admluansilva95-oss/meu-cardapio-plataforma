@@ -33,7 +33,6 @@ export interface PedidoWhatsAppFormatadoInput {
   /** "Rua, Número" ou N/A */
   enderecoLinha: string;
   bairroLinha: string;
-  cepLinha: string;
   refCompLinha: string;
   itens: CarrinhoItem[];
   formaPagamento: FormaPagamentoPedidoCliente;
@@ -73,7 +72,6 @@ export function montarTextoPedidoWhatsAppFormatado(p: PedidoWhatsAppFormatadoInp
     `• Tipo: ${tipoLabel}`,
     `• Endereço: ${p.enderecoLinha}`,
     `• Bairro: ${p.bairroLinha}`,
-    `• CEP: ${p.cepLinha}`,
     `• Ref/Comp: ${p.refCompLinha}`,
     "",
     "*🍔 ITENS DO PEDIDO:*",
