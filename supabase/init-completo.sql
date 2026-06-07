@@ -194,13 +194,16 @@ create policy "owners_select_own_restaurante"
   on public.restaurantes for select to authenticated
   using (auth.uid() = owner_id);
 
--- DEV: escrita ampla — restrinja em produção (apenas owner ou service role)
+-- Escrita ampla removida: dono autenticado atualiza o próprio tenant (INSERT via service_role no webhook).
 drop policy if exists "restaurantes_dev_write_anon" on public.restaurantes;
-create policy "restaurantes_dev_write_anon"
-  on public.restaurantes for all to anon, authenticated
-  using (true) with check (true);
 
--- --- pratos ---
+drop policy if exists "owners_update_own_restaurante" on public.restaurantes;
+create policy "owners_update_own_restaurante"
+  on public.restaurantes for update to authenticated
+  using (auth.uid() = owner_id)
+  with check (auth.uid() = owner_id);
+
+-- --- pratos (leitura pública; escrita só dono do restaurante) ---
 drop policy if exists "pratos_select_public_ativos" on public.pratos;
 drop policy if exists "pratos_select_dev" on public.pratos;
 create policy "pratos_select_dev"
@@ -208,31 +211,88 @@ create policy "pratos_select_dev"
   using (true);
 
 drop policy if exists "pratos_dev_write_anon" on public.pratos;
-create policy "pratos_dev_write_anon"
-  on public.pratos for all to anon, authenticated
-  using (true) with check (true);
+drop policy if exists "owners_insert_pratos" on public.pratos;
+create policy "owners_insert_pratos"
+  on public.pratos for insert to authenticated
+  with check (
+    exists (
+      select 1 from public.restaurantes r
+      where r.id = pratos.restaurante_id and r.owner_id = auth.uid()
+    )
+  );
 
--- --- pedidos ---
+drop policy if exists "owners_update_pratos" on public.pratos;
+create policy "owners_update_pratos"
+  on public.pratos for update to authenticated
+  using (
+    exists (
+      select 1 from public.restaurantes r
+      where r.id = pratos.restaurante_id and r.owner_id = auth.uid()
+    )
+  )
+  with check (
+    exists (
+      select 1 from public.restaurantes r
+      where r.id = pratos.restaurante_id and r.owner_id = auth.uid()
+    )
+  );
+
+drop policy if exists "owners_delete_pratos" on public.pratos;
+create policy "owners_delete_pratos"
+  on public.pratos for delete to authenticated
+  using (
+    exists (
+      select 1 from public.restaurantes r
+      where r.id = pratos.restaurante_id and r.owner_id = auth.uid()
+    )
+  );
+
+-- --- pedidos (painel: dono do restaurante) ---
 drop policy if exists "pedidos_dev_all_anon_authenticated" on public.pedidos;
-create policy "pedidos_dev_all_anon_authenticated"
-  on public.pedidos for all to anon, authenticated
-  using (true) with check (true);
+drop policy if exists "owners_select_pedidos" on public.pedidos;
+create policy "owners_select_pedidos"
+  on public.pedidos for select to authenticated
+  using (
+    exists (
+      select 1 from public.restaurantes r
+      where r.id = pedidos.restaurante_id and r.owner_id = auth.uid()
+    )
+  );
 
--- --- assinaturas (cliente autenticado; webhook usa service_role e ignora RLS) ---
+drop policy if exists "owners_update_pedidos" on public.pedidos;
+create policy "owners_update_pedidos"
+  on public.pedidos for update to authenticated
+  using (
+    exists (
+      select 1 from public.restaurantes r
+      where r.id = pedidos.restaurante_id and r.owner_id = auth.uid()
+    )
+  )
+  with check (
+    exists (
+      select 1 from public.restaurantes r
+      where r.id = pedidos.restaurante_id and r.owner_id = auth.uid()
+    )
+  );
+
+drop policy if exists "owners_delete_pedidos" on public.pedidos;
+create policy "owners_delete_pedidos"
+  on public.pedidos for delete to authenticated
+  using (
+    exists (
+      select 1 from public.restaurantes r
+      where r.id = pedidos.restaurante_id and r.owner_id = auth.uid()
+    )
+  );
+
+-- --- assinaturas: leitura pelo usuário; INSERT/UPDATE só service_role (webhook Stripe) ---
 drop policy if exists "Usuários leem a própria assinatura" on public.assinaturas;
 create policy "Usuários leem a própria assinatura"
   on public.assinaturas for select to authenticated
   using (auth.uid() = user_id);
 
 drop policy if exists "Usuários inserem a própria assinatura" on public.assinaturas;
-create policy "Usuários inserem a própria assinatura"
-  on public.assinaturas for insert to authenticated
-  with check (auth.uid() = user_id);
-
 drop policy if exists "Usuários atualizam a própria assinatura" on public.assinaturas;
-create policy "Usuários atualizam a própria assinatura"
-  on public.assinaturas for update to authenticated
-  using (auth.uid() = user_id) with check (auth.uid() = user_id);
 
 -- -----------------------------------------------------------------------------
 -- 6. STORAGE — bucket de imagens dos pratos

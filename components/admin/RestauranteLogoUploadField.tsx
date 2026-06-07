@@ -18,9 +18,9 @@ export function RestauranteLogoUploadField(props: {
     <div className="space-y-3">
       <div>
         <p className="text-xs font-semibold uppercase tracking-wide text-zinc-500">Logo do estabelecimento</p>
-        <p className="mt-1 text-sm text-zinc-500">
-          Aparece no topo do cardápio público. JPG, PNG ou WebP até 2&nbsp;MB. Salve as alterações no fim da página
-          para enviar ao servidor.
+        <p className="mt-1 text-sm font-normal leading-relaxed text-zinc-500">
+          Aparece no topo do cardápio público. JPG, PNG ou WebP até 2&nbsp;MB. Salve no fim da página para enviar ao
+          servidor.
         </p>
       </div>
 
@@ -30,31 +30,32 @@ export function RestauranteLogoUploadField(props: {
           disabled={disabled}
           onClick={() => fileRef.current?.click()}
           className={[
-            "group relative flex h-36 w-full max-w-sm flex-col items-center justify-center gap-2 rounded-2xl border border-dashed border-zinc-200 bg-zinc-50 px-4 py-6 text-center transition hover:border-zinc-300 hover:bg-zinc-50/80 sm:h-32 sm:max-w-xs",
+            "group relative flex w-full max-w-[11rem] flex-col items-center justify-center overflow-hidden rounded-2xl border border-dashed border-zinc-200 bg-zinc-50 transition hover:border-zinc-300 hover:bg-zinc-50/90",
             disabled ? "cursor-not-allowed opacity-50" : "cursor-pointer",
           ].join(" ")}
         >
-          {displayUrl ? (
-            <>
-              {/* eslint-disable-next-line @next/next/no-img-element */}
+          <div className="aspect-square w-full">
+            {displayUrl ? (
+              // eslint-disable-next-line @next/next/no-img-element
               <img
                 src={displayUrl}
                 alt=""
-                className="pointer-events-none max-h-24 max-w-[85%] rounded-xl border border-zinc-100 object-contain shadow-sm"
+                className="h-full w-full object-cover"
               />
-              <span className="text-xs font-medium text-zinc-500">
-                {hasPendingFile ? "Nova imagem — clique para trocar" : "Clique para substituir"}
-              </span>
-            </>
-          ) : (
-            <>
-              <span className="text-2xl text-zinc-300 transition group-hover:text-zinc-400" aria-hidden>
-                +
-              </span>
-              <span className="text-sm font-semibold text-zinc-700">Enviar logo ou foto</span>
-              <span className="text-xs text-zinc-500">Arraste ou clique para escolher</span>
-            </>
-          )}
+            ) : (
+              <div className="flex h-full w-full flex-col items-center justify-center gap-1.5 px-3 py-6 text-center">
+                <span className="text-2xl font-light text-zinc-300 transition group-hover:text-zinc-400" aria-hidden>
+                  +
+                </span>
+                <span className="text-xs font-semibold text-zinc-600">Logo</span>
+              </div>
+            )}
+          </div>
+          {displayUrl ? (
+            <span className="border-t border-zinc-100 bg-white/90 px-2 py-1.5 text-[10px] font-medium text-zinc-500">
+              {hasPendingFile ? "Nova — toque para trocar" : "Toque para substituir"}
+            </span>
+          ) : null}
         </button>
 
         <input

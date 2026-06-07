@@ -655,8 +655,20 @@ function ModalPrato(props: {
     props;
   const [form, setForm] = useState(emptyPratoForm);
   const [arquivoImagem, setArquivoImagem] = useState<File | null>(null);
+  const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    if (!arquivoImagem) {
+      setPreviewUrl(null);
+      return;
+    }
+    const url = URL.createObjectURL(arquivoImagem);
+    setPreviewUrl(url);
+    return () => URL.revokeObjectURL(url);
+  }, [open, arquivoImagem]);
 
   useEffect(() => {
     if (!open) return;
@@ -674,6 +686,9 @@ function ModalPrato(props: {
       setForm(emptyPratoForm);
     }
   }, [open, mode, initial]);
+
+  const imagemPreviewPublica =
+    mode === "edit" && initial?.imagem?.trim() ? initial.imagem.trim() : null;
 
   if (!open) return null;
 
@@ -786,27 +801,38 @@ function ModalPrato(props: {
               }}
               className="block w-full text-xs text-zinc-500 file:mr-3 file:rounded-xl file:border-0 file:bg-zinc-100 file:px-3 file:py-2 file:text-xs file:font-semibold file:text-zinc-900 hover:file:bg-zinc-200"
             />
-            {mode === "edit" && initial?.imagem && !arquivoImagem ? (
+            {previewUrl || imagemPreviewPublica ? (
+              <div className="relative mt-2 aspect-square max-w-[10rem] overflow-hidden rounded-2xl border border-zinc-100 bg-zinc-50 shadow-sm">
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img
+                  src={previewUrl ?? imagemPreviewPublica ?? ""}
+                  alt=""
+                  className="h-full w-full object-cover"
+                />
+              </div>
+            ) : null}
+            {mode === "edit" && imagemPreviewPublica && !arquivoImagem ? (
               <p className="text-[11px] text-zinc-500">
                 Imagem atual no cardápio. Envie um arquivo acima para substituir.
               </p>
             ) : null}
             {arquivoImagem ? (
               <p className="truncate text-[11px] text-zinc-500" title={arquivoImagem.name}>
-                Selecionado: {arquivoImagem.name}
+                Novo arquivo: {arquivoImagem.name}
               </p>
             ) : null}
           </div>
-          <div className="space-y-1.5">
-            <label className="text-xs font-semibold uppercase tracking-wide text-zinc-500">Status</label>
-            <select
-              value={form.status}
-              onChange={(e) => setForm((f) => ({ ...f, status: e.target.value as PratoStatus }))}
-              className="w-full rounded-2xl border border-zinc-200 bg-zinc-50/50 px-4 py-3 text-sm text-zinc-900 outline-none transition focus:border-transparent focus:ring-2 focus:ring-zinc-900"
-            >
-              <option value="ativo">Ativo</option>
-              <option value="pausado">Pausado</option>
-            </select>
+          <div className="flex items-center justify-between gap-4 rounded-2xl border border-zinc-100 bg-zinc-50/60 px-4 py-3">
+            <div className="min-w-0">
+              <p className="text-sm font-semibold text-zinc-900">Visível no cardápio</p>
+              <p className="text-xs font-normal text-zinc-500">Pausado remove o prato da vitrine pública.</p>
+            </div>
+            <IosToggle
+              tone="success"
+              checked={form.status === "ativo"}
+              onChange={(on) => setForm((f) => ({ ...f, status: on ? "ativo" : "pausado" }))}
+              aria-label={form.status === "ativo" ? "Prato ativo" : "Prato pausado"}
+            />
           </div>
           <div className="flex justify-end gap-2 pt-2">
             <button
@@ -1579,6 +1605,7 @@ function AdminPageInner() {
         ),
       );
     } else {
+      /** RLS: `restaurante_id` obrigatório no insert para políticas `owners_insert_pratos`. */
       const { data, error } = await supabase
         .from("pratos")
         .insert({

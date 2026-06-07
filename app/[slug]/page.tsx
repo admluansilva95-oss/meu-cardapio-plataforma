@@ -33,11 +33,10 @@ import { useParams } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Clock } from "lucide-react";
 
-const FECHADO_PADRAO_VITRINE =
-  "No momento não estamos aceitando novos pedidos pelo cardápio. Veja nosso horário de funcionamento abaixo.";
-
-const FECHADO_POR_HORARIO_MSG =
-  "Estamos fora do horário de atendimento no momento. Você pode visualizar o cardápio, mas os pedidos via WhatsApp estão desativados.";
+/** Aviso fixo no topo quando pedidos estão bloqueados (vitrine fechada ou fora do horário). */
+const BANNER_FECHADO_TITULO = "Estamos fechados no momento.";
+const BANNER_FECHADO_CORPO =
+  "Você pode navegar, mas os pedidos via WhatsApp estão desativados.";
 
 function formatSlugToDisplayName(slug: string): string {
   const s = slug.trim();
@@ -195,7 +194,7 @@ function CartIcon(props: { className?: string }) {
 }
 
 const shellClass =
-  "min-h-screen bg-zinc-50 font-sans text-zinc-900 antialiased selection:bg-zinc-900/10";
+  "min-h-screen scroll-smooth bg-zinc-50 font-sans text-zinc-900 antialiased selection:bg-zinc-900/10";
 
 function RestauranteNaoEncontradoView(props: { subtitle?: string }) {
   return (
@@ -611,8 +610,7 @@ export default function PublicCardapioPage() {
   }
 
   const vitrineFechada = restaurante.vitrine_fechada === true;
-  const textoAvisoFechado =
-    restaurante.mensagem_fechado?.trim() || FECHADO_PADRAO_VITRINE;
+  const mensagemFechadoCustom = restaurante.mensagem_fechado?.trim() ?? "";
 
   const textoHor = textoHorarioVitrine(restaurante);
   const statusRelogio = statusAberturaPorRelogio(restaurante, relogio);
@@ -626,6 +624,26 @@ export default function PublicCardapioPage() {
   return (
     <div className={shellClass}>
       <header className="sticky top-0 z-40 border-b border-zinc-200/80 bg-white/80 backdrop-blur-md">
+        {pedidosBloqueados ? (
+          <div
+            role="alert"
+            className="border-b border-amber-200/70 bg-gradient-to-b from-amber-50/98 to-amber-50/90 backdrop-blur-sm"
+          >
+            <div className="mx-auto max-w-6xl px-5 py-3.5 sm:px-8">
+              <p className="text-center text-sm font-semibold text-amber-950 sm:text-left">
+                {BANNER_FECHADO_TITULO}
+              </p>
+              <p className="mt-1 text-center text-xs font-normal leading-relaxed text-amber-900/90 sm:text-left sm:text-sm">
+                {BANNER_FECHADO_CORPO}
+              </p>
+              {vitrineFechada && mensagemFechadoCustom ? (
+                <p className="mt-2 border-t border-amber-200/60 pt-2 text-center text-xs font-normal text-amber-900/85 sm:text-left">
+                  {mensagemFechadoCustom}
+                </p>
+              ) : null}
+            </div>
+          </div>
+        ) : null}
         <div className="mx-auto max-w-6xl px-5 py-8 sm:flex sm:items-center sm:justify-between sm:px-8 sm:py-10">
           <div className="flex items-start gap-5 sm:items-center">
             <div className="shrink-0">
@@ -654,22 +672,10 @@ export default function PublicCardapioPage() {
               </h1>
               <p className="mt-2 max-w-xl text-sm leading-relaxed text-zinc-500">
                 {pedidosBloqueados ? (
-                  <>
-                    Você pode <strong className="font-medium text-zinc-800">consultar o cardápio</strong> abaixo.
-                    {vitrineFechada ? (
-                      <>
-                        {" "}
-                        Pedidos novos pelo site estão <strong className="font-medium text-zinc-800">pausados</strong>{" "}
-                        pelo estabelecimento.
-                      </>
-                    ) : (
-                      <>
-                        {" "}
-                        No momento estamos <strong className="font-medium text-zinc-800">fora do horário</strong> de
-                        pedidos pelo cardápio.
-                      </>
-                    )}
-                  </>
+                  <span className="text-zinc-600">
+                    Explore o menu abaixo. Os pedidos pelo WhatsApp ficam indisponíveis até o restaurante reabrir ou
+                    retornar ao horário de atendimento.
+                  </span>
                 ) : (
                   <>
                     Monte seu pedido com calma; finalize no carrinho e envie pelo WhatsApp.
@@ -754,37 +760,6 @@ export default function PublicCardapioPage() {
         ) : null}
       </header>
 
-      {pedidosBloqueados ? (
-        <div
-          role="alert"
-          className={[
-            "border-b",
-            vitrineFechada
-              ? "border-amber-300/80 bg-gradient-to-b from-amber-50 to-amber-50/70"
-              : "border-zinc-200/90 bg-gradient-to-b from-zinc-100 to-zinc-50/90",
-          ].join(" ")}
-        >
-          <div className="mx-auto max-w-6xl px-5 py-5 sm:px-8">
-            <p
-              className={[
-                "text-center text-[11px] font-bold uppercase tracking-[0.2em] sm:text-left",
-                vitrineFechada ? "text-amber-900/80" : "text-zinc-600",
-              ].join(" ")}
-            >
-              {vitrineFechada ? "Pedidos pausados pelo restaurante" : "Fora do horário de pedidos"}
-            </p>
-            <p
-              className={[
-                "mt-2 text-center text-base font-semibold leading-snug sm:text-left sm:text-lg",
-                vitrineFechada ? "text-amber-950" : "text-zinc-900",
-              ].join(" ")}
-            >
-              {vitrineFechada ? textoAvisoFechado : FECHADO_POR_HORARIO_MSG}
-            </p>
-          </div>
-        </div>
-      ) : null}
-
       {textoHor || restaurante.funcionamento_semana ? (
         <div className="border-b border-zinc-100 bg-white/90">
           <div className="mx-auto flex max-w-6xl gap-4 px-5 py-4 sm:px-8 sm:py-5">
@@ -849,13 +824,13 @@ export default function PublicCardapioPage() {
                   {lista.map((prato) => (
                     <li key={prato.id}>
                       <article className="group flex h-full flex-col overflow-hidden rounded-3xl border border-zinc-100 bg-white shadow-sm transition duration-300 hover:shadow-md">
-                        <div className="relative aspect-[16/10] w-full overflow-hidden bg-zinc-100">
+                        <div className="relative aspect-[16/10] w-full overflow-hidden rounded-t-2xl bg-zinc-100">
                           {prato.imagem ? (
                             // eslint-disable-next-line @next/next/no-img-element
                             <img
                               src={prato.imagem}
                               alt=""
-                              className="h-full w-full object-cover transition duration-700 ease-out group-hover:scale-[1.02]"
+                              className="h-full w-full rounded-t-2xl object-cover transition duration-700 ease-out group-hover:scale-[1.02]"
                             />
                           ) : (
                             <div className="flex h-full w-full items-center justify-center text-zinc-300">
@@ -1104,17 +1079,14 @@ export default function PublicCardapioPage() {
                   Enviar pedido no WhatsApp
                 </a>
               ) : pedidosBloqueados && cart.length > 0 ? (
-                <p
-                  className={
-                    vitrineFechada
-                      ? "rounded-2xl border border-amber-200/80 bg-amber-50 px-4 py-3 text-center text-sm font-medium leading-relaxed text-amber-950"
-                      : "rounded-2xl border border-zinc-200 bg-zinc-50 px-4 py-3 text-center text-sm font-medium leading-relaxed text-zinc-800"
-                  }
+                <button
+                  type="button"
+                  disabled
+                  aria-disabled="true"
+                  className="flex w-full cursor-not-allowed items-center justify-center rounded-2xl border border-zinc-200/90 bg-zinc-100 py-3.5 text-sm font-semibold text-zinc-400 opacity-60 shadow-inner"
                 >
-                  {vitrineFechada
-                    ? "Pedidos pelo cardápio estão pausados. Você pode retirar itens do carrinho; para pedir, volte quando o restaurante reabrir ou use outro canal combinado com eles."
-                    : "Estamos fora do horário de pedidos pelo cardápio. Você pode revisar o menu; para enviar pelo WhatsApp, volte no horário de atendimento."}
-                </p>
+                  Pedidos via WhatsApp desativados
+                </button>
               ) : cart.length > 0 &&
                 tipoEntrega === "entrega" &&
                 (restaurante.taxas_entrega_zonas?.length ?? 0) > 1 &&

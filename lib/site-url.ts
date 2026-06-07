@@ -38,14 +38,19 @@ export function resolveDefaultAppOrigin(): string {
 /**
  * Origem para `success_url` / `cancel_url` do Stripe Checkout.
  *
- * Ordem: `NEXT_PUBLIC_APP_URL` (parseável) → `VERCEL_URL` do deploy → {@link resolveDefaultAppOrigin}.
+ * Ordem: `NEXT_PUBLIC_APP_URL` → `NEXT_PUBLIC_SITE_URL` (parseáveis) → `VERCEL_URL` do deploy → {@link resolveDefaultAppOrigin}.
  * Evita `url_invalid` por env com aspas (Netlify/Vercel), host sem esquema ou valor quebrado.
  */
 export function resolveStripeCheckoutOrigin(): string {
-  const fromEnv = stripSurroundingQuotes(process.env.NEXT_PUBLIC_APP_URL);
-  if (fromEnv) {
-    const origin = tryParsePublicOrigin(fromEnv);
-    if (origin) return origin;
+  const candidates = [
+    stripSurroundingQuotes(process.env.NEXT_PUBLIC_APP_URL),
+    stripSurroundingQuotes(process.env.NEXT_PUBLIC_SITE_URL),
+  ];
+  for (const raw of candidates) {
+    if (raw) {
+      const origin = tryParsePublicOrigin(raw);
+      if (origin) return origin;
+    }
   }
 
   const vercelHost = process.env.VERCEL_URL?.trim();
@@ -64,10 +69,15 @@ export function resolveStripeCheckoutOrigin(): string {
  * URL pública do app (sem barra final). Auth, e-mail redirect, comparação de `next`, etc.
  */
 export function getPublicAppUrl(): string {
-  const fromEnv = stripSurroundingQuotes(process.env.NEXT_PUBLIC_APP_URL);
-  if (fromEnv) {
-    const origin = tryParsePublicOrigin(fromEnv);
-    if (origin) return origin;
+  const candidates = [
+    stripSurroundingQuotes(process.env.NEXT_PUBLIC_APP_URL),
+    stripSurroundingQuotes(process.env.NEXT_PUBLIC_SITE_URL),
+  ];
+  for (const raw of candidates) {
+    if (raw) {
+      const origin = tryParsePublicOrigin(raw);
+      if (origin) return origin;
+    }
   }
   return resolveDefaultAppOrigin();
 }
