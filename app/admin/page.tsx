@@ -15,7 +15,7 @@ import { getPublicAppUrl } from "@/lib/site-url";
 import { isRetryableSupabaseError, withRetry } from "@/lib/with-retry";
 import { mensagemErroSupabasePainel } from "@/lib/supabase/mensagem-erro";
 import { mensagemUploadStorageAmigavel } from "@/lib/restaurante/mensagem-upload-storage";
-import { jsonStringifyLatin1Wire } from "@/lib/restaurante/json-latin1-wire";
+import { sanitizeFetchInit } from "@/lib/fetch-latin1-safe";
 import {
   normalizarPrecoCampoAoSair,
   parsePrecoBrasileiro,
@@ -1351,11 +1351,14 @@ function AdminPageInner() {
         } = await supabase.auth.getSession();
         const token = session?.access_token;
         if (!token) return;
-        const res = await fetch("/api/admin/diagnostics", {
-          headers: { Authorization: `Bearer ${token}` },
-          credentials: "include",
-          cache: "no-store",
-        });
+        const res = await fetch(
+          "/api/admin/diagnostics",
+          sanitizeFetchInit({
+            headers: { Authorization: `Bearer ${token}` },
+            credentials: "include",
+            cache: "no-store",
+          }),
+        );
         const j = (await res.json()) as {
           ok?: boolean;
           supabaseServiceRoleConfigured?: boolean;
@@ -1470,32 +1473,35 @@ function AdminPageInner() {
         return;
       }
 
-      const res = await fetch("/api/restaurante/config", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${token}`,
-        },
-        credentials: "include",
-        cache: "no-store",
-        body: jsonStringifyLatin1Wire({
-          restauranteId: restaurante.id,
-          nome: nomeLimpo,
-          whatsapp: cfgWhatsapp.trim(),
-          cor_tema: corOk,
-          horario_funcionamento: resumoHorario,
-          taxa_entrega: taxaSync,
-          vitrine_fechada: cfgVitrineFechada,
-          mensagem_fechado: cfgVitrineFechada ? cfgMensagemFechado.trim() || null : null,
-          mensagem_boas_vindas: cfgMensagemBoasVindas.trim() || null,
-          funcionamento_semana: cfgFuncionamento,
-          taxas_entrega_zonas: zonasApi,
-          retirada_balcao: cfgRetiradaBalcao,
-          entrega_modo: cfgEntregaModo,
-          cardapio_categorias: cfgCardapioCategorias,
-          logo: logoOut,
+      const res = await fetch(
+        "/api/restaurante/config",
+        sanitizeFetchInit({
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${token}`,
+          },
+          credentials: "include",
+          cache: "no-store",
+          body: JSON.stringify({
+            restauranteId: restaurante.id,
+            nome: nomeLimpo,
+            whatsapp: cfgWhatsapp.trim(),
+            cor_tema: corOk,
+            horario_funcionamento: resumoHorario,
+            taxa_entrega: taxaSync,
+            vitrine_fechada: cfgVitrineFechada,
+            mensagem_fechado: cfgVitrineFechada ? cfgMensagemFechado.trim() || null : null,
+            mensagem_boas_vindas: cfgMensagemBoasVindas.trim() || null,
+            funcionamento_semana: cfgFuncionamento,
+            taxas_entrega_zonas: zonasApi,
+            retirada_balcao: cfgRetiradaBalcao,
+            entrega_modo: cfgEntregaModo,
+            cardapio_categorias: cfgCardapioCategorias,
+            logo: logoOut,
+          }),
         }),
-      });
+      );
 
       const json = (await res.json()) as { error?: string; warning?: string };
       if (!res.ok) {

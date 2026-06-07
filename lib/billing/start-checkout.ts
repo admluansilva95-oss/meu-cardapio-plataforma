@@ -1,3 +1,5 @@
+import { sanitizeFetchInit } from "@/lib/fetch-latin1-safe";
+
 export type StartCheckoutParams = {
   priceId: string;
   userId: string;
@@ -28,21 +30,24 @@ export async function startSubscriptionCheckout(
 
   let response: Response;
   try {
-    response = await fetch("/api/checkout/create-session", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${params.accessToken}`,
-      },
-      body: JSON.stringify({
-        priceId: params.priceId,
-        userId: params.userId,
-        slug: params.slug,
-        restaurantName: params.restaurantName,
-        whatsapp: params.whatsapp,
+    response = await fetch(
+      "/api/checkout/create-session",
+      sanitizeFetchInit({
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${params.accessToken}`,
+        },
+        body: JSON.stringify({
+          priceId: params.priceId,
+          userId: params.userId,
+          slug: params.slug,
+          restaurantName: params.restaurantName,
+          whatsapp: params.whatsapp,
+        }),
+        signal: controller.signal,
       }),
-      signal: controller.signal,
-    });
+    );
   } catch (err) {
     clearTimeout(timeoutId);
     if (err instanceof DOMException && err.name === "AbortError") {

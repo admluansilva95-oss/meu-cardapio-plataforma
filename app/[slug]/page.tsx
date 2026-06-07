@@ -24,6 +24,7 @@ import { useParams } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Clock, UtensilsCrossed } from "lucide-react";
 import { isValidSlug } from "@/lib/billing/slug";
+import { sanitizeFetchInit } from "@/lib/fetch-latin1-safe";
 import { isRetryableSupabaseError, withRetry } from "@/lib/with-retry";
 
 /** Após esgotar retries ou falha de rede, evita mensagens técnicas cruas para o cliente final. */
@@ -743,20 +744,23 @@ export default function PublicCardapioPage() {
 
     setCheckoutSubmitting(true);
     try {
-      const res = await fetch("/api/pedidos/vitrine", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        cache: "no-store",
-        body: JSON.stringify({
-          restauranteId: restaurante.id,
-          cliente: nomeOk,
-          telefone: formatarTelefoneWhatsappBR(clienteTelefoneDisplay),
-          total: totalGeral,
-          formaPagamento,
-          itens: itensPedido,
-          observacoes: msg,
+      const res = await fetch(
+        "/api/pedidos/vitrine",
+        sanitizeFetchInit({
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          cache: "no-store",
+          body: JSON.stringify({
+            restauranteId: restaurante.id,
+            cliente: nomeOk,
+            telefone: formatarTelefoneWhatsappBR(clienteTelefoneDisplay),
+            total: totalGeral,
+            formaPagamento,
+            itens: itensPedido,
+            observacoes: msg,
+          }),
         }),
-      });
+      );
       let json: { ok?: boolean; error?: string } = {};
       try {
         json = (await res.json()) as { ok?: boolean; error?: string };
