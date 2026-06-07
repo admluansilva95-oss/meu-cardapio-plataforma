@@ -1020,13 +1020,17 @@ function AdminPageInner() {
         }),
       });
 
-      const json = (await res.json()) as { error?: string };
+      const json = (await res.json()) as { error?: string; warning?: string };
       if (!res.ok) {
         setCfgMsg(json.error ?? `Falha ao salvar (${res.status}).`);
         return;
       }
-      setCfgMsg("Configurações salvas com sucesso.");
-      window.setTimeout(() => setCfgMsg(null), 6000);
+      if (json.warning) {
+        setCfgMsg(json.warning);
+      } else {
+        setCfgMsg("Configurações salvas com sucesso.");
+      }
+      window.setTimeout(() => setCfgMsg(null), json.warning ? 12000 : 6000);
       await loadData();
     } finally {
       setTenantSaving(false);
@@ -1799,9 +1803,11 @@ function AdminPageInner() {
                   {cfgMsg ? (
                     <p
                       className={
-                        cfgMsg.includes("sucesso")
+                        cfgMsg === "Configurações salvas com sucesso."
                           ? "text-sm font-medium text-emerald-700"
-                          : "text-sm font-medium text-red-600"
+                          : cfgMsg.startsWith("Horário e taxa não foram gravados")
+                            ? "text-sm font-medium text-amber-800"
+                            : "text-sm font-medium text-red-600"
                       }
                       role="status"
                     >

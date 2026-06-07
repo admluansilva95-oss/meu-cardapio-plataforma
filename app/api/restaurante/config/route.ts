@@ -23,14 +23,16 @@ type ConfigBody = {
   taxa_entrega?: number | null;
 };
 
-function isSchemaColumnError(message: string): boolean {
-  const m = message.toLowerCase();
-  return (
-    m.includes("does not exist") ||
-    m.includes("schema cache") ||
-    m.includes("42703") ||
-    (m.includes("column") && m.includes("could not find"))
-  );
+const MIGRATION_HINT =
+  "Horário e taxa não foram gravados: faltam colunas no Supabase. Abra o SQL Editor, cole o conteúdo de supabase/migrations/20260608120000_restaurantes_tenant_settings.sql e execute. Nome, WhatsApp e cor já foram salvos.";
+
+function isSchemaColumnError(err: { message?: string; code?: string; details?: string } | null): boolean {
+  if (!err) return false;
+  const blob = [err.message, err.details, err.code].filter(Boolean).join(" ").toLowerCase();
+  if (blob.includes("42703") || blob.includes("schema cache")) return true;
+  if (blob.includes("does not exist")) return true;
+  if (blob.includes("column") && blob.includes("could not find")) return true;
+  return false;
 }
 
 function isRlsError(message: string): boolean {
@@ -46,9 +48,11 @@ function isRlsError(message: string): boolean {
 async function updateRestauranteConfig(
   client: SupabaseClient,
   opts: { id: string; ownerFilter: string | null },
-  full: Record<string, unknown>,
   base: Record<string, unknown>,
-): Promise<{ ok: true } | { ok: false; message: string; code?: "rls" | "other" }> {
+  extras: { horario_funcionamento: string | null; taxa_entrega: number | null },
+): Promise<
+  { ok: true; extrasSkipped?: boolean } | { ok: false; message: string; code?: "rls" | "other" }
+> {
   const run = async (payload: Record<string, unknown>) => {
     let q = client.from("restaurantes").update(payload).eq("id", opts.id);
     if (opts.ownerFilter) {
@@ -79,14 +83,25 @@ async function updateRestauranteConfig(
     return { ok: true };
   };
 
-  const first = await run(full);
-  const r1 = interpret(first);
-  if (r1.ok) return r1;
-  if (first.error && isSchemaColumnError(first.error.message)) {
-    const second = await run(base);
-    return interpret(second);
+  const baseRes = await run(base);
+  const rBase = interpret(baseRes);
+  if (!rBase.ok) return rBase;
+
+  const extraPayload: Record<string, unknown> = {
+    horario_funcionamento: extras.horario_funcionamento,
+    taxa_entrega: extras.taxa_entrega,
+  };
+
+  const extraRes = await run(extraPayload);
+  if (!extraRes.error) {
+    const rExtra = interpret(extraRes);
+    if (rExtra.ok) return { ok: true };
+    return rExtra;
   }
-  return r1;
+  if (isSchemaColumnError(extraRes.error)) {
+    return { ok: true, extrasSkipped: true };
+  }
+  return interpret(extraRes);
 }
 
 export async function POST(request: NextRequest) {
@@ -188,14 +203,8 @@ export async function POST(request: NextRequest) {
   }
 
   const cor_tema = normalizeCorTema(corRaw);
-  const full = {
-    nome,
-    whatsapp,
-    cor_tema,
-    horario_funcionamento: horario,
-    taxa_entrega: taxa,
-  };
   const base = { nome, whatsapp, cor_tema };
+  const extras = { horario_funcionamento: horario, taxa_entrega: taxa };
 
   const admin = createAdminSupabaseClient();
 
@@ -222,20 +231,28 @@ export async function POST(request: NextRequest) {
       return applyAuthCookies(res, authCookieWrites);
     }
 
-    const result = await updateRestauranteConfig(admin, { id: restauranteId, ownerFilter: null }, full, base);
+    const result = await updateRestauranteConfig(
+      admin,
+      { id: restauranteId, ownerFilter: null },
+      base,
+      extras,
+    );
     if (!result.ok) {
       const res = NextResponse.json({ error: result.message }, { status: 500 });
       return applyAuthCookies(res, authCookieWrites);
     }
-    const res = NextResponse.json({ ok: true });
+    const res = NextResponse.json({
+      ok: true,
+      ...(result.extrasSkipped ? { warning: MIGRATION_HINT } : {}),
+    });
     return applyAuthCookies(res, authCookieWrites);
   }
 
   const result = await updateRestauranteConfig(
     supabase,
     { id: restauranteId, ownerFilter: user.id },
-    full,
     base,
+    extras,
   );
 
   if (!result.ok) {
@@ -250,6 +267,9 @@ export async function POST(request: NextRequest) {
     return applyAuthCookies(res, authCookieWrites);
   }
 
-  const res = NextResponse.json({ ok: true });
+  const res = NextResponse.json({
+    ok: true,
+    ...(result.extrasSkipped ? { warning: MIGRATION_HINT } : {}),
+  });
   return applyAuthCookies(res, authCookieWrites);
 }
