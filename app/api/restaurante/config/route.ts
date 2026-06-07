@@ -5,6 +5,8 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { normalizeCorTema } from "@/lib/restaurante/cor-tema";
 import {
   type FuncionamentoSemana,
+  type FuncionamentoSemanaJsonV2,
+  serializarFuncionamentoSemanaParaJson,
   validarFuncionamentoSemana,
 } from "@/lib/restaurante/funcionamento-semana";
 import { createAdminSupabaseClient } from "@/lib/supabase/admin";
@@ -132,7 +134,7 @@ async function applyJsonExtras(
   client: SupabaseClient,
   opts: { id: string; ownerFilter: string | null },
   extras: {
-    funcionamento_semana: FuncionamentoSemana;
+    funcionamento_semana: FuncionamentoSemanaJsonV2 | FuncionamentoSemana;
     taxas_entrega_zonas: TaxaEntregaZona[] | null;
     cardapio_categorias: string[];
     retirada_balcao: boolean;
@@ -280,6 +282,7 @@ export async function POST(request: NextRequest) {
     return applyAuthCookies(res, authCookieWrites);
   }
   const funcionamentoSemanaGravar: FuncionamentoSemana = funcionamento_semana;
+  const funcionamentoJsonGravar = serializarFuncionamentoSemanaParaJson(funcionamentoSemanaGravar);
   const listaZonas = taxas_zonas ?? [];
   const errZ = validarTaxasZonas(listaZonas);
   if (errZ) {
@@ -331,7 +334,7 @@ export async function POST(request: NextRequest) {
     if (!r1.ok) return { error: r1.message, code: r1.code } as const;
 
     const r2 = await applyJsonExtras(client, { id: restauranteId, ownerFilter }, {
-      funcionamento_semana: funcionamentoSemanaGravar,
+      funcionamento_semana: funcionamentoJsonGravar,
       taxas_entrega_zonas: jsonZonas,
       cardapio_categorias,
       retirada_balcao,

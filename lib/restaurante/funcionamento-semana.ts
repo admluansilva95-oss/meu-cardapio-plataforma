@@ -1,13 +1,13 @@
-/** Agenda semanal estruturada (JSON no Supabase). */
+/** Agenda semanal estruturada (JSON no Supabase — formato v2: open / from / to por dia). */
 
 export const DIAS_AGENDA = [
-  { key: "seg" as const, short: "Seg", label: "Segunda" },
-  { key: "ter" as const, short: "Ter", label: "Terça" },
-  { key: "qua" as const, short: "Qua", label: "Quarta" },
-  { key: "qui" as const, short: "Qui", label: "Quinta" },
-  { key: "sex" as const, short: "Sex", label: "Sexta" },
-  { key: "sab" as const, short: "Sáb", label: "Sábado" },
-  { key: "dom" as const, short: "Dom", label: "Domingo" },
+  { key: "seg" as const, short: "Seg", label: "Segunda", labelLong: "Segunda-feira" },
+  { key: "ter" as const, short: "Ter", label: "Terça", labelLong: "Terça-feira" },
+  { key: "qua" as const, short: "Qua", label: "Quarta", labelLong: "Quarta-feira" },
+  { key: "qui" as const, short: "Qui", label: "Quinta", labelLong: "Quinta-feira" },
+  { key: "sex" as const, short: "Sex", label: "Sexta", labelLong: "Sexta-feira" },
+  { key: "sab" as const, short: "Sáb", label: "Sábado", labelLong: "Sábado" },
+  { key: "dom" as const, short: "Dom", label: "Domingo", labelLong: "Domingo" },
 ] as const;
 
 export type DiaAgendaKey = (typeof DIAS_AGENDA)[number]["key"];
@@ -17,6 +17,11 @@ export type FaixaHorario = { abertura: string; fechamento: string };
 export type DiaOperacao = { ativo: boolean; faixas: FaixaHorario[] };
 
 export type FuncionamentoSemana = Record<DiaAgendaKey, DiaOperacao>;
+
+/** Formato persistido preferencial (legível e estável no JSONB). */
+export type DiaFuncionamentoJsonV2 = { open: boolean; from: string; to: string };
+
+export type FuncionamentoSemanaJsonV2 = Record<DiaAgendaKey, DiaFuncionamentoJsonV2>;
 
 function isFaixa(v: unknown): v is FaixaHorario {
   if (!v || typeof v !== "object") return false;
@@ -31,12 +36,53 @@ function isDiaOperacao(v: unknown): v is DiaOperacao {
   return o.faixas.every(isFaixa);
 }
 
+function isDiaV2(v: unknown): v is DiaFuncionamentoJsonV2 {
+  if (!v || typeof v !== "object") return false;
+  const o = v as Record<string, unknown>;
+  return (
+    typeof o.open === "boolean" &&
+    typeof o.from === "string" &&
+    typeof o.to === "string"
+  );
+}
+
+function padHhMm(s: string): string {
+  const t = s.trim().slice(0, 5);
+  if (/^\d{2}:\d{2}$/.test(t)) return t;
+  return "18:00";
+}
+
 export function criarFuncionamentoSemanaVazio(): FuncionamentoSemana {
   const base: Partial<FuncionamentoSemana> = {};
   for (const { key } of DIAS_AGENDA) {
-    base[key] = { ativo: false, faixas: [{ abertura: "11:00", fechamento: "15:00" }] };
+    base[key] = { ativo: false, faixas: [{ abertura: "18:00", fechamento: "23:00" }] };
   }
   return base as FuncionamentoSemana;
+}
+
+/** Converte modelo interno (ativo + faixas) para JSON v2 no banco. */
+export function serializarFuncionamentoSemanaParaV2(f: FuncionamentoSemana): FuncionamentoSemanaJsonV2 {
+  const out = {} as FuncionamentoSemanaJsonV2;
+  for (const { key } of DIAS_AGENDA) {
+    const d = f[key];
+    const faixa = d.faixas[0] ?? { abertura: "18:00", fechamento: "23:00" };
+    out[key] = {
+      open: d.ativo,
+      from: padHhMm(faixa.abertura),
+      to: padHhMm(faixa.fechamento),
+    };
+  }
+  return out;
+}
+
+/** Preferência v2; se algum dia tiver mais de um turno, mantém o objeto legado (ativo + faixas) para não perder dados. */
+export function serializarFuncionamentoSemanaParaJson(
+  f: FuncionamentoSemana,
+): FuncionamentoSemanaJsonV2 | FuncionamentoSemana {
+  if (DIAS_AGENDA.some(({ key }) => (f[key].faixas?.length ?? 0) > 1)) {
+    return f;
+  }
+  return serializarFuncionamentoSemanaParaV2(f);
 }
 
 export function parseFuncionamentoSemana(raw: unknown): FuncionamentoSemana | null {
@@ -46,15 +92,51 @@ export function parseFuncionamentoSemana(raw: unknown): FuncionamentoSemana | nu
   let ok = false;
   for (const { key } of DIAS_AGENDA) {
     const d = o[key];
+    if (isDiaV2(d)) {
+      ok = true;
+      const from = padHhMm(d.from);
+      const to = padHhMm(d.to);
+      out[key] = {
+        ativo: d.open,
+        faixas: d.open ? [{ abertura: from, fechamento: to }] : [{ abertura: from, fechamento: to }],
+      };
+      continue;
+    }
     if (isDiaOperacao(d)) {
       ok = true;
       const faixas = d.faixas.filter((f) => f.abertura && f.fechamento).length
         ? d.faixas.map((f) => ({ abertura: f.abertura.slice(0, 5), fechamento: f.fechamento.slice(0, 5) }))
-        : [{ abertura: "11:00", fechamento: "15:00" }];
+        : [{ abertura: "18:00", fechamento: "23:00" }];
       out[key] = { ativo: d.ativo, faixas };
     }
   }
   return ok ? out : null;
+}
+
+/** Há ao menos um dia marcado como “abre” — usado para decidir se aplicamos bloqueio por relógio na vitrine. */
+export function agendaTemDiaAberto(f: FuncionamentoSemana | null | undefined): boolean {
+  if (!f) return false;
+  return DIAS_AGENDA.some(({ key }) => f[key]?.ativo === true);
+}
+
+/** Índice getDay(): 0=dom … 6=sab → chave da agenda. */
+export function diaAgendaKeyFromDate(date: Date): DiaAgendaKey {
+  const n = date.getDay();
+  const order: DiaAgendaKey[] = ["dom", "seg", "ter", "qua", "qui", "sex", "sab"];
+  return order[n] ?? "dom";
+}
+
+/** Considera apenas o primeiro turno do dia (mesma regra do formulário admin). */
+export function estaAbertoNoHorarioLocal(f: FuncionamentoSemana, quando: Date = new Date()): boolean {
+  const key = diaAgendaKeyFromDate(quando);
+  const d = f[key];
+  if (!d?.ativo || !d.faixas?.length) return false;
+  const hm = `${String(quando.getHours()).padStart(2, "0")}:${String(quando.getMinutes()).padStart(2, "0")}`;
+  return d.faixas.some(({ abertura, fechamento }) => {
+    const a = padHhMm(abertura);
+    const b = padHhMm(fechamento);
+    return hm >= a && hm <= b;
+  });
 }
 
 /** HH:mm → exibição curta pt-BR */
@@ -78,7 +160,7 @@ export function formatFuncionamentoResumo(f: FuncionamentoSemana | null): string
       .join(", ");
     partes.push(`${short}: ${faixasTxt}`);
   }
-  const fechados = DIAS_AGENDA.filter(({ key }) => !f[key].ativo).map((x) => x.short);
+  const fechados = DIAS_AGENDA.filter(({ key }) => !f[key]?.ativo).map((x) => x.short);
   if (fechados.length && fechados.length < 7) {
     partes.push(`Fechado: ${fechados.join(", ")}`);
   }

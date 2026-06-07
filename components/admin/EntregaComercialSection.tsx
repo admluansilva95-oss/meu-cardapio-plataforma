@@ -83,7 +83,7 @@ export function EntregaComercialSection(props: {
           </p>
         </div>
       ) : (
-        <div className="mt-8">
+        <div className="mt-8 overflow-hidden rounded-2xl border border-zinc-100 bg-zinc-50/50 p-1 shadow-sm transition-all duration-300 ease-out">
           <TaxasZonasForm value={zonas} onChange={onZonas} adicionarLabel="+ Adicionar bairro" />
         </div>
       )}

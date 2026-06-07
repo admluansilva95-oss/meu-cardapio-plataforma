@@ -6,8 +6,18 @@ export function IosToggle(props: {
   disabled?: boolean;
   id?: string;
   "aria-label"?: string;
+  /** "success" = verde quando ativo (ex.: dia aberto na agenda). */
+  tone?: "neutral" | "success";
 }) {
-  const { checked, onChange, disabled, id, "aria-label": ariaLabel } = props;
+  const { checked, onChange, disabled, id, "aria-label": ariaLabel, tone = "neutral" } = props;
+  const onClass =
+    tone === "success"
+      ? checked
+        ? "bg-emerald-500"
+        : "bg-zinc-200"
+      : checked
+        ? "bg-zinc-900"
+        : "bg-zinc-200";
   return (
     <button
       id={id}
@@ -19,7 +29,7 @@ export function IosToggle(props: {
       onClick={() => !disabled && onChange(!checked)}
       className={[
         "relative inline-flex h-8 w-[3.25rem] shrink-0 cursor-pointer items-center rounded-full border border-transparent transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-zinc-900 focus-visible:ring-offset-2",
-        checked ? "bg-zinc-900" : "bg-zinc-200",
+        onClass,
         disabled ? "cursor-not-allowed opacity-50" : "",
       ].join(" ")}
     >

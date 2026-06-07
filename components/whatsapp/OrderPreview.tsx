@@ -5,12 +5,15 @@ import type { CarrinhoItem, Restaurante } from "../../types";
 import {
   buildPedidoTextoWhatsApp,
   taxaEntregaParaPedido,
+  type TipoEntregaPedido,
 } from "@/lib/restaurante/pedido-texto-whatsapp";
 
 export interface OrderPreviewProps {
   restaurante: Restaurante;
   itens: CarrinhoItem[];
   onAlterarQuantidade?: (pratoId: string, quantidade: number) => void;
+  /** Simula retirada no balcão (taxa zero) quando o restaurante oferece essa opção. */
+  tipoEntrega?: TipoEntregaPedido;
 }
 
 function onlyDigits(whatsapp: string) {
@@ -25,6 +28,7 @@ export function OrderPreview({
   restaurante,
   itens,
   onAlterarQuantidade,
+  tipoEntrega = "entrega",
 }: OrderPreviewProps) {
   const waNumber = useMemo(() => onlyDigits(restaurante.whatsapp), [restaurante.whatsapp]);
 
@@ -32,8 +36,8 @@ export function OrderPreview({
     restaurante.taxas_entrega_zonas?.length === 1 ? restaurante.taxas_entrega_zonas[0].id : null;
 
   const textoPedido = useMemo(
-    () => buildPedidoTextoWhatsApp(restaurante, itens, zonaUnica),
-    [restaurante, itens, zonaUnica],
+    () => buildPedidoTextoWhatsApp(restaurante, itens, zonaUnica, { tipoEntrega }),
+    [restaurante, itens, zonaUnica, tipoEntrega],
   );
 
   const href = useMemo(() => {
@@ -43,7 +47,7 @@ export function OrderPreview({
   }, [waNumber, textoPedido]);
 
   const subtotal = itens.reduce((acc, { prato, quantidade }) => acc + prato.preco * quantidade, 0);
-  const { valor: taxaBase } = taxaEntregaParaPedido(restaurante, zonaUnica);
+  const { valor: taxaBase } = taxaEntregaParaPedido(restaurante, zonaUnica, { tipo: tipoEntrega });
   const taxaExibir = itens.length > 0 ? taxaBase : 0;
   const total = subtotal + taxaExibir;
 
@@ -114,6 +118,17 @@ export function OrderPreview({
             <div className="flex justify-between">
               <span>Taxa de entrega</span>
               <span className="tabular-nums">{formatBRL(taxaExibir)}</span>
+            </div>
+          </div>
+        ) : itens.length > 0 && tipoEntrega === "retirada" ? (
+          <div className="space-y-1 rounded-xl bg-slate-100 px-4 py-2 text-sm text-slate-600">
+            <div className="flex justify-between">
+              <span>Subtotal</span>
+              <span className="tabular-nums">{formatBRL(subtotal)}</span>
+            </div>
+            <div className="flex justify-between">
+              <span>Entrega</span>
+              <span className="text-right text-slate-800">Retirada no balcão</span>
             </div>
           </div>
         ) : null}

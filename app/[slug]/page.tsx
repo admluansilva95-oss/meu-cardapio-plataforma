@@ -20,7 +20,7 @@ import {
   taxaEntregaParaPedido,
   type TipoEntregaPedido,
 } from "@/lib/restaurante/pedido-texto-whatsapp";
-import { textoHorarioVitrine } from "@/lib/restaurante/horario-vitrine";
+import { statusAberturaPorRelogio, textoHorarioVitrine } from "@/lib/restaurante/horario-vitrine";
 import { parseFuncionamentoSemana } from "@/lib/restaurante/funcionamento-semana";
 import { parseTaxasEntregaZonas } from "@/lib/restaurante/taxas-entrega-zonas";
 import {
@@ -35,6 +35,9 @@ import { Clock } from "lucide-react";
 
 const FECHADO_PADRAO_VITRINE =
   "No momento não estamos aceitando novos pedidos pelo cardápio. Veja nosso horário de funcionamento abaixo.";
+
+const FECHADO_POR_HORARIO_MSG =
+  "Estamos fora do horário de atendimento no momento. Você pode visualizar o cardápio, mas os pedidos via WhatsApp estão desativados.";
 
 function formatSlugToDisplayName(slug: string): string {
   const s = slug.trim();
@@ -234,8 +237,14 @@ export default function PublicCardapioPage() {
   const [zonaEntregaId, setZonaEntregaId] = useState<string | null>(null);
   const [tipoEntrega, setTipoEntrega] = useState<TipoEntregaPedido>("entrega");
   const [activeCategoriaId, setActiveCategoriaId] = useState<string | null>(null);
+  const [agoraTick, setAgoraTick] = useState(() => Date.now());
 
   const fetchAbort = useRef<AbortController | null>(null);
+
+  useEffect(() => {
+    const id = window.setInterval(() => setAgoraTick(Date.now()), 60_000);
+    return () => window.clearInterval(id);
+  }, []);
 
   const load = useCallback(async () => {
     if (!slug || !isValidSlug(slug)) {
@@ -465,6 +474,42 @@ export default function PublicCardapioPage() {
     [restaurante?.cardapio_categorias, pratos],
   );
 
+  const relogio = useMemo(() => new Date(agoraTick), [agoraTick]);
+  const foraDoHorario = useMemo(() => {
+    if (!restaurante) return false;
+    return statusAberturaPorRelogio(restaurante, relogio) === "fechado";
+  }, [restaurante, relogio]);
+  const pedidosBloqueados = useMemo(
+    () => Boolean(restaurante?.vitrine_fechada) || foraDoHorario,
+    [restaurante?.vitrine_fechada, foraDoHorario],
+  );
+
+  useEffect(() => {
+    if (categorias.length === 0) return;
+    setActiveCategoriaId((prev) => prev ?? `sec-${slugifySecaoCardapio(categorias[0].titulo)}`);
+  }, [categorias]);
+
+  useEffect(() => {
+    if (!slug || !restaurante || categorias.length === 0) return;
+    const elements = categorias
+      .map(({ titulo }) => document.getElementById(`sec-${slugifySecaoCardapio(titulo)}`))
+      .filter((el): el is HTMLElement => Boolean(el));
+    if (!elements.length) return;
+
+    const obs = new IntersectionObserver(
+      (entries) => {
+        const visible = entries
+          .filter((e) => e.isIntersecting && e.target.id)
+          .sort((a, b) => b.intersectionRatio - a.intersectionRatio);
+        const id = visible[0]?.target.id;
+        if (id) setActiveCategoriaId(id);
+      },
+      { threshold: [0, 0.05, 0.1, 0.15, 0.2, 0.25, 0.35, 0.5, 0.65], rootMargin: "-96px 0px -42% 0px" },
+    );
+    elements.forEach((el) => obs.observe(el));
+    return () => obs.disconnect();
+  }, [slug, restaurante?.id, categorias, pratos.length]);
+
   const subtotalCarrinho = useMemo(
     () => cart.reduce((acc, { prato, quantidade }) => acc + prato.preco * quantidade, 0),
     [cart],
@@ -480,19 +525,19 @@ export default function PublicCardapioPage() {
   const cartCount = useMemo(() => cart.reduce((n, x) => n + x.quantidade, 0), [cart]);
 
   const waHref = useMemo(() => {
-    if (!restaurante || cart.length === 0 || restaurante.vitrine_fechada) return null;
+    if (!restaurante || cart.length === 0 || pedidosBloqueados) return null;
     const zonas = restaurante.taxas_entrega_zonas ?? [];
     if (tipoEntrega === "entrega" && zonas.length > 1 && !zonaEntregaId) return null;
     const msg = buildPedidoTextoWhatsApp(restaurante, cart, zonaEntregaId, { tipoEntrega });
     const d = digitsOnly(restaurante.whatsapp);
     if (!d) return null;
     return waMeUrl(restaurante.whatsapp, msg);
-  }, [restaurante, cart, zonaEntregaId, tipoEntrega]);
+  }, [restaurante, cart, zonaEntregaId, tipoEntrega, pedidosBloqueados]);
 
   const accent = restaurante?.cor_tema?.trim() || "#1d1d1f";
 
   const addToCart = (prato: Prato) => {
-    if (restaurante?.vitrine_fechada) return;
+    if (restaurante && pedidosBloqueados) return;
     setCart((prev) => {
       const idx = prev.findIndex((x) => x.prato.id === prato.id);
       if (idx >= 0) {
@@ -505,7 +550,7 @@ export default function PublicCardapioPage() {
   };
 
   const setQty = (pratoId: string, quantidade: number) => {
-    if (restaurante?.vitrine_fechada) {
+    if (restaurante && pedidosBloqueados) {
       const atual = cart.find((x) => x.prato.id === pratoId)?.quantidade ?? 0;
       if (quantidade > atual) return;
     }
@@ -570,6 +615,7 @@ export default function PublicCardapioPage() {
     restaurante.mensagem_fechado?.trim() || FECHADO_PADRAO_VITRINE;
 
   const textoHor = textoHorarioVitrine(restaurante);
+  const statusRelogio = statusAberturaPorRelogio(restaurante, relogio);
 
   const irParaSecao = (titulo: string) => {
     const id = `sec-${slugifySecaoCardapio(titulo)}`;
@@ -601,16 +647,27 @@ export default function PublicCardapioPage() {
                 {restaurante.nome}
               </h1>
               <p className="mt-2 max-w-xl text-sm leading-relaxed text-zinc-500">
-                {vitrineFechada ? (
+                {pedidosBloqueados ? (
                   <>
                     Você pode <strong className="font-medium text-zinc-800">consultar o cardápio</strong> abaixo.
-                    Pedidos novos pelo site estão <strong className="font-medium text-zinc-800">pausados</strong>{" "}
-                    neste momento.
+                    {vitrineFechada ? (
+                      <>
+                        {" "}
+                        Pedidos novos pelo site estão <strong className="font-medium text-zinc-800">pausados</strong>{" "}
+                        pelo estabelecimento.
+                      </>
+                    ) : (
+                      <>
+                        {" "}
+                        No momento estamos <strong className="font-medium text-zinc-800">fora do horário</strong> de
+                        pedidos pelo cardápio.
+                      </>
+                    )}
                   </>
                 ) : (
-                  <>Monte seu pedido com calma; finalize no carrinho e envie pelo WhatsApp.</>
-                )}
-                {(() => {
+                  <>
+                    Monte seu pedido com calma; finalize no carrinho e envie pelo WhatsApp.
+                    {(() => {
                   const zonasTx = restaurante.taxas_entrega_zonas ?? [];
                   if (restaurante.retirada_balcao) {
                     return (
@@ -654,6 +711,8 @@ export default function PublicCardapioPage() {
                   }
                   return null;
                 })()}
+                  </>
+                )}
               </p>
             </div>
           </div>
@@ -662,7 +721,7 @@ export default function PublicCardapioPage() {
         {pratos.length > 0 && categorias.length > 0 ? (
           <div className="border-t border-zinc-100/90">
             <nav
-              className="mx-auto flex max-w-6xl gap-2 overflow-x-auto px-5 py-3 sm:px-8 sm:py-3.5"
+              className="mx-auto flex max-w-6xl gap-2 overflow-x-auto px-5 py-3 [scrollbar-width:none] [-ms-overflow-style:none] sm:px-8 sm:py-3.5 [&::-webkit-scrollbar]:hidden"
               aria-label="Seções do cardápio"
             >
               {categorias.map(({ titulo }) => {
@@ -689,23 +748,38 @@ export default function PublicCardapioPage() {
         ) : null}
       </header>
 
-      {vitrineFechada ? (
+      {pedidosBloqueados ? (
         <div
           role="alert"
-          className="border-b border-amber-300/80 bg-gradient-to-b from-amber-50 to-amber-50/70"
+          className={[
+            "border-b",
+            vitrineFechada
+              ? "border-amber-300/80 bg-gradient-to-b from-amber-50 to-amber-50/70"
+              : "border-zinc-200/90 bg-gradient-to-b from-zinc-100 to-zinc-50/90",
+          ].join(" ")}
         >
           <div className="mx-auto max-w-6xl px-5 py-5 sm:px-8">
-            <p className="text-center text-[11px] font-bold uppercase tracking-[0.2em] text-amber-900/80 sm:text-left">
-              Fechado para pedidos pelo cardápio
+            <p
+              className={[
+                "text-center text-[11px] font-bold uppercase tracking-[0.2em] sm:text-left",
+                vitrineFechada ? "text-amber-900/80" : "text-zinc-600",
+              ].join(" ")}
+            >
+              {vitrineFechada ? "Pedidos pausados pelo restaurante" : "Fora do horário de pedidos"}
             </p>
-            <p className="mt-2 text-center text-base font-semibold leading-snug text-amber-950 sm:text-left sm:text-lg">
-              {textoAvisoFechado}
+            <p
+              className={[
+                "mt-2 text-center text-base font-semibold leading-snug sm:text-left sm:text-lg",
+                vitrineFechada ? "text-amber-950" : "text-zinc-900",
+              ].join(" ")}
+            >
+              {vitrineFechada ? textoAvisoFechado : FECHADO_POR_HORARIO_MSG}
             </p>
           </div>
         </div>
       ) : null}
 
-      {(textoHor || vitrineFechada) ? (
+      {textoHor || restaurante.funcionamento_semana ? (
         <div className="border-b border-zinc-100 bg-white/90">
           <div className="mx-auto flex max-w-6xl gap-4 px-5 py-4 sm:px-8 sm:py-5">
             <div
@@ -715,10 +789,21 @@ export default function PublicCardapioPage() {
             >
               <Clock className="h-5 w-5" strokeWidth={2} />
             </div>
-            <div className="min-w-0">
-              <p className="text-[11px] font-semibold uppercase tracking-wider text-zinc-500">
-                Horário de funcionamento
-              </p>
+            <div className="min-w-0 flex-1">
+              <div className="flex flex-wrap items-center gap-2">
+                <p className="text-[11px] font-semibold uppercase tracking-wider text-zinc-500">
+                  Horário de funcionamento
+                </p>
+                {statusRelogio === "aberto" ? (
+                  <span className="rounded-full bg-emerald-50 px-2.5 py-0.5 text-[11px] font-semibold text-emerald-800 ring-1 ring-emerald-200/70">
+                    Aberto agora
+                  </span>
+                ) : statusRelogio === "fechado" ? (
+                  <span className="rounded-full bg-zinc-100 px-2.5 py-0.5 text-[11px] font-semibold text-zinc-700 ring-1 ring-zinc-200/80">
+                    Fechado agora
+                  </span>
+                ) : null}
+              </div>
               <p className="mt-1 text-sm font-medium leading-relaxed text-zinc-900 sm:text-base">
                 {textoHor ? (
                   textoHor
@@ -792,20 +877,22 @@ export default function PublicCardapioPage() {
                             <button
                               type="button"
                               onClick={() => addToCart(prato)}
-                              disabled={vitrineFechada}
+                              disabled={pedidosBloqueados}
                               title={
-                                vitrineFechada
-                                  ? "Pedidos pelo cardápio estão pausados. Consulte o horário acima."
+                                pedidosBloqueados
+                                  ? vitrineFechada
+                                    ? "Pedidos pelo cardápio estão pausados. Consulte o horário acima."
+                                    : "Fora do horário de pedidos pelo cardápio."
                                   : undefined
                               }
                               aria-label={
-                                vitrineFechada
+                                pedidosBloqueados
                                   ? "Adicionar indisponível — cardápio só para consulta"
                                   : `Adicionar ${prato.nome} ao carrinho`
                               }
                               className={[
                                 "flex h-11 w-11 items-center justify-center rounded-full bg-zinc-900 text-xl font-light leading-none text-white shadow-sm transition active:scale-[0.97]",
-                                vitrineFechada
+                                pedidosBloqueados
                                   ? "cursor-not-allowed opacity-35 shadow-none"
                                   : "hover:bg-zinc-800",
                               ].join(" ")}
@@ -1010,10 +1097,17 @@ export default function PublicCardapioPage() {
                 >
                   Enviar pedido no WhatsApp
                 </a>
-              ) : vitrineFechada && cart.length > 0 ? (
-                <p className="rounded-2xl border border-amber-200/80 bg-amber-50 px-4 py-3 text-center text-sm font-medium leading-relaxed text-amber-950">
-                  Pedidos pelo cardápio estão pausados. Você pode retirar itens do carrinho; para pedir,
-                  volte quando o restaurante reabrir ou use outro canal combinado com eles.
+              ) : pedidosBloqueados && cart.length > 0 ? (
+                <p
+                  className={
+                    vitrineFechada
+                      ? "rounded-2xl border border-amber-200/80 bg-amber-50 px-4 py-3 text-center text-sm font-medium leading-relaxed text-amber-950"
+                      : "rounded-2xl border border-zinc-200 bg-zinc-50 px-4 py-3 text-center text-sm font-medium leading-relaxed text-zinc-800"
+                  }
+                >
+                  {vitrineFechada
+                    ? "Pedidos pelo cardápio estão pausados. Você pode retirar itens do carrinho; para pedir, volte quando o restaurante reabrir ou use outro canal combinado com eles."
+                    : "Estamos fora do horário de pedidos pelo cardápio. Você pode revisar o menu; para enviar pelo WhatsApp, volte no horário de atendimento."}
                 </p>
               ) : cart.length > 0 &&
                 tipoEntrega === "entrega" &&

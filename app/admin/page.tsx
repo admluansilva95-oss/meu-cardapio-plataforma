@@ -42,6 +42,7 @@ import { EntregaComercialSection, taxaFixaInicialDeRestaurante, taxaFixaParaPers
 import { CategoriaPratoField } from "@/components/admin/CategoriaPratoField";
 import { BookOpen, ClipboardList, Palette, type LucideIcon } from "lucide-react";
 import { FuncionamentoSemanalForm } from "@/components/admin/FuncionamentoSemanalForm";
+import { IosToggle } from "@/components/ui/IosToggle";
 
 function formatSlugToDisplayName(slug: string): string {
   const s = slug.trim();
@@ -1681,18 +1682,16 @@ function AdminPageInner() {
                           void atualizarColunaPedido(id, col.id);
                         }}
                         className={[
-                          "flex min-h-[420px] flex-col rounded-2xl border border-black/[0.06] bg-white p-4 shadow-[0_8px_30px_-16px_rgba(0,0,0,0.12)] transition",
-                          dragOverCol === col.id
-                            ? "ring-2 ring-[#0071e3]/25 border-[#0071e3]/30"
-                            : "",
+                          "flex min-h-[420px] flex-col rounded-2xl border border-zinc-100 bg-white p-4 shadow-sm transition",
+                          dragOverCol === col.id ? "ring-2 ring-zinc-900/20 border-zinc-300" : "",
                         ].join(" ")}
                       >
                         <div
-                          className={`mb-4 rounded-xl bg-gradient-to-r ${col.accent} px-3 py-3 ring-1 ring-black/[0.04]`}
+                          className={`mb-4 rounded-xl bg-gradient-to-r ${col.accent} px-3 py-3 ring-1 ring-zinc-100`}
                         >
                           <div className="flex items-center justify-between gap-2">
-                            <h2 className="text-sm font-semibold tracking-tight text-[#1d1d1f]">{col.title}</h2>
-                            <span className="rounded-full bg-[#f5f5f7] px-2 py-0.5 text-[11px] font-medium text-[#6e6e73]">
+                            <h2 className="text-sm font-semibold tracking-tight text-zinc-900">{col.title}</h2>
+                            <span className="rounded-full bg-zinc-100 px-2 py-0.5 text-[11px] font-medium text-zinc-600">
                               {porColuna[col.id].length}
                             </span>
                           </div>
@@ -1710,7 +1709,7 @@ function AdminPageInner() {
                             />
                           ))}
                           {porColuna[col.id].length === 0 ? (
-                            <p className="rounded-2xl border border-dashed border-black/[0.08] bg-[#fafafa] px-4 py-10 text-center text-xs text-[#86868b]">
+                            <p className="rounded-2xl border border-dashed border-zinc-200 bg-zinc-50/80 px-4 py-10 text-center text-xs text-zinc-500">
                               Nenhum pedido nesta coluna. Arraste um card de outra coluna ou aguarde novos
                               pedidos.
                             </p>
@@ -1861,20 +1860,18 @@ function AdminPageInner() {
 
                 <div className="mt-6 space-y-8">
                   <div className="space-y-2">
-                    <label className="text-xs font-semibold uppercase tracking-wide text-[#86868b]">
-                      Nome
-                    </label>
+                    <label className="text-xs font-semibold uppercase tracking-wide text-zinc-500">Nome</label>
                     <input
                       type="text"
                       value={cfgNome}
                       onChange={(e) => setCfgNome(e.target.value)}
-                      className="w-full rounded-xl border-0 bg-[#f5f5f7] px-3 py-2.5 text-sm text-[#1d1d1f] outline-none ring-1 ring-black/[0.06] transition focus:ring-2 focus:ring-[#0071e3]/35"
+                      className="w-full rounded-xl border border-zinc-200 bg-zinc-50/50 px-3 py-2.5 text-sm text-zinc-900 outline-none transition focus:border-transparent focus:ring-2 focus:ring-zinc-900"
                       autoComplete="organization"
                     />
                   </div>
 
                   <div className="space-y-2">
-                    <label className="text-xs font-semibold uppercase tracking-wide text-[#86868b]">
+                    <label className="text-xs font-semibold uppercase tracking-wide text-zinc-500">
                       WhatsApp (pedidos)
                     </label>
                     <PhoneInput
@@ -1887,30 +1884,38 @@ function AdminPageInner() {
 
                   <FuncionamentoSemanalForm value={cfgFuncionamento} onChange={setCfgFuncionamento} />
 
-                  <div className="rounded-xl border border-amber-200/60 bg-amber-50/40 px-4 py-4">
-                    <label className="flex cursor-pointer items-start gap-3">
-                      <input
-                        type="checkbox"
-                        checked={cfgVitrineFechada}
-                        onChange={(e) => setCfgVitrineFechada(e.target.checked)}
-                        className="mt-1 h-4 w-4 shrink-0 rounded border-black/20 text-[#1d1d1f]"
-                      />
-                      <span className="min-w-0 text-sm leading-snug text-[#1d1d1f]">
-                        <span className="font-semibold">Pausar pedidos no cardápio</span>
-                        <span className="mt-1 block text-xs font-normal text-[#6e6e73]">
-                          Aviso visível no link; o cliente só consulta o menu.
+                  <div className="rounded-2xl border border-zinc-100 bg-zinc-50/50 p-5">
+                    <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+                      <div className="min-w-0 flex-1">
+                        <p className="text-sm font-semibold text-zinc-900">Status do estabelecimento</p>
+                        <p className="mt-1 text-xs leading-relaxed text-zinc-500">
+                          Quando fechado para pedidos, o cardápio público continua visível, mas o cliente não monta
+                          pedido nem envia pelo WhatsApp.
+                        </p>
+                      </div>
+                      <div className="flex shrink-0 items-center gap-3 rounded-2xl border border-zinc-100 bg-white px-4 py-3 shadow-sm">
+                        <span className="text-sm font-medium text-zinc-500">
+                          {!cfgVitrineFechada ? "Aberto" : "Fechado"}
                         </span>
-                      </span>
-                    </label>
+                        <IosToggle
+                          checked={!cfgVitrineFechada}
+                          onChange={(aberto) => setCfgVitrineFechada(!aberto)}
+                          aria-label="Aberto ou fechado para pedidos no cardápio"
+                        />
+                      </div>
+                    </div>
                     {cfgVitrineFechada ? (
-                      <div className="mt-4 space-y-2 border-t border-amber-200/50 pt-4">
+                      <div className="mt-4 space-y-2 border-t border-zinc-100 pt-4">
+                        <label className="text-xs font-semibold uppercase tracking-wide text-zinc-500">
+                          Mensagem no aviso (opcional)
+                        </label>
                         <textarea
                           value={cfgMensagemFechado}
                           onChange={(e) => setCfgMensagemFechado(e.target.value.slice(0, 400))}
                           rows={2}
                           maxLength={400}
-                          placeholder="Mensagem opcional no aviso"
-                          className="w-full rounded-xl border-0 bg-white/90 px-3 py-2.5 text-sm text-[#1d1d1f] outline-none ring-1 ring-black/[0.06] focus:ring-[#0071e3]/30"
+                          placeholder="Ex.: voltamos amanhã às 11h"
+                          className="w-full rounded-xl border border-zinc-200 bg-white px-3 py-2.5 text-sm text-zinc-900 outline-none transition focus:border-transparent focus:ring-2 focus:ring-zinc-900"
                         />
                       </div>
                     ) : null}
@@ -1928,7 +1933,7 @@ function AdminPageInner() {
                   />
 
                   <div className="space-y-3">
-                    <p className="text-xs font-semibold uppercase tracking-wide text-[#86868b]">Cor</p>
+                    <p className="text-xs font-semibold uppercase tracking-wide text-zinc-500">Cor</p>
                     <div className="flex flex-wrap items-center gap-3">
                       {PRESET_CORES_TEMA.map((hex) => (
                         <button
@@ -1939,8 +1944,8 @@ function AdminPageInner() {
                           className={[
                             "h-9 w-9 rounded-full border-2 border-white shadow-sm ring-2 transition",
                             normalizeCorTema(cfgCor) === hex
-                              ? "ring-[#0071e3] ring-offset-2"
-                              : "ring-black/[0.06] hover:ring-black/15",
+                              ? "ring-zinc-900 ring-offset-2"
+                              : "ring-zinc-200 hover:ring-zinc-300",
                           ].join(" ")}
                           style={{ backgroundColor: hex }}
                           aria-label={`Cor ${hex}`}
@@ -1959,7 +1964,7 @@ function AdminPageInner() {
                         value={cfgCor}
                         onChange={(e) => setCfgCor(e.target.value)}
                         spellCheck={false}
-                        className="w-28 rounded-lg border-0 bg-[#f5f5f7] px-2 py-1.5 font-mono text-xs text-[#1d1d1f] outline-none ring-1 ring-black/[0.06] focus:ring-[#0071e3]/35"
+                        className="w-28 rounded-lg border border-zinc-200 bg-zinc-50/80 px-2 py-1.5 font-mono text-xs text-zinc-900 outline-none transition focus:border-transparent focus:ring-2 focus:ring-zinc-900"
                       />
                     </div>
                   </div>
