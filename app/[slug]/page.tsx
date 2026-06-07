@@ -16,10 +16,16 @@ function mensagemErroCardapioParaCliente(message: string): string {
 }
 import type { CarrinhoItem, Prato, Restaurante, EntregaModo } from "@/types";
 import {
-  buildPedidoTextoWhatsApp,
   taxaEntregaParaPedido,
   type TipoEntregaPedido,
 } from "@/lib/restaurante/pedido-texto-whatsapp";
+import {
+  montarTextoPedidoWhatsAppFormatado,
+  type FormaPagamentoPedidoCliente,
+} from "@/lib/restaurante/pedido-whatsapp-formatado";
+import { formatarTelefoneWhatsappBR, digitosTelefoneBR } from "@/lib/restaurante/br-telefone-mascara";
+import { buscarEnderecoPorCep } from "@/lib/viacep";
+import { parsePrecoBrasileiro } from "@/lib/restaurante/preco-input";
 import { statusAberturaPorRelogio, textoHorarioVitrine } from "@/lib/restaurante/horario-vitrine";
 import { parseFuncionamentoSemana } from "@/lib/restaurante/funcionamento-semana";
 import { parseTaxasEntregaZonas } from "@/lib/restaurante/taxas-entrega-zonas";
@@ -80,6 +86,12 @@ function waMeUrl(telefone: string, message: string) {
   }
   const text = encodeURIComponent(message);
   return `https://wa.me/${d}?text=${text}`;
+}
+
+function formatCepDisplay(digitsRaw: string): string {
+  const d = digitsRaw.replace(/\D/g, "").slice(0, 8);
+  if (d.length <= 5) return d;
+  return `${d.slice(0, 5)}-${d.slice(5)}`;
 }
 
 type RestauranteRow = {
@@ -173,7 +185,7 @@ function cartTipoEntregaStorageKey(slug: string) {
   return `meu-cardapio:v1:cartTipoEntrega:${slug}`;
 }
 
-type StoredCartLine = { i: string; q: number };
+type StoredCartLine = { i: string; q: number; o?: string };
 
 function CartIcon(props: { className?: string }) {
   return (
@@ -237,6 +249,17 @@ export default function PublicCardapioPage() {
   const [tipoEntrega, setTipoEntrega] = useState<TipoEntregaPedido>("entrega");
   const [activeCategoriaId, setActiveCategoriaId] = useState<string | null>(null);
   const [agoraTick, setAgoraTick] = useState(() => Date.now());
+
+  const [clienteNome, setClienteNome] = useState("");
+  const [clienteTelefoneDisplay, setClienteTelefoneDisplay] = useState("");
+  const [checkoutCep, setCheckoutCep] = useState("");
+  const [checkoutRua, setCheckoutRua] = useState("");
+  const [checkoutNumero, setCheckoutNumero] = useState("");
+  const [checkoutComplemento, setCheckoutComplemento] = useState("");
+  const [cepBuscando, setCepBuscando] = useState(false);
+  const [formaPagamento, setFormaPagamento] = useState<FormaPagamentoPedidoCliente>("pix");
+  const [trocoParaInput, setTrocoParaInput] = useState("");
+  const [checkoutErro, setCheckoutErro] = useState<string | null>(null);
 
   const fetchAbort = useRef<AbortController | null>(null);
 
@@ -368,7 +391,11 @@ export default function PublicCardapioPage() {
         if (!row || typeof row.i !== "string") continue;
         const prato = byId.get(row.i);
         const q = Math.floor(Number(row.q));
-        if (prato && q > 0) next.push({ prato, quantidade: q });
+        if (prato && q > 0) {
+          const obs =
+            typeof row.o === "string" && row.o.trim() ? row.o.trim().slice(0, 400) : null;
+          next.push({ prato, quantidade: q, observacoes: obs });
+        }
       }
       setCart(next);
     } catch {
@@ -380,10 +407,12 @@ export default function PublicCardapioPage() {
 
   useEffect(() => {
     if (!cartHydrated || !slug) return;
-    const payload: StoredCartLine[] = cart.map(({ prato, quantidade }) => ({
-      i: prato.id,
-      q: quantidade,
-    }));
+    const payload: StoredCartLine[] = cart.map(({ prato, quantidade, observacoes }) => {
+      const o = observacoes?.trim();
+      return o
+        ? { i: prato.id, q: quantidade, o: o.slice(0, 400) }
+        : { i: prato.id, q: quantidade };
+    });
     try {
       localStorage.setItem(cartStorageKey(slug), JSON.stringify(payload));
     } catch {
@@ -523,15 +552,37 @@ export default function PublicCardapioPage() {
 
   const cartCount = useMemo(() => cart.reduce((n, x) => n + x.quantidade, 0), [cart]);
 
-  const waHref = useMemo(() => {
-    if (!restaurante || cart.length === 0 || pedidosBloqueados) return null;
-    const zonas = restaurante.taxas_entrega_zonas ?? [];
-    if (tipoEntrega === "entrega" && zonas.length > 1 && !zonaEntregaId) return null;
-    const msg = buildPedidoTextoWhatsApp(restaurante, cart, zonaEntregaId, { tipoEntrega });
-    const d = digitsOnly(restaurante.whatsapp);
-    if (!d) return null;
-    return waMeUrl(restaurante.whatsapp, msg);
-  }, [restaurante, cart, zonaEntregaId, tipoEntrega, pedidosBloqueados]);
+  const trocoParaValor = useMemo(
+    () => (trocoParaInput.trim() ? parsePrecoBrasileiro(trocoParaInput) : null),
+    [trocoParaInput],
+  );
+
+  const cepDigitsCheckout = useMemo(() => checkoutCep.replace(/\D/g, ""), [checkoutCep]);
+
+  useEffect(() => {
+    if (cepDigitsCheckout.length !== 8) return;
+    let cancelled = false;
+    const t = window.setTimeout(() => {
+      void (async () => {
+        setCepBuscando(true);
+        const data = await buscarEnderecoPorCep(cepDigitsCheckout);
+        if (cancelled) return;
+        setCepBuscando(false);
+        if (data?.logradouro?.trim()) {
+          setCheckoutRua(data.logradouro.trim());
+        }
+      })();
+    }, 400);
+    return () => {
+      cancelled = true;
+      window.clearTimeout(t);
+      setCepBuscando(false);
+    };
+  }, [cepDigitsCheckout]);
+
+  useEffect(() => {
+    if (!cartOpen) setCheckoutErro(null);
+  }, [cartOpen]);
 
   const accent = restaurante?.cor_tema?.trim() || "#1d1d1f";
 
@@ -544,8 +595,15 @@ export default function PublicCardapioPage() {
         copy[idx] = { ...copy[idx], quantidade: copy[idx].quantidade + 1 };
         return copy;
       }
-      return [...prev, { prato, quantidade: 1 }];
+      return [...prev, { prato, quantidade: 1, observacoes: null }];
     });
+  };
+
+  const setItemObservacoes = (pratoId: string, texto: string) => {
+    const t = texto.slice(0, 400);
+    setCart((prev) =>
+      prev.map((x) => (x.prato.id === pratoId ? { ...x, observacoes: t.trim() ? t : null } : x)),
+    );
   };
 
   const setQty = (pratoId: string, quantidade: number) => {
@@ -561,6 +619,116 @@ export default function PublicCardapioPage() {
       prev.map((x) => (x.prato.id === pratoId ? { ...x, quantidade } : x)),
     );
   };
+
+  const handleEnviarPedidoWhatsapp = useCallback(() => {
+    setCheckoutErro(null);
+    if (!restaurante || cart.length === 0 || pedidosBloqueados) return;
+    if (digitsOnly(restaurante.whatsapp).length < 10) {
+      setCheckoutErro("Este cardápio não possui um WhatsApp válido para receber pedidos.");
+      return;
+    }
+    const nomeOk = clienteNome.trim();
+    const telDig = digitosTelefoneBR(clienteTelefoneDisplay);
+    if (nomeOk.length < 3 || telDig.length < 10) {
+      setCheckoutErro("Informe nome completo e telefone com DDD (10 ou 11 dígitos).");
+      return;
+    }
+    const zonas = restaurante.taxas_entrega_zonas ?? [];
+    if (tipoEntrega === "entrega") {
+      if (checkoutCep.replace(/\D/g, "").length !== 8) {
+        setCheckoutErro("Informe um CEP válido (8 dígitos).");
+        return;
+      }
+      if (!checkoutRua.trim() || !checkoutNumero.trim()) {
+        setCheckoutErro("Preencha rua e número para a entrega.");
+        return;
+      }
+      if (zonas.length > 1 && !zonaEntregaId) {
+        setCheckoutErro("Selecione o bairro de entrega na lista.");
+        return;
+      }
+    }
+    const taxaBase = taxaEntregaParaPedido(restaurante, zonaEntregaId, { tipo: tipoEntrega }).valor;
+    const taxaAplicada = cart.length > 0 ? taxaBase : 0;
+    const subtotal = cart.reduce((acc, { prato, quantidade }) => acc + prato.preco * quantidade, 0);
+    const totalGeral = subtotal + taxaAplicada;
+
+    if (formaPagamento === "dinheiro" && trocoParaInput.trim()) {
+      const p = parsePrecoBrasileiro(trocoParaInput);
+      if (p == null) {
+        setCheckoutErro("Valor de troco inválido. Use o formato brasileiro (ex.: 100,00).");
+        return;
+      }
+      if (p < totalGeral) {
+        setCheckoutErro("O valor para troco deve ser igual ou maior que o total do pedido.");
+        return;
+      }
+    }
+
+    const bairroNome =
+      tipoEntrega === "retirada"
+        ? "N/A"
+        : zonas.length > 0
+          ? zonas.find((z) => z.id === zonaEntregaId)?.nome?.trim() || "N/A"
+          : "N/A";
+
+    const enderecoLinha =
+      tipoEntrega === "retirada" ? "N/A" : `${checkoutRua.trim()}, ${checkoutNumero.trim()}`;
+
+    const cepLinha = tipoEntrega === "retirada" ? "N/A" : formatCepDisplay(checkoutCep);
+
+    const refCompLinha =
+      tipoEntrega === "retirada" ? "N/A" : checkoutComplemento.trim() || "N/A";
+
+    const trocoParsed = trocoParaInput.trim() ? parsePrecoBrasileiro(trocoParaInput) : null;
+    const trocoParaTexto =
+      formaPagamento !== "dinheiro" || !trocoParaInput.trim()
+        ? "Não necessário"
+        : trocoParsed != null
+          ? formatBRL(trocoParsed)
+          : "Não necessário";
+
+    const valorTrocoReais =
+      formaPagamento === "dinheiro" && trocoParsed != null && trocoParsed >= totalGeral
+        ? Math.round((trocoParsed - totalGeral) * 100) / 100
+        : 0;
+
+    const msg = montarTextoPedidoWhatsAppFormatado({
+      nomeCliente: nomeOk,
+      telefoneCliente: formatarTelefoneWhatsappBR(clienteTelefoneDisplay),
+      tipoEntrega,
+      enderecoLinha,
+      bairroLinha: bairroNome,
+      cepLinha,
+      refCompLinha,
+      itens: cart,
+      formaPagamento,
+      trocoParaTexto,
+      valorTrocoReais,
+      subtotalItens: subtotal,
+      taxaEntrega: taxaAplicada,
+      totalGeral,
+    });
+
+    const href = waMeUrl(restaurante.whatsapp, msg);
+    window.open(href, "_blank", "noopener,noreferrer");
+  }, [
+    restaurante,
+    cart,
+    pedidosBloqueados,
+    clienteNome,
+    clienteTelefoneDisplay,
+    tipoEntrega,
+    checkoutCep,
+    checkoutRua,
+    checkoutNumero,
+    checkoutComplemento,
+    zonaEntregaId,
+    formaPagamento,
+    trocoParaInput,
+    subtotalCarrinho,
+    taxaCarrinho,
+  ]);
 
   if (!slug) {
     return (
@@ -919,21 +1087,23 @@ export default function PublicCardapioPage() {
         <div className="fixed inset-0 z-40 flex justify-end">
           <button
             type="button"
-            className="absolute inset-0 bg-black/20 backdrop-blur-[2px]"
+            className="absolute inset-0 bg-black/30 backdrop-blur-md"
             aria-label="Fechar carrinho"
             onClick={() => setCartOpen(false)}
           />
           <aside
-            className="relative flex h-full w-full max-w-md flex-col border-l border-zinc-100 bg-white shadow-2xl shadow-zinc-900/10"
+            className="relative flex h-[100dvh] w-full max-w-lg flex-col overflow-hidden rounded-l-[1.25rem] border-l border-zinc-200/80 bg-white/95 shadow-[0_0_0_1px_rgba(0,0,0,0.03)] shadow-2xl ring-1 ring-black/[0.04] backdrop-blur-xl sm:max-w-md"
             role="dialog"
             aria-modal="true"
             aria-labelledby="cart-title"
           >
-            <div className="flex items-center justify-between border-b border-zinc-100 px-6 py-5">
+            <div className="flex shrink-0 items-center justify-between border-b border-zinc-100/90 px-5 py-4 sm:px-6 sm:py-5">
               <div>
-                <p className="text-[11px] font-semibold uppercase tracking-wider text-zinc-500">Seu pedido</p>
+                <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-zinc-500">
+                  Checkout
+                </p>
                 <h2 id="cart-title" className="mt-1 text-xl font-semibold tracking-tight text-zinc-900">
-                  Carrinho
+                  Seu pedido
                 </h2>
               </div>
               <button
@@ -946,161 +1116,343 @@ export default function PublicCardapioPage() {
               </button>
             </div>
 
-            <div className="flex-1 overflow-y-auto px-6 py-5">
+            <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-5 py-4 sm:px-6 sm:py-5">
               {cart.length === 0 ? (
-                <p className="rounded-2xl border border-dashed border-zinc-200 bg-zinc-50/50 px-4 py-14 text-center text-sm leading-relaxed text-zinc-500">
-                  Carrinho vazio. Toque em &quot;Adicionar&quot; nos pratos que desejar.
+                <p className="rounded-2xl border border-dashed border-zinc-200 bg-zinc-50/60 px-4 py-14 text-center text-sm leading-relaxed text-zinc-500">
+                  Carrinho vazio. Toque em &quot;+&quot; nos pratos que desejar.
                 </p>
               ) : (
-                <ul className="space-y-3">
-                  {cart.map(({ prato, quantidade }) => (
-                    <li
-                      key={prato.id}
-                      className="flex gap-4 rounded-2xl border border-zinc-100 bg-zinc-50/40 p-4 shadow-sm"
-                    >
-                      <div className="min-w-0 flex-1">
-                        <p className="font-semibold tracking-tight text-zinc-900">{prato.nome}</p>
-                        <p className="mt-1 text-xs text-zinc-500">
-                          {formatBRL(prato.preco)} cada · subtotal{" "}
-                          <span className="font-medium text-zinc-800">{formatBRL(prato.preco * quantidade)}</span>
+                <div className="space-y-8">
+                  <section aria-labelledby="cart-itens">
+                    <h3 id="cart-itens" className="text-[11px] font-semibold uppercase tracking-wider text-zinc-500">
+                      Itens
+                    </h3>
+                    <ul className="mt-3 space-y-3">
+                      {cart.map(({ prato, quantidade, observacoes }) => (
+                        <li
+                          key={prato.id}
+                          className="rounded-2xl border border-zinc-100 bg-zinc-50/50 p-4 shadow-sm"
+                        >
+                          <div className="flex gap-3">
+                            <div className="min-w-0 flex-1">
+                              <p className="font-semibold tracking-tight text-zinc-900">{prato.nome}</p>
+                              <p className="mt-1 text-xs text-zinc-500">
+                                {formatBRL(prato.preco)} cada ·{" "}
+                                <span className="font-medium text-zinc-800">
+                                  {formatBRL(prato.preco * quantidade)}
+                                </span>
+                              </p>
+                            </div>
+                            <div className="flex shrink-0 items-center gap-1">
+                              <button
+                                type="button"
+                                className="flex h-9 w-9 items-center justify-center rounded-full border border-zinc-200 bg-white text-zinc-800 transition hover:bg-zinc-50 active:scale-95"
+                                onClick={() => setQty(prato.id, quantidade - 1)}
+                                aria-label="Diminuir"
+                              >
+                                −
+                              </button>
+                              <span className="w-8 text-center text-sm font-semibold tabular-nums">{quantidade}</span>
+                              <button
+                                type="button"
+                                className="flex h-9 w-9 items-center justify-center rounded-full border border-zinc-200 bg-white text-zinc-800 transition hover:bg-zinc-50 active:scale-95"
+                                onClick={() => setQty(prato.id, quantidade + 1)}
+                                aria-label="Aumentar"
+                              >
+                                +
+                              </button>
+                            </div>
+                          </div>
+                          <label className="mt-3 block text-[11px] font-medium text-zinc-500" htmlFor={`obs-${prato.id}`}>
+                            Observações (opcional)
+                          </label>
+                          <textarea
+                            id={`obs-${prato.id}`}
+                            rows={2}
+                            value={observacoes ?? ""}
+                            onChange={(e) => setItemObservacoes(prato.id, e.target.value)}
+                            placeholder="Ex.: sem cebola, ponto da carne…"
+                            className="mt-1 w-full resize-none rounded-xl border border-zinc-200 bg-white px-3 py-2.5 text-xs text-zinc-900 outline-none transition placeholder:text-zinc-400 focus:ring-2 focus:ring-zinc-950"
+                          />
+                        </li>
+                      ))}
+                    </ul>
+                  </section>
+
+                  <section className="space-y-3" aria-labelledby="cart-cliente">
+                    <h3 id="cart-cliente" className="text-[11px] font-semibold uppercase tracking-wider text-zinc-500">
+                      Seus dados
+                    </h3>
+                    <div className="space-y-2.5">
+                      <input
+                        type="text"
+                        autoComplete="name"
+                        value={clienteNome}
+                        onChange={(e) => setClienteNome(e.target.value.slice(0, 120))}
+                        placeholder="Nome completo"
+                        className="w-full rounded-xl border border-zinc-200 bg-white px-4 py-3 text-sm text-zinc-900 outline-none transition placeholder:text-zinc-400 focus:ring-2 focus:ring-zinc-950"
+                      />
+                      <input
+                        type="tel"
+                        inputMode="numeric"
+                        autoComplete="tel-national"
+                        value={clienteTelefoneDisplay}
+                        onChange={(e) =>
+                          setClienteTelefoneDisplay(formatarTelefoneWhatsappBR(e.target.value))
+                        }
+                        placeholder="(00) 00000-0000"
+                        className="w-full rounded-xl border border-zinc-200 bg-white px-4 py-3 text-sm text-zinc-900 outline-none transition placeholder:text-zinc-400 focus:ring-2 focus:ring-zinc-950"
+                      />
+                    </div>
+                  </section>
+
+                  {cart.length > 0 ? (
+                    <section className="space-y-3" aria-labelledby="cart-entrega">
+                      <h3 id="cart-entrega" className="text-[11px] font-semibold uppercase tracking-wider text-zinc-500">
+                        Entrega ou retirada
+                      </h3>
+                      {restaurante.retirada_balcao ? (
+                        <div className="flex rounded-2xl border border-zinc-200 bg-zinc-100/80 p-1">
+                          <button
+                            type="button"
+                            onClick={() => setTipoEntrega("entrega")}
+                            className={[
+                              "flex-1 rounded-xl py-2.5 text-sm font-semibold transition-all",
+                              tipoEntrega === "entrega"
+                                ? "bg-white text-zinc-900 shadow-sm ring-1 ring-zinc-200/80"
+                                : "text-zinc-500 hover:text-zinc-800",
+                            ].join(" ")}
+                          >
+                            Entrega
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setTipoEntrega("retirada")}
+                            className={[
+                              "flex-1 rounded-xl py-2.5 text-sm font-semibold transition-all",
+                              tipoEntrega === "retirada"
+                                ? "bg-white text-zinc-900 shadow-sm ring-1 ring-zinc-200/80"
+                                : "text-zinc-500 hover:text-zinc-800",
+                            ].join(" ")}
+                          >
+                            Retirada
+                          </button>
+                        </div>
+                      ) : (
+                        <p className="rounded-xl border border-zinc-100 bg-zinc-50/80 px-3 py-2 text-xs text-zinc-600">
+                          Entrega no endereço informado abaixo.
                         </p>
-                      </div>
-                      <div className="flex shrink-0 items-center gap-1">
+                      )}
+
+                      {tipoEntrega === "entrega" ? (
+                        <div className="space-y-3 rounded-2xl border border-zinc-100 bg-white p-4 shadow-sm">
+                          <div>
+                            <label className="text-[11px] font-medium text-zinc-500" htmlFor="checkout-cep">
+                              CEP
+                            </label>
+                            <div className="relative mt-1">
+                              <input
+                                id="checkout-cep"
+                                type="text"
+                                inputMode="numeric"
+                                value={formatCepDisplay(checkoutCep)}
+                                onChange={(e) => setCheckoutCep(e.target.value.replace(/\D/g, "").slice(0, 8))}
+                                placeholder="00000-000"
+                                className="w-full rounded-xl border border-zinc-200 bg-zinc-50/40 px-4 py-3 pr-12 text-sm text-zinc-900 outline-none transition focus:bg-white focus:ring-2 focus:ring-zinc-950"
+                              />
+                              {cepBuscando ? (
+                                <span className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 animate-spin rounded-full border-2 border-zinc-200 border-t-zinc-900" />
+                              ) : null}
+                            </div>
+                            <p className="mt-1 text-[11px] leading-relaxed text-zinc-400">
+                              Endereço preenchido automaticamente pelo CEP quando disponível.
+                            </p>
+                          </div>
+                          <div className="grid gap-3 sm:grid-cols-2">
+                            <div className="sm:col-span-2">
+                              <label className="text-[11px] font-medium text-zinc-500" htmlFor="checkout-rua">
+                                Rua
+                              </label>
+                              <input
+                                id="checkout-rua"
+                                type="text"
+                                value={checkoutRua}
+                                onChange={(e) => setCheckoutRua(e.target.value.slice(0, 120))}
+                                className="mt-1 w-full rounded-xl border border-zinc-200 bg-white px-4 py-3 text-sm text-zinc-900 outline-none transition focus:ring-2 focus:ring-zinc-950"
+                              />
+                            </div>
+                            <div>
+                              <label className="text-[11px] font-medium text-zinc-500" htmlFor="checkout-numero">
+                                Número
+                              </label>
+                              <input
+                                id="checkout-numero"
+                                type="text"
+                                inputMode="numeric"
+                                value={checkoutNumero}
+                                onChange={(e) => setCheckoutNumero(e.target.value.slice(0, 12))}
+                                className="mt-1 w-full rounded-xl border border-zinc-200 bg-white px-4 py-3 text-sm text-zinc-900 outline-none transition focus:ring-2 focus:ring-zinc-950"
+                              />
+                            </div>
+                            <div>
+                              <label className="text-[11px] font-medium text-zinc-500" htmlFor="checkout-bairro-zona">
+                                Bairro
+                              </label>
+                              {(restaurante.taxas_entrega_zonas ?? []).length >= 1 ? (
+                                <select
+                                  id="checkout-bairro-zona"
+                                  value={zonaEntregaId ?? ""}
+                                  onChange={(e) => setZonaEntregaId(e.target.value || null)}
+                                  disabled={(restaurante.taxas_entrega_zonas ?? []).length === 1}
+                                  className="mt-1 w-full rounded-xl border border-zinc-200 bg-white px-4 py-3 text-sm text-zinc-900 outline-none transition focus:ring-2 focus:ring-zinc-950 disabled:cursor-default disabled:opacity-90"
+                                >
+                                  {(restaurante.taxas_entrega_zonas ?? []).length > 1 ? (
+                                    <option value="">Selecione o bairro</option>
+                                  ) : null}
+                                  {(restaurante.taxas_entrega_zonas ?? []).map((z) => (
+                                    <option key={z.id} value={z.id}>
+                                      {z.nome} — {formatBRL(z.valor)}
+                                    </option>
+                                  ))}
+                                </select>
+                              ) : (
+                                <p className="mt-2 rounded-xl border border-dashed border-zinc-200 bg-zinc-50 px-3 py-2 text-xs text-zinc-500">
+                                  Taxa conforme cadastro do restaurante (sem bairros cadastrados).
+                                </p>
+                              )}
+                            </div>
+                          </div>
+                          <div>
+                            <label className="text-[11px] font-medium text-zinc-500" htmlFor="checkout-comp">
+                              Complemento / referência
+                            </label>
+                            <input
+                              id="checkout-comp"
+                              type="text"
+                              value={checkoutComplemento}
+                              onChange={(e) => setCheckoutComplemento(e.target.value.slice(0, 160))}
+                              placeholder="Apto, bloco, ponto de referência…"
+                              className="mt-1 w-full rounded-xl border border-zinc-200 bg-white px-4 py-3 text-sm text-zinc-900 outline-none transition placeholder:text-zinc-400 focus:ring-2 focus:ring-zinc-950"
+                            />
+                          </div>
+                        </div>
+                      ) : (
+                        <p className="rounded-2xl border border-emerald-100 bg-emerald-50/60 px-4 py-3 text-sm leading-relaxed text-emerald-900">
+                          Retirada no balcão — sem taxa de entrega. Combine o horário pelo WhatsApp após enviar o
+                          pedido.
+                        </p>
+                      )}
+                    </section>
+                  ) : null}
+
+                  <section className="space-y-3" aria-labelledby="cart-pagamento">
+                    <h3 id="cart-pagamento" className="text-[11px] font-semibold uppercase tracking-wider text-zinc-500">
+                      Pagamento
+                    </h3>
+                    <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+                      {(
+                        [
+                          ["dinheiro", "Dinheiro"],
+                          ["cartao_debito", "Cartão de Débito"],
+                          ["cartao_credito", "Cartão de Crédito"],
+                          ["pix", "Pix"],
+                        ] as const
+                      ).map(([id, label]) => (
                         <button
+                          key={id}
                           type="button"
-                          className="flex h-9 w-9 items-center justify-center rounded-full border border-zinc-200 bg-white text-zinc-800 transition hover:bg-zinc-50"
-                          onClick={() => setQty(prato.id, quantidade - 1)}
-                          aria-label="Diminuir"
+                          onClick={() => setFormaPagamento(id)}
+                          aria-label={label}
+                          className={[
+                            "min-h-[2.75rem] rounded-xl border px-1.5 py-2 text-center text-[11px] font-semibold leading-tight transition active:scale-[0.98] sm:min-h-0 sm:px-2 sm:text-xs",
+                            formaPagamento === id
+                              ? "border-zinc-900 bg-zinc-900 text-white shadow-sm"
+                              : "border-zinc-200 bg-white text-zinc-700 hover:border-zinc-300",
+                          ].join(" ")}
                         >
-                          −
+                          {label}
                         </button>
-                        <span className="w-8 text-center text-sm font-semibold tabular-nums">{quantidade}</span>
-                        <button
-                          type="button"
-                          className="flex h-9 w-9 items-center justify-center rounded-full border border-zinc-200 bg-white text-zinc-800 transition hover:bg-zinc-50"
-                          onClick={() => setQty(prato.id, quantidade + 1)}
-                          aria-label="Aumentar"
-                        >
-                          +
-                        </button>
+                      ))}
+                    </div>
+                    {formaPagamento === "dinheiro" ? (
+                      <div className="rounded-2xl border border-zinc-100 bg-zinc-50/60 p-4">
+                        <label className="text-[11px] font-medium text-zinc-500" htmlFor="troco-para">
+                          Precisa de troco para quanto?
+                        </label>
+                        <input
+                          id="troco-para"
+                          type="text"
+                          inputMode="decimal"
+                          value={trocoParaInput}
+                          onChange={(e) => setTrocoParaInput(e.target.value.slice(0, 14))}
+                          placeholder="Ex.: 100,00"
+                          className="mt-1.5 w-full rounded-xl border border-zinc-200 bg-white px-4 py-3 text-sm text-zinc-900 outline-none transition focus:ring-2 focus:ring-zinc-950"
+                        />
+                        {trocoParaValor != null && trocoParaValor >= total ? (
+                          <p className="mt-2 text-xs text-zinc-600">
+                            Total {formatBRL(total)} · troco para {formatBRL(trocoParaValor)} ·{" "}
+                            <span className="font-semibold text-zinc-900">
+                              seu troco: {formatBRL(trocoParaValor - total)}
+                            </span>
+                          </p>
+                        ) : null}
                       </div>
-                    </li>
-                  ))}
-                </ul>
+                    ) : null}
+                  </section>
+                </div>
               )}
             </div>
 
-            <div className="border-t border-zinc-100 bg-white/90 px-6 py-6 backdrop-blur-md">
-              {cart.length > 0 && restaurante.retirada_balcao ? (
-                <div className="mb-4 flex rounded-2xl border border-zinc-200 bg-zinc-50 p-1">
-                  <button
-                    type="button"
-                    onClick={() => setTipoEntrega("entrega")}
-                    className={[
-                      "flex-1 rounded-xl py-2.5 text-sm font-semibold transition-all",
-                      tipoEntrega === "entrega"
-                        ? "bg-white text-zinc-900 shadow-sm ring-1 ring-zinc-200/80"
-                        : "text-zinc-500 hover:text-zinc-800",
-                    ].join(" ")}
-                  >
-                    Entrega
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setTipoEntrega("retirada")}
-                    className={[
-                      "flex-1 rounded-xl py-2.5 text-sm font-semibold transition-all",
-                      tipoEntrega === "retirada"
-                        ? "bg-white text-zinc-900 shadow-sm ring-1 ring-zinc-200/80"
-                        : "text-zinc-500 hover:text-zinc-800",
-                    ].join(" ")}
-                  >
-                    Retirada no balcão
-                  </button>
-                </div>
-              ) : null}
-              {cart.length > 0 &&
-              tipoEntrega === "entrega" &&
-              (restaurante.taxas_entrega_zonas?.length ?? 0) > 1 ? (
-                <div className="mb-4">
-                  <label
-                    htmlFor="zona-entrega"
-                    className="mb-1.5 block text-xs font-semibold uppercase tracking-wide text-zinc-500"
-                  >
-                    Região de entrega
-                  </label>
-                  <select
-                    id="zona-entrega"
-                    value={zonaEntregaId ?? ""}
-                    onChange={(e) => setZonaEntregaId(e.target.value || null)}
-                    className="w-full rounded-2xl border border-zinc-200 bg-zinc-50/50 px-4 py-3 text-sm text-zinc-900 outline-none focus:ring-2 focus:ring-zinc-900"
-                  >
-                    <option value="">Selecione sua região</option>
-                    {restaurante.taxas_entrega_zonas!.map((z) => (
-                      <option key={z.id} value={z.id}>
-                        {z.nome} — {formatBRL(z.valor)}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-              ) : null}
+            <div className="shrink-0 space-y-3 border-t border-zinc-100 bg-white/95 px-5 py-4 backdrop-blur-md sm:px-6 sm:py-5">
               {cart.length > 0 ? (
-                <div className="mb-3 space-y-1.5 text-sm text-zinc-500">
-                  <div className="flex justify-between">
-                    <span>Subtotal</span>
-                    <span className="tabular-nums text-zinc-800">{formatBRL(subtotalCarrinho)}</span>
+                <>
+                  <div className="space-y-1.5 text-sm text-zinc-500">
+                    <div className="flex justify-between">
+                      <span>Subtotal</span>
+                      <span className="tabular-nums text-zinc-800">{formatBRL(subtotalCarrinho)}</span>
+                    </div>
+                    {tipoEntrega === "retirada" ? (
+                      <div className="flex justify-between">
+                        <span>Taxa de entrega</span>
+                        <span className="text-right text-xs font-medium text-zinc-700">Retirada — sem taxa</span>
+                      </div>
+                    ) : (
+                      <div className="flex justify-between">
+                        <span>Taxa de entrega</span>
+                        <span className="tabular-nums text-zinc-800">{formatBRL(taxaCarrinho)}</span>
+                      </div>
+                    )}
                   </div>
-                  {tipoEntrega === "retirada" ? (
-                    <div className="flex justify-between">
-                      <span>Entrega</span>
-                      <span className="text-right text-zinc-800">Retirada no balcão</span>
-                    </div>
-                  ) : taxaCarrinho > 0 ? (
-                    <div className="flex justify-between">
-                      <span>Taxa de entrega</span>
-                      <span className="tabular-nums text-zinc-800">{formatBRL(taxaCarrinho)}</span>
-                    </div>
+                  <div className="flex items-end justify-between border-t border-zinc-100 pt-3">
+                    <span className="text-xs font-semibold uppercase tracking-wider text-zinc-500">Total</span>
+                    <span className="text-2xl font-semibold tabular-nums tracking-tight text-zinc-900">
+                      {formatBRL(total)}
+                    </span>
+                  </div>
+                  {checkoutErro ? (
+                    <p className="rounded-xl bg-red-50 px-3 py-2 text-center text-xs font-medium text-red-700 ring-1 ring-red-100">
+                      {checkoutErro}
+                    </p>
                   ) : null}
-                </div>
+                  {pedidosBloqueados ? (
+                    <button
+                      type="button"
+                      disabled
+                      className="flex w-full cursor-not-allowed items-center justify-center rounded-2xl border border-zinc-200 bg-zinc-100 py-3.5 text-sm font-semibold text-zinc-400"
+                    >
+                      Pedidos via WhatsApp desativados
+                    </button>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={() => handleEnviarPedidoWhatsapp()}
+                      className="flex w-full items-center justify-center rounded-2xl bg-[#25D366] py-3.5 text-sm font-semibold text-white shadow-[0_12px_32px_-12px_rgba(37,211,102,0.55)] transition hover:bg-[#1ebe5a] active:scale-[0.99]"
+                    >
+                      Enviar Pedido via WhatsApp
+                    </button>
+                  )}
+                </>
               ) : null}
-              <div className="mb-5 flex items-end justify-between">
-                <span className="text-xs font-semibold uppercase tracking-wider text-zinc-500">Total</span>
-                <span className="text-2xl font-semibold tabular-nums tracking-tight text-zinc-900">
-                  {formatBRL(total)}
-                </span>
-              </div>
-              {waHref && cart.length > 0 ? (
-                <a
-                  href={waHref}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="flex w-full items-center justify-center rounded-2xl bg-[#22c55e] py-3.5 text-sm font-semibold text-white shadow-[0_12px_32px_-12px_rgba(34,197,94,0.65)] transition hover:bg-[#16a34a] active:scale-[0.99]"
-                >
-                  Enviar pedido no WhatsApp
-                </a>
-              ) : pedidosBloqueados && cart.length > 0 ? (
-                <button
-                  type="button"
-                  disabled
-                  aria-disabled="true"
-                  className="flex w-full cursor-not-allowed items-center justify-center rounded-2xl border border-zinc-200/90 bg-zinc-100 py-3.5 text-sm font-semibold text-zinc-400 opacity-60 shadow-inner"
-                >
-                  Pedidos via WhatsApp desativados
-                </button>
-              ) : cart.length > 0 &&
-                tipoEntrega === "entrega" &&
-                (restaurante.taxas_entrega_zonas?.length ?? 0) > 1 &&
-                !zonaEntregaId ? (
-                <p className="rounded-2xl border border-zinc-200 bg-zinc-50 px-4 py-3 text-center text-sm leading-relaxed text-zinc-600">
-                  Escolha a região de entrega acima para calcular o total e gerar o link do WhatsApp.
-                </p>
-              ) : (
-                <p className="text-center text-xs leading-relaxed text-zinc-500">
-                  {cart.length === 0
-                    ? "Adicione itens para enviar o pedido."
-                    : "Cadastre um WhatsApp válido no restaurante."}
-                </p>
-              )}
             </div>
           </aside>
         </div>

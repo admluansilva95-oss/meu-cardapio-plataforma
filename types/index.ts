@@ -61,4 +61,6 @@ export interface Prato {
 export interface CarrinhoItem {
   prato: Prato;
   quantidade: number;
+  /** Observações por linha (ex.: ponto da carne, sem cebola). */
+  observacoes?: string | null;
 }

@@ -14,6 +14,7 @@ import { createBrowserSupabaseClient } from "@/lib/supabase";
 import { getPublicAppUrl } from "@/lib/site-url";
 import { isRetryableSupabaseError, withRetry } from "@/lib/with-retry";
 import { mensagemErroSupabasePainel } from "@/lib/supabase/mensagem-erro";
+import { mensagemUploadStorageAmigavel } from "@/lib/restaurante/mensagem-upload-storage";
 import {
   normalizarPrecoCampoAoSair,
   parsePrecoBrasileiro,
@@ -140,8 +141,28 @@ function mapPedidoRow(row: {
   };
 }
 
-const BUCKET_IMAGENS_PRATOS = "imagens-pratos";
+/** Deve ser idêntico ao bucket criado no Supabase (Storage) e às policies em `storage.objects`. */
+const BUCKET_IMAGENS_PRATOS = "imagens-pratos" as const;
 const BUCKET_RESTAURANT_LOGOS = "restaurant-logos";
+
+const UPLOAD_STORAGE_MAX_BYTES = Math.floor(4.5 * 1024 * 1024);
+
+/** Segmentos do object path: apenas [A-Za-z0-9_-] (evita ?, #, espaços, barras extras). */
+function sanitizarSegmentoPathStorage(id: string, contexto: string): string {
+  const s = id.trim().replace(/[^a-zA-Z0-9_-]/g, "");
+  if (!s) {
+    throw new Error(`${contexto}: identificador inválido para o caminho no Storage.`);
+  }
+  return s;
+}
+
+/** Evita gravar string literal "undefined"/"null" ou vazia na coluna `imagem`. */
+function imagemUrlSeguraParaColuna(url: string | null | undefined): string | null {
+  if (url == null) return null;
+  const t = String(url).trim();
+  if (!t || t === "undefined" || t === "null") return null;
+  return t;
+}
 
 function extensaoImagemSegura(file: File): string {
   const mime = file.type.toLowerCase();
@@ -169,8 +190,16 @@ async function enviarImagemAoBucketImagensPratos(
   restauranteId: string,
   file: File,
 ): Promise<string> {
+  if (file.size > UPLOAD_STORAGE_MAX_BYTES) {
+    const err = new Error(
+      `Arquivo muito grande (${(file.size / (1024 * 1024)).toFixed(1)} MB). Use até ~4,5 MB.`,
+    );
+    console.error("Erro no Upload do Storage:", err);
+    throw err;
+  }
   const ext = extensaoImagemSegura(file);
-  const objectPath = `${restauranteId}/${crypto.randomUUID()}.${ext}`;
+  const pasta = sanitizarSegmentoPathStorage(restauranteId, "Upload de foto do prato");
+  const objectPath = `${pasta}/${crypto.randomUUID()}.${ext}`;
   const contentType =
     file.type && file.type.startsWith("image/")
       ? file.type
@@ -178,9 +207,20 @@ async function enviarImagemAoBucketImagensPratos(
   const { error } = await supabase.storage
     .from(BUCKET_IMAGENS_PRATOS)
     .upload(objectPath, file, { contentType, cacheControl: "3600", upsert: false });
-  if (error) throw error;
+  if (error) {
+    console.error("Erro no Upload do Storage:", error);
+    throw error;
+  }
   const { data } = supabase.storage.from(BUCKET_IMAGENS_PRATOS).getPublicUrl(objectPath);
-  return data.publicUrl;
+  const publicUrl = data?.publicUrl?.trim();
+  if (!publicUrl) {
+    const err = new Error(
+      `URL pública ausente após upload (objectPath=${objectPath}).`,
+    );
+    console.error("Erro no Upload do Storage:", err);
+    throw err;
+  }
+  return publicUrl;
 }
 
 function caminhoStorageLogoRestaurante(publicUrl: string): string | null {
@@ -195,11 +235,19 @@ async function enviarLogoRestaurante(
   restauranteId: string,
   file: File,
 ): Promise<string> {
+  if (file.size > UPLOAD_STORAGE_MAX_BYTES) {
+    const err = new Error(
+      `Arquivo muito grande (${(file.size / (1024 * 1024)).toFixed(1)} MB). Use até ~4,5 MB.`,
+    );
+    console.error("Erro no Upload do Storage:", err);
+    throw err;
+  }
   const ext = extensaoImagemSegura(file);
   if (ext === "gif") {
     throw new Error("Use JPG, PNG ou WebP para o logo.");
   }
-  const objectPath = `${restauranteId}/${crypto.randomUUID()}.${ext}`;
+  const pasta = sanitizarSegmentoPathStorage(restauranteId, "Upload de logo do restaurante");
+  const objectPath = `${pasta}/${crypto.randomUUID()}.${ext}`;
   const contentType =
     file.type && file.type.startsWith("image/")
       ? file.type
@@ -207,9 +255,18 @@ async function enviarLogoRestaurante(
   const { error } = await supabase.storage
     .from(BUCKET_RESTAURANT_LOGOS)
     .upload(objectPath, file, { contentType, cacheControl: "3600", upsert: false });
-  if (error) throw error;
+  if (error) {
+    console.error("Erro no Upload do Storage:", error);
+    throw error;
+  }
   const { data } = supabase.storage.from(BUCKET_RESTAURANT_LOGOS).getPublicUrl(objectPath);
-  return data.publicUrl;
+  const publicUrl = data?.publicUrl?.trim();
+  if (!publicUrl) {
+    const err = new Error(`URL pública ausente após upload do logo (objectPath=${objectPath}).`);
+    console.error("Erro no Upload do Storage:", err);
+    throw err;
+  }
+  return publicUrl;
 }
 
 function mapPratoRow(row: {
@@ -875,6 +932,7 @@ function AdminPageInner() {
 
   const [loading, setLoading] = useState(true);
   const [fetchError, setFetchError] = useState<string | null>(null);
+  const [adminToast, setAdminToast] = useState<string | null>(null);
   const [restaurante, setRestaurante] = useState<Restaurante | null>(null);
   const [tab, setTab] = useState<AdminTab>("pedidos");
   const [pedidos, setPedidos] = useState<Pedido[]>([]);
@@ -912,6 +970,12 @@ function AdminPageInner() {
       if (cfgLogoDraftPreview) URL.revokeObjectURL(cfgLogoDraftPreview);
     };
   }, [cfgLogoDraftPreview]);
+
+  useEffect(() => {
+    if (!adminToast) return;
+    const t = window.setTimeout(() => setAdminToast(null), 5200);
+    return () => window.clearTimeout(t);
+  }, [adminToast]);
 
   useEffect(() => {
     if (tenantSlug) return;
@@ -1204,11 +1268,10 @@ function AdminPageInner() {
           }
         }
       } catch (err) {
-        const msg =
-          err && typeof err === "object" && "message" in err
-            ? String((err as { message: unknown }).message)
-            : "Falha no envio da imagem.";
-        logoUploadWarning = `Logo não foi atualizado (${msg}). As demais configurações serão salvas. Crie o bucket "restaurant-logos" no Supabase ou verifique permissões.`;
+        console.error("Erro no Upload do Storage:", err);
+        const friendly = mensagemUploadStorageAmigavel(err);
+        logoUploadWarning = `Logo não foi atualizado (${friendly}). As demais configurações serão salvas. Verifique o bucket "restaurant-logos" e permissões.`;
+        setAdminToast(friendly);
         logoOut = cfgLogoUrl ?? restaurante.logo?.trim() ?? null;
       }
     } else if (cfgLogoUrl === null) {
@@ -1540,20 +1603,30 @@ function AdminPageInner() {
           payload.restaurante_id,
           payload.arquivoImagem,
         );
+        const urlPersistivel = imagemUrlSeguraParaColuna(novaUrl);
+        if (!urlPersistivel) {
+          const msg =
+            "O upload concluiu, mas a URL da imagem é inválida. Nada foi salvo no cardápio.";
+          setFetchError(msg);
+          setAdminToast(msg);
+          console.error("Erro no Upload do Storage:", new Error(msg));
+          throw new Error(msg);
+        }
         const antiga = payload.imagemAtual?.trim() ?? "";
-        if (payload.id && antiga.length > 0 && antiga !== novaUrl) {
+        if (payload.id && antiga.length > 0 && antiga !== urlPersistivel) {
           urlAntigaParaRemover = antiga;
         }
-        imagemFinal = novaUrl;
+        imagemFinal = urlPersistivel;
       } catch (err) {
-        const msg =
-          err && typeof err === "object" && "message" in err
-            ? String((err as { message: unknown }).message)
-            : "Não foi possível enviar a foto. Tente outra imagem ou salve sem foto.";
-        setFetchError(msg);
-        throw new Error(msg);
+        console.error("Erro no Upload do Storage:", err);
+        const friendly = mensagemUploadStorageAmigavel(err);
+        setFetchError(friendly);
+        setAdminToast(friendly);
+        throw new Error(friendly);
       }
     }
+
+    const imagemParaDb = imagemUrlSeguraParaColuna(imagemFinal);
 
     if (payload.id) {
       const { error } = await supabase
@@ -1564,7 +1637,7 @@ function AdminPageInner() {
           descricao: payload.descricao,
           categoria: payload.categoria,
           status: payload.status,
-          imagem: imagemFinal,
+          imagem: imagemParaDb,
         })
         .eq("id", payload.id);
 
@@ -1599,7 +1672,7 @@ function AdminPageInner() {
                 descricao: payload.descricao,
                 categoria: payload.categoria,
                 status: payload.status,
-                imagem: imagemFinal,
+                imagem: imagemParaDb,
               }
             : p,
         ),
@@ -1615,7 +1688,7 @@ function AdminPageInner() {
           descricao: payload.descricao,
           categoria: payload.categoria,
           status: payload.status,
-          imagem: imagemFinal,
+          imagem: imagemParaDb,
         })
         .select("id, restaurante_id, nome, preco, descricao, imagem, status, categoria")
         .single();
@@ -2136,6 +2209,15 @@ function AdminPageInner() {
         onClose={() => setPedidoModal(null)}
         onSave={(patch) => void salvarPedidoModal(patch)}
       />
+
+      {adminToast ? (
+        <div
+          role="status"
+          className="pointer-events-none fixed bottom-6 left-1/2 z-[90] max-w-[min(22rem,calc(100vw-2rem))] -translate-x-1/2 rounded-2xl border border-white/10 bg-zinc-900/90 px-4 py-3 text-center text-[13px] font-medium leading-snug text-white shadow-[0_12px_40px_-8px_rgba(0,0,0,0.45)] backdrop-blur-md"
+        >
+          {adminToast}
+        </div>
+      ) : null}
 
       <ModalPrato
         open={pratoModalOpen}
