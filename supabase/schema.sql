@@ -31,6 +31,19 @@ alter table public.restaurantes
 comment on column public.restaurantes.horario_funcionamento is
   'Texto livre exibido na vitrine (ex.: Ter–Dom 11h–23h).';
 
+alter table public.restaurantes
+  add column if not exists taxa_entrega numeric(10, 2) null;
+
+alter table public.restaurantes
+  drop constraint if exists restaurantes_taxa_entrega_nonneg;
+
+alter table public.restaurantes
+  add constraint restaurantes_taxa_entrega_nonneg
+  check (taxa_entrega is null or taxa_entrega >= 0);
+
+comment on column public.restaurantes.taxa_entrega is
+  'Taxa fixa de entrega em reais (opcional); vitrine pública e checkout de pedidos.';
+
 -- -----------------------------------------------------------------------------
 -- pratos
 -- -----------------------------------------------------------------------------

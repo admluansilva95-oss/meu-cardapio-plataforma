@@ -480,16 +480,16 @@ function AdminSidebar(props: {
   onTab: (t: AdminTab) => void;
 }) {
   const { restaurante, tab, onTab } = props;
-  /** Ordem: pedidos → marca (meio, mais visível no scroll horizontal mobile) → cardápio */
+  /** Ordem: pedidos → cardápio → configuração (por último). */
   const items: { id: AdminTab; label: string; hint: string; Icon: LucideIcon }[] = [
     { id: "pedidos", label: "Pedidos", hint: "Esteira ao vivo", Icon: ClipboardList },
+    { id: "cardapio", label: "Cardápio", hint: "Pratos e preços", Icon: BookOpen },
     {
       id: "configuracoes",
-      label: "Marca e vitrine",
-      hint: "WhatsApp, cor, link e taxa",
+      label: "Painel de configuração",
+      hint: "Nome, link, WhatsApp e aparência",
       Icon: Palette,
     },
-    { id: "cardapio", label: "Cardápio", hint: "Pratos e preços", Icon: BookOpen },
   ];
   return (
     <aside className="flex w-full shrink-0 flex-col border-b border-zinc-200/80 bg-white/90 backdrop-blur-xl lg:h-screen lg:w-72 lg:border-b-0 lg:border-r lg:border-zinc-200/80">
@@ -2055,14 +2055,14 @@ function AdminPageInner() {
                   ? "Painel de operações"
                   : tab === "cardapio"
                     ? "Cardápio"
-                    : "Marca e vitrine"}
+                    : "Painel de configuração"}
               </h1>
               <p className="mt-1 text-sm text-[#86868b]">
                 {tab === "configuracoes" ? (
                   <>
                     <span className="text-[#6e6e73]">
-                      Link público, WhatsApp dos pedidos, horário, taxa e cor — o que o cliente vê no
-                      cardápio.
+                      Nome no cardápio, link público, WhatsApp dos pedidos, horário, taxa e cor — o que o
+                      cliente vê na vitrine.
                     </span>{" "}
                     <span className="text-[#aeaeb2]">·</span>{" "}
                     <span className="font-medium text-[#424245]">{restaurante.nome}</span>
@@ -2377,6 +2377,9 @@ function AdminPageInner() {
                 >
                   <div className="space-y-2">
                     <label className="text-xs font-semibold uppercase tracking-wide text-zinc-500">Nome</label>
+                    <p className="text-[11px] leading-relaxed text-zinc-500">
+                      Como aparece no topo do cardápio público (diferente do endereço do link).
+                    </p>
                     <input
                       type="text"
                       value={cfgNome}

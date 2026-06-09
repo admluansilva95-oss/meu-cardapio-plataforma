@@ -5,7 +5,7 @@ export type StartCheckoutParams = {
   userId: string;
   accessToken: string;
   slug: string;
-  restaurantName: string;
+  restaurantName?: string;
   whatsapp?: string;
 };
 

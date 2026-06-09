@@ -11,7 +11,8 @@ export type CreateSubscriptionCheckoutInput = {
   userEmail: string | undefined;
   priceId: string;
   slug: string;
-  restaurantName: string;
+  /** Opcional; se vazio, o Stripe/metadata usam o slug (nome no painel depois). */
+  restaurantName?: string;
   whatsapp?: string;
 };
 
@@ -46,7 +47,7 @@ export async function createSubscriptionCheckoutSession(
     return { ok: false, error: "Este endereço do cardápio já está em uso. Escolha outro slug.", status: 409 };
   }
 
-  const restaurantName = input.restaurantName.trim() || slug;
+  const restaurantName = (input.restaurantName ?? "").trim() || slug;
   const whatsapp = input.whatsapp?.trim() ?? "";
 
   const origin = resolveStripeCheckoutOrigin();

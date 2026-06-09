@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { startSubscriptionCheckout } from "@/lib/billing/start-checkout";
-import { normalizeSlugInput, slugify } from "@/lib/billing/slug";
+import { isValidSlug, normalizeSlugInput } from "@/lib/billing/slug";
 import { parseCarryFromObParam } from "@/lib/auth/post-signup-carry";
 import { createBrowserSupabaseClient } from "@/lib/supabase";
 import type { Plan } from "@/lib/plans";
@@ -18,25 +18,14 @@ export function SubscribeButton({ plan, carryOb = null }: SubscribeButtonProps) 
   const router = useRouter();
   const [loading, setLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
-  const [restaurantName, setRestaurantName] = useState("");
   const [slug, setSlug] = useState("");
-  const [slugTouched, setSlugTouched] = useState(false);
   const [whatsapp, setWhatsapp] = useState("");
   const [needsOnboarding, setNeedsOnboarding] = useState(false);
 
   useEffect(() => {
-    if (slugTouched) return;
-    if (restaurantName.trim()) {
-      setSlug(slugify(restaurantName));
-    }
-  }, [restaurantName, slugTouched]);
-
-  useEffect(() => {
     const carry = parseCarryFromObParam(carryOb);
     if (!carry) return;
-    setRestaurantName(carry.restaurantName);
     setSlug(carry.slug);
-    setSlugTouched(true);
     if (carry.whatsapp) setWhatsapp(carry.whatsapp);
   }, [carryOb]);
 
@@ -73,13 +62,15 @@ export function SubscribeButton({ plan, carryOb = null }: SubscribeButtonProps) 
       const carry = parseCarryFromObParam(carryOb);
       const priceId = carry?.priceId ?? plan.priceId;
 
-      const checkoutSlug = existingRest?.slug ?? normalizeSlugInput(slug);
-      const checkoutName = restaurantName.trim() || checkoutSlug;
+      const normalized = normalizeSlugInput(slug);
+      const checkoutSlug = existingRest?.slug ?? normalized;
 
       if (!existingRest?.slug) {
-        if (!restaurantName.trim() || !slug.trim()) {
+        if (!normalized || !isValidSlug(normalized)) {
           setNeedsOnboarding(true);
-          setErrorMessage("Informe o nome e o endereço do seu cardápio para continuar.");
+          setErrorMessage(
+            "Informe um endereço válido para o cardápio (letras minúsculas, números e hífens, mín. 3 caracteres).",
+          );
           return;
         }
       }
@@ -89,7 +80,6 @@ export function SubscribeButton({ plan, carryOb = null }: SubscribeButtonProps) 
         userId: session.user.id,
         accessToken: session.access_token,
         slug: checkoutSlug,
-        restaurantName: checkoutName,
         whatsapp: whatsapp.trim() || undefined,
       });
 
@@ -112,22 +102,16 @@ export function SubscribeButton({ plan, carryOb = null }: SubscribeButtonProps) 
     <div className="w-full max-w-md space-y-4">
       {needsOnboarding ? (
         <div className="space-y-3 rounded-2xl border border-zinc-200 bg-zinc-50 p-4 text-left">
-          <p className="text-xs font-medium text-zinc-600">Dados do restaurante</p>
-          <input
-            type="text"
-            placeholder="Nome do restaurante"
-            value={restaurantName}
-            onChange={(e) => setRestaurantName(e.target.value)}
-            className="w-full rounded-xl border border-zinc-200 px-3 py-2 text-sm"
-          />
+          <p className="text-xs font-medium text-zinc-600">Endereço do cardápio</p>
+          <p className="text-[11px] leading-relaxed text-zinc-500">
+            Escolha o link público (slug). O nome exibido no cardápio você ajusta no painel, em Painel de
+            configuração.
+          </p>
           <input
             type="text"
             placeholder="slug-do-restaurante"
             value={slug}
-            onChange={(e) => {
-              setSlugTouched(true);
-              setSlug(e.target.value);
-            }}
+            onChange={(e) => setSlug(e.target.value)}
             className="w-full rounded-xl border border-zinc-200 px-3 py-2 text-sm"
           />
         </div>

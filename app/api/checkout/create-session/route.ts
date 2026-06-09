@@ -83,9 +83,8 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "slug é obrigatório." }, { status: 400 });
     }
 
-    if (!restaurantName || typeof restaurantName !== "string") {
-      return NextResponse.json({ error: "restaurantName é obrigatório." }, { status: 400 });
-    }
+    const restaurantNameResolved =
+      typeof restaurantName === "string" ? restaurantName : "";
 
     const authHeader = request.headers.get("Authorization");
     const bearerToken = authHeader?.startsWith("Bearer ") ? authHeader.slice(7).trim() : null;
@@ -181,7 +180,7 @@ export async function POST(request: NextRequest) {
       userEmail: user.email,
       priceId,
       slug,
-      restaurantName,
+      restaurantName: restaurantNameResolved,
       whatsapp: typeof whatsapp === "string" ? whatsapp : undefined,
     });
 

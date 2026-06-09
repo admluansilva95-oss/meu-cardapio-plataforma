@@ -2,9 +2,9 @@
 
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import { startSubscriptionCheckout } from "@/lib/billing/start-checkout";
-import { isValidSlug, normalizeSlugInput, slugify } from "@/lib/billing/slug";
+import { isValidSlug, normalizeSlugInput } from "@/lib/billing/slug";
 import { getPlanByPriceId, PLANS } from "@/lib/plans";
 import { PhoneInput } from "@/components/PhoneInput";
 import { buildAssinarPathWithCarry } from "@/lib/auth/post-signup-carry";
@@ -30,19 +30,10 @@ export function CadastroForm() {
 
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
-  const [restaurantName, setRestaurantName] = useState("");
   const [slug, setSlug] = useState("");
-  const [slugTouched, setSlugTouched] = useState(false);
   const [whatsapp, setWhatsapp] = useState("");
   const [loading, setLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
-
-  useEffect(() => {
-    if (slugTouched) return;
-    if (restaurantName.trim()) {
-      setSlug(slugify(restaurantName));
-    }
-  }, [restaurantName, slugTouched]);
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -63,7 +54,6 @@ export function CadastroForm() {
       const afterConfirmPath = buildAssinarPathWithCarry({
         priceId: plan.priceId,
         slug: normalizedSlug,
-        restaurantName: restaurantName.trim(),
         whatsapp: whatsapp.trim() || undefined,
       });
       const { data, error } = await supabase.auth.signUp({
@@ -92,7 +82,6 @@ export function CadastroForm() {
         userId: session.user.id,
         accessToken: session.access_token,
         slug: normalizedSlug,
-        restaurantName: restaurantName.trim(),
         whatsapp: whatsapp.trim() || undefined,
       });
 
@@ -139,21 +128,8 @@ export function CadastroForm() {
         <div className="rounded-3xl border border-white/10 bg-white/[0.035] p-8 backdrop-blur-2xl">
           <form onSubmit={handleSubmit} className="space-y-5">
             <div className="space-y-2">
-              <label htmlFor="restaurantName" className="text-xs font-medium text-zinc-300">
-                Nome do restaurante
-              </label>
-              <input
-                id="restaurantName"
-                type="text"
-                required
-                value={restaurantName}
-                onChange={(e) => setRestaurantName(e.target.value)}
-                className="w-full rounded-2xl border border-white/10 bg-black/30 px-4 py-3 text-sm text-white outline-none focus:border-teal-400/35 focus:ring-4 focus:ring-teal-500/15"
-              />
-            </div>
-            <div className="space-y-2">
               <label htmlFor="slug" className="text-xs font-medium text-zinc-300">
-                Endereço do cardápio (slug)
+                Endereço público do cardápio
               </label>
               <div className="flex items-center gap-2 rounded-2xl border border-white/10 bg-black/30 px-4 py-3 text-sm text-zinc-500">
                 <span className="shrink-0">meucardapio.app/</span>
@@ -162,16 +138,14 @@ export function CadastroForm() {
                   type="text"
                   required
                   value={slug}
-                  onChange={(e) => {
-                    setSlugTouched(true);
-                    setSlug(e.target.value);
-                  }}
+                  onChange={(e) => setSlug(e.target.value)}
                   className="min-w-0 flex-1 bg-transparent text-white outline-none"
                   placeholder="restaurante-do-luan"
                 />
               </div>
               <p className="text-[11px] text-zinc-500">
-                Só será reservado após o pagamento aprovado.
+                O nome exibido no cardápio você define depois no painel, em Painel de configuração. Este endereço só
+                fica reservado após o pagamento aprovado.
               </p>
             </div>
             <div className="space-y-2">
