@@ -20,6 +20,11 @@ function sanitizeJsonBodyString(raw: string): string {
   return latin1SafeString(raw);
 }
 
+/** UTF-8: evita `ByteString` em runtimes que forçam Latin-1 quando `body` é string (ex.: `•` U+2022). */
+function utf8EncodedBodyFromString(s: string): Uint8Array {
+  return new TextEncoder().encode(s);
+}
+
 /**
  * Ajusta `RequestInit` para evitar `TypeError: ByteString` ao chamar `fetch`:
  * cabeçalhos só podem ser Latin-1 em alguns runtimes; corpo JSON com •, emojis, etc.
@@ -29,11 +34,25 @@ export function sanitizeFetchInit(init: RequestInit): RequestInit {
   const out: RequestInit = { ...init };
 
   if (typeof out.body === "string") {
-    out.body = sanitizeJsonBodyString(out.body);
+    const sanitized = sanitizeJsonBodyString(out.body);
+    out.body = utf8EncodedBodyFromString(sanitized) as BodyInit;
   }
 
-  if (out.headers != null) {
-    out.headers = cloneHeadersLatin1Safe(new Headers(out.headers as HeadersInit));
+  const headersSource = out.headers != null ? (out.headers as HeadersInit) : undefined;
+  const h = new Headers(headersSource);
+
+  if (out.body instanceof Uint8Array) {
+    const rawCt = h.get("Content-Type") ?? "";
+    if (/application\/json/i.test(rawCt) && !/charset=/i.test(rawCt)) {
+      const base = rawCt.split(";")[0].trim() || "application/json";
+      h.set("Content-Type", `${base}; charset=utf-8`);
+    }
+  }
+
+  if (out.headers != null || (out.body instanceof Uint8Array && h.has("Content-Type"))) {
+    out.headers = cloneHeadersLatin1Safe(h);
+  } else {
+    out.headers = undefined;
   }
 
   return out;
@@ -104,10 +123,17 @@ async function fetchWithSanitizedRequest(input: Request, baseFetch: typeof fetch
   try {
     const text = await input.clone().text();
     const bodyOut = sanitizeJsonBodyString(text);
+    const bodyBytes = utf8EncodedBodyFromString(bodyOut);
+    const h = cloneHeadersLatin1Safe(input.headers);
+    const rawCt = h.get("Content-Type") ?? "";
+    if (/application\/json/i.test(rawCt) && !/charset=/i.test(rawCt)) {
+      const base = rawCt.split(";")[0].trim() || "application/json";
+      h.set("Content-Type", `${base}; charset=utf-8`);
+    }
     const req = new Request(input.url, {
       method,
-      headers: cloneHeadersLatin1Safe(input.headers),
-      body: bodyOut,
+      headers: h,
+      body: bodyBytes as BodyInit,
       mode: input.mode,
       credentials: input.credentials,
       cache: input.cache,
