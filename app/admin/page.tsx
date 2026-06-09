@@ -16,7 +16,7 @@ import { isRetryableSupabaseError, withRetry } from "@/lib/with-retry";
 import { mensagemErroSupabasePainel } from "@/lib/supabase/mensagem-erro";
 import { mensagemUploadStorageAmigavel } from "@/lib/restaurante/mensagem-upload-storage";
 import { sanitizarNomeArquivoStorageBase } from "@/lib/restaurante/sanitizar-nome-arquivo-storage";
-import { sanitizeFetchInit } from "@/lib/fetch-latin1-safe";
+import { latin1SafeFetch, initJsonPost, sanitizeFetchInit } from "@/lib/fetch-latin1-safe";
 import {
   normalizarPrecoCampoAoSair,
   parsePrecoBrasileiro,
@@ -1467,7 +1467,7 @@ function AdminPageInner() {
         } = await supabase.auth.getSession();
         const token = session?.access_token;
         if (!token) return;
-        const res = await fetch(
+        const res = await latin1SafeFetch(
           "/api/admin/diagnostics",
           sanitizeFetchInit({
             headers: { Authorization: `Bearer ${token}` },
@@ -1589,17 +1589,10 @@ function AdminPageInner() {
         return;
       }
 
-      const res = await fetch(
+      const res = await latin1SafeFetch(
         "/api/restaurante/config",
-        sanitizeFetchInit({
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            Authorization: `Bearer ${token}`,
-          },
-          credentials: "include",
-          cache: "no-store",
-          body: JSON.stringify({
+        initJsonPost(
+          {
             restauranteId: restaurante.id,
             nome: nomeLimpo,
             whatsapp: cfgWhatsapp.trim(),
@@ -1615,8 +1608,9 @@ function AdminPageInner() {
             entrega_modo: cfgEntregaModo,
             cardapio_categorias: cfgCardapioCategorias,
             logo: logoOut,
-          }),
-        }),
+          },
+          token,
+        ),
       );
 
       const json = (await res.json()) as { error?: string; warning?: string };

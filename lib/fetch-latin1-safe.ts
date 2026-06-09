@@ -1,9 +1,9 @@
-import { jsonStringifyLatin1Wire, latin1SafeString } from "@/lib/restaurante/json-latin1-wire";
+import { jsonStringifyLatin1Wire, expandLatin1UserText, latin1SafeString } from "@/lib/restaurante/json-latin1-wire";
 
 export function cloneHeadersLatin1Safe(headers: Headers): Headers {
   const fixed = new Headers();
   headers.forEach((value, key) => {
-    fixed.set(latin1SafeString(key), latin1SafeString(value));
+    fixed.set(latin1SafeString(key), expandLatin1UserText(value));
   });
   return fixed;
 }
@@ -37,6 +37,28 @@ export function sanitizeFetchInit(init: RequestInit): RequestInit {
   }
 
   return out;
+}
+
+/** `fetch` global com sanitização de `Request` (recomendado para chamadas fora do cliente Supabase). */
+export const latin1SafeFetch = createLatin1SafeFetch();
+
+/**
+ * `RequestInit` para POST JSON já 100% compatível com ByteString (corpo + cabeçalhos).
+ * Use com `latin1SafeFetch(url, initJsonPost(payload, token))`.
+ */
+export function initJsonPost(payload: unknown, bearerToken: string): RequestInit {
+  return {
+    method: "POST",
+    headers: cloneHeadersLatin1Safe(
+      new Headers({
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${bearerToken}`,
+      }),
+    ),
+    credentials: "include",
+    cache: "no-store",
+    body: jsonStringifyLatin1Wire(payload),
+  };
 }
 
 async function fetchWithSanitizedRequest(input: Request, baseFetch: typeof fetch): Promise<Response> {

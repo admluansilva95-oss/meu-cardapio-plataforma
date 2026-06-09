@@ -12,16 +12,29 @@ export function latin1SafeString(s: string): string {
 }
 
 /**
- * `JSON.stringify` recursivo que, em cada string, remove code points > U+00FF.
- * Alguns navegadores / extensões tratam partes do `fetch` com `credentials: "include"`
- * como Latin-1 (ByteString); caracteres como • (U+2022) ou traços tipográficos (U+2013)
- * no corpo ou em metadados podem disparar `TypeError: Cannot convert argument to a ByteString`.
- *
- * Mantém acentos Latin-1 comuns (ex.: á, ç, é) porque ficam ≤ 255.
+ * Normaliza texto digitado/copiado (Word, iOS) antes de enviar em JSON ou cabeçalhos Latin-1:
+ * bullets e travessões viram `-`, aspas “curvas” viram `'`/`"`, reticências tipográficas vêm `...`,
+ * depois remove qualquer caractere ainda fora de Latin-1.
+ */
+export function expandLatin1UserText(s: string): string {
+  const t = s
+    .replace(/\u2022/g, "-") /* • bullet */
+    .replace(/\u2013|\u2014/g, "-") /* – — */
+    .replace(/\u2026/g, "...") /* … */
+    .replace(/\u00A0/g, " ")
+    .replace(/[\u2018\u2019]/g, "'")
+    .replace(/[\u201C\u201D]/g, '"')
+    .replace(/\uFEFF/g, ""); /* BOM */
+  return latin1SafeString(t);
+}
+
+/**
+ * `JSON.stringify` recursivo: em cada string aplica `expandLatin1UserText` (troca •, travessões,
+ * aspas tipográficas, etc.) e remove o que ainda passar de U+00FF — compatível com ByteString no `fetch`.
  */
 export function jsonStringifyLatin1Wire(value: unknown): string {
   return JSON.stringify(value, (_key, v) => {
     if (typeof v !== "string") return v;
-    return latin1SafeString(v);
+    return expandLatin1UserText(v);
   });
 }
