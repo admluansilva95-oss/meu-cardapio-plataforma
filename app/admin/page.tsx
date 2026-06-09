@@ -43,7 +43,13 @@ import {
 } from "@/lib/restaurante/cardapio-categorias";
 import { EntregaComercialSection, taxaFixaInicialDeRestaurante, taxaFixaParaPersistir } from "@/components/admin/EntregaComercialSection";
 import { CategoriaPratoField } from "@/components/admin/CategoriaPratoField";
-import { BookOpen, ClipboardList, Palette, type LucideIcon } from "lucide-react";
+import {
+  ClipboardList,
+  ListOrdered,
+  Palette,
+  UtensilsCrossed,
+  type LucideIcon,
+} from "lucide-react";
 import { FuncionamentoSemanalForm } from "@/components/admin/FuncionamentoSemanalForm";
 import { RestauranteLogoUploadField } from "@/components/admin/RestauranteLogoUploadField";
 import { IosToggle } from "@/components/ui/IosToggle";
@@ -64,7 +70,7 @@ function resolveRestauranteDisplayNome(nome: string | null | undefined, slug: st
   return formatSlugToDisplayName(slug);
 }
 
-type AdminTab = "pedidos" | "cardapio" | "configuracoes";
+type AdminTab = "pedidos" | "cardapio" | "pratos" | "configuracoes";
 type KanbanCol = "recebidos" | "cozinha" | "pronto" | "entregue";
 type FormaPagamento = "Pix" | "Cartão" | "Dinheiro";
 
@@ -474,20 +480,119 @@ function AdminMissingSlugView() {
 
 /* ——— Subcomponentes internos (mesmo arquivo) ——— */
 
+function AdminPratosTable(props: {
+  pratosRows: Prato[];
+  pratoDeletingId: string | null;
+  onEdit: (prato: Prato) => void;
+  onDelete: (prato: Prato) => void;
+}) {
+  const { pratosRows, pratoDeletingId, onEdit, onDelete } = props;
+  return (
+    <div className="overflow-hidden rounded-2xl border border-black/[0.06] bg-white shadow-[0_8px_30px_-16px_rgba(0,0,0,0.12)]">
+      <div className="flex flex-wrap items-center justify-between gap-3 border-b border-black/[0.06] px-5 py-4">
+        <div>
+          <h2 className="text-sm font-semibold tracking-tight text-[#1d1d1f]">Pratos</h2>
+          <p className="text-xs text-[#86868b]">
+            Itens visíveis no link público; alterações aparecem na hora para o cliente.
+          </p>
+        </div>
+        <span className="rounded-full bg-[#f5f5f7] px-3 py-1 text-xs font-medium text-[#6e6e73]">
+          {pratosRows.length} {pratosRows.length === 1 ? "item" : "itens"}
+        </span>
+      </div>
+      <div className="overflow-x-auto">
+        <table className="min-w-full divide-y divide-black/[0.06] text-left text-sm">
+          <thead className="bg-[#fafafa] text-[11px] font-semibold uppercase tracking-wide text-[#86868b]">
+            <tr>
+              <th className="px-5 py-3 font-medium">Nome</th>
+              <th className="px-5 py-3 font-medium">Categoria</th>
+              <th className="px-5 py-3 font-medium">Preço</th>
+              <th className="px-5 py-3 font-medium">Status</th>
+              <th className="px-5 py-3 text-right font-medium">Ações</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-black/[0.06]">
+            {pratosRows.map((prato) => (
+              <tr key={prato.id} className="transition hover:bg-[#fafafa]/80">
+                <td className="px-5 py-3">
+                  <div className="font-medium text-[#1d1d1f]">{prato.nome}</div>
+                  {prato.descricao ? (
+                    <div className="mt-0.5 line-clamp-2 text-xs text-[#86868b]">{prato.descricao}</div>
+                  ) : null}
+                </td>
+                <td className="whitespace-nowrap px-5 py-3 text-[#424245]">
+                  {prato.categoria?.trim() ? prato.categoria : <span className="text-[#aeaeb2]">—</span>}
+                </td>
+                <td className="whitespace-nowrap px-5 py-3 text-[#424245]">{formatBRL(prato.preco)}</td>
+                <td className="px-5 py-3">
+                  <span
+                    className={[
+                      "inline-flex rounded-full px-2.5 py-0.5 text-xs font-medium",
+                      prato.status === "ativo"
+                        ? "bg-emerald-50 text-emerald-800 ring-1 ring-emerald-200/60"
+                        : "bg-amber-50 text-amber-900 ring-1 ring-amber-200/60",
+                    ].join(" ")}
+                  >
+                    {prato.status === "ativo" ? "Ativo" : "Pausado"}
+                  </span>
+                </td>
+                <td className="whitespace-nowrap px-5 py-3 text-right">
+                  <button
+                    type="button"
+                    disabled={pratoDeletingId !== null}
+                    onClick={() => onEdit(prato)}
+                    className="mr-2 rounded-lg px-2 py-1 text-xs font-semibold text-[#0071e3] transition hover:bg-[#0071e3]/8 disabled:cursor-not-allowed disabled:opacity-40"
+                  >
+                    Editar
+                  </button>
+                  <button
+                    type="button"
+                    disabled={pratoDeletingId !== null}
+                    onClick={() => onDelete(prato)}
+                    className="inline-flex min-w-[4.5rem] items-center justify-center rounded-lg px-2 py-1 text-xs font-semibold text-red-600 transition hover:bg-red-50 disabled:cursor-wait disabled:opacity-60"
+                  >
+                    {pratoDeletingId === prato.id ? (
+                      <>
+                        <span
+                          className="mr-1.5 h-3.5 w-3.5 shrink-0 animate-spin rounded-full border-2 border-red-200 border-t-red-600"
+                          aria-hidden
+                        />
+                        Excluindo…
+                      </>
+                    ) : (
+                      "Excluir"
+                    )}
+                  </button>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
 function AdminSidebar(props: {
   restaurante: Restaurante;
   tab: AdminTab;
   onTab: (t: AdminTab) => void;
 }) {
   const { restaurante, tab, onTab } = props;
-  /** Ordem: pedidos → cardápio → configuração (por último). */
+  /** Ordem: pedidos → cardápio → pratos → painel de configuração. */
   const items: { id: AdminTab; label: string; hint: string; Icon: LucideIcon }[] = [
     { id: "pedidos", label: "Pedidos", hint: "Esteira ao vivo", Icon: ClipboardList },
-    { id: "cardapio", label: "Cardápio", hint: "Pratos e preços", Icon: BookOpen },
+    {
+      id: "cardapio",
+      label: "Cardápio",
+      hint: "Seções na vitrine e frase de abertura",
+      Icon: ListOrdered,
+    },
+    { id: "pratos", label: "Pratos", hint: "Itens, preços e categorias", Icon: UtensilsCrossed },
     {
       id: "configuracoes",
       label: "Painel de configuração",
-      hint: "Nome, link, WhatsApp e aparência",
+      hint: "Nome, link, WhatsApp, horário, entrega e marca",
       Icon: Palette,
     },
   ];
@@ -1053,6 +1158,7 @@ function AdminPageInner() {
   const [cfgVitrineFechada, setCfgVitrineFechada] = useState(false);
   const [cfgMensagemFechado, setCfgMensagemFechado] = useState("");
   const [cfgMensagemBoasVindas, setCfgMensagemBoasVindas] = useState("");
+  const [novaSecaoCardapio, setNovaSecaoCardapio] = useState("");
   const [cfgMsg, setCfgMsg] = useState<string | null>(null);
   const [cfgLogoUrl, setCfgLogoUrl] = useState<string | null>(null);
   const [cfgLogoFile, setCfgLogoFile] = useState<File | null>(null);
@@ -1300,7 +1406,8 @@ function AdminPageInner() {
   }, [loadData]);
 
   useEffect(() => {
-    if (tab !== "configuracoes" || !restaurante) return;
+    if (!restaurante) return;
+    if (tab !== "configuracoes" && tab !== "cardapio") return;
     setCfgNome(restaurante.rawNome !== "" ? restaurante.rawNome : restaurante.nome);
     setCfgWhatsapp(restaurante.whatsapp);
     const parsedFn = restaurante.funcionamento_semana;
@@ -1342,8 +1449,10 @@ function AdminPageInner() {
     setCfgVitrineFechada(restaurante.vitrine_fechada === true);
     setCfgMensagemFechado(restaurante.mensagem_fechado ?? "");
     setCfgMensagemBoasVindas(restaurante.mensagem_boas_vindas ?? "");
-    setCfgMsg(null);
-  }, [tab, restaurante, marcaVitrineDadosSyncKey]);
+    if (tab === "configuracoes") {
+      setCfgMsg(null);
+    }
+  }, [tab, restaurante, pratos, marcaVitrineDadosSyncKey]);
 
   useEffect(() => {
     if (!restaurante) {
@@ -2012,6 +2121,32 @@ function AdminPageInner() {
     { id: "entregue", title: "Entregue", accent: "from-zinc-400/10 to-transparent" },
   ];
 
+  const moverSecaoCardapio = (idx: number, delta: number) => {
+    setCfgCardapioCategorias((prev) => {
+      const j = idx + delta;
+      if (j < 0 || j >= prev.length) return prev;
+      const next = [...prev];
+      const t = next[idx]!;
+      next[idx] = next[j]!;
+      next[j] = t;
+      return next;
+    });
+  };
+
+  const removerSecaoCardapio = (idx: number) => {
+    setCfgCardapioCategorias((prev) => prev.filter((_, i) => i !== idx));
+  };
+
+  const adicionarSecaoCardapioDigitada = () => {
+    const t = novaSecaoCardapio.trim();
+    if (!t) return;
+    setCfgCardapioCategorias((prev) => {
+      if (prev.includes(t)) return prev;
+      return [...prev, t];
+    });
+    setNovaSecaoCardapio("");
+  };
+
   if (!tenantSlug) {
     if (resolvingSlug) {
       return (
@@ -2054,15 +2189,34 @@ function AdminPageInner() {
                 {tab === "pedidos"
                   ? "Painel de operações"
                   : tab === "cardapio"
-                    ? "Cardápio"
-                    : "Painel de configuração"}
+                    ? "Cardápio na vitrine"
+                    : tab === "pratos"
+                      ? "Pratos"
+                      : "Painel de configuração"}
               </h1>
               <p className="mt-1 text-sm text-[#86868b]">
                 {tab === "configuracoes" ? (
                   <>
                     <span className="text-[#6e6e73]">
-                      Nome no cardápio, link público, WhatsApp dos pedidos, horário, taxa e cor — o que o
-                      cliente vê na vitrine.
+                      Nome no cardápio, link público, WhatsApp, horário de funcionamento, entrega, logo e
+                      cor — dados do estabelecimento.
+                    </span>{" "}
+                    <span className="text-[#aeaeb2]">·</span>{" "}
+                    <span className="font-medium text-[#424245]">{restaurante.nome}</span>
+                  </>
+                ) : tab === "cardapio" ? (
+                  <>
+                    <span className="text-[#6e6e73]">
+                      Ordem das seções no link público e frase de abertura. Em Pratos você define cada item e
+                      a categoria (seção) dele.
+                    </span>{" "}
+                    <span className="text-[#aeaeb2]">·</span>{" "}
+                    <span className="font-medium text-[#424245]">{restaurante.nome}</span>
+                  </>
+                ) : tab === "pratos" ? (
+                  <>
+                    <span className="text-[#6e6e73]">
+                      Cadastro de itens, preço e categoria exibida no cardápio público.
                     </span>{" "}
                     <span className="text-[#aeaeb2]">·</span>{" "}
                     <span className="font-medium text-[#424245]">{restaurante.nome}</span>
@@ -2081,6 +2235,25 @@ function AdminPageInner() {
               </p>
             </div>
             {tab === "cardapio" ? (
+              <button
+                type="button"
+                disabled={tenantSaving}
+                onClick={() => void salvarConfiguracoesTenant()}
+                className="inline-flex items-center justify-center gap-2 rounded-xl bg-[#1d1d1f] px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-black disabled:cursor-wait disabled:opacity-60"
+              >
+                {tenantSaving ? (
+                  <>
+                    <span
+                      className="h-4 w-4 shrink-0 animate-spin rounded-full border-2 border-white/30 border-t-white"
+                      aria-hidden
+                    />
+                    Salvando…
+                  </>
+                ) : (
+                  "Salvar cardápio"
+                )}
+              </button>
+            ) : tab === "pratos" ? (
               <button
                 type="button"
                 onClick={openCreatePrato}
@@ -2215,94 +2388,125 @@ function AdminPageInner() {
           ) : null}
 
           {tab === "cardapio" ? (
-            <div className="overflow-hidden rounded-2xl border border-black/[0.06] bg-white shadow-[0_8px_30px_-16px_rgba(0,0,0,0.12)]">
-              <div className="flex flex-wrap items-center justify-between gap-3 border-b border-black/[0.06] px-5 py-4">
-                <div>
-                  <h2 className="text-sm font-semibold tracking-tight text-[#1d1d1f]">Pratos</h2>
-                  <p className="text-xs text-[#86868b]">
-                    Itens visíveis no link público; alterações aparecem na hora para o cliente.
+            <div className="mx-auto max-w-2xl space-y-6">
+              <div className="rounded-3xl border border-zinc-100 bg-white px-5 py-6 shadow-sm sm:px-7 sm:py-8">
+                <h2 className="text-sm font-semibold tracking-tight text-[#1d1d1f]">Frase no cardápio público</h2>
+                <p className="mt-1 text-xs leading-relaxed text-[#86868b]">
+                  Aparece abaixo do status na vitrine. Deixe em branco para usar o texto padrão.
+                </p>
+                <input
+                  type="text"
+                  value={cfgMensagemBoasVindas}
+                  onChange={(e) => setCfgMensagemBoasVindas(e.target.value.slice(0, 200))}
+                  maxLength={200}
+                  placeholder="Uma frase de impacto para quem abre o link do cardápio."
+                  className="mt-3 w-full rounded-xl border border-zinc-200 bg-zinc-50/50 px-3 py-2.5 text-sm text-zinc-900 outline-none transition placeholder:text-zinc-400 focus:border-transparent focus:ring-2 focus:ring-zinc-900"
+                />
+              </div>
+
+              <div className="rounded-3xl border border-zinc-100 bg-white px-5 py-6 shadow-sm sm:px-7 sm:py-8">
+                <h2 className="text-sm font-semibold tracking-tight text-[#1d1d1f]">Seções do cardápio</h2>
+                <p className="mt-1 text-xs leading-relaxed text-[#86868b]">
+                  Esta ordem define como as categorias aparecem no link público. Cada prato usa uma categoria
+                  (editável em Pratos); seções sem pratos somem da vitrine.
+                </p>
+                <ul className="mt-4 space-y-2">
+                  {cfgCardapioCategorias.map((nome, idx) => (
+                    <li
+                      key={`${nome}-${idx}`}
+                      className="flex flex-wrap items-center gap-2 rounded-xl border border-zinc-100 bg-zinc-50/50 px-3 py-2.5 text-sm"
+                    >
+                      <span className="min-w-0 flex-1 font-medium text-zinc-900">{nome}</span>
+                      <div className="flex shrink-0 gap-1">
+                        <button
+                          type="button"
+                          disabled={idx === 0}
+                          onClick={() => moverSecaoCardapio(idx, -1)}
+                          className="rounded-lg border border-zinc-200 bg-white px-2 py-1 text-xs font-semibold text-zinc-700 transition hover:bg-zinc-50 disabled:cursor-not-allowed disabled:opacity-40"
+                          aria-label="Mover seção para cima"
+                        >
+                          ↑
+                        </button>
+                        <button
+                          type="button"
+                          disabled={idx >= cfgCardapioCategorias.length - 1}
+                          onClick={() => moverSecaoCardapio(idx, 1)}
+                          className="rounded-lg border border-zinc-200 bg-white px-2 py-1 text-xs font-semibold text-zinc-700 transition hover:bg-zinc-50 disabled:cursor-not-allowed disabled:opacity-40"
+                          aria-label="Mover seção para baixo"
+                        >
+                          ↓
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => removerSecaoCardapio(idx)}
+                          className="rounded-lg px-2 py-1 text-xs font-semibold text-red-600 transition hover:bg-red-50"
+                        >
+                          Remover
+                        </button>
+                      </div>
+                    </li>
+                  ))}
+                </ul>
+                {cfgCardapioCategorias.length === 0 ? (
+                  <p className="mt-3 text-xs text-zinc-500">
+                    Nenhuma seção ainda. Adicione um nome abaixo ou cadastre pratos com categoria em Pratos.
                   </p>
+                ) : null}
+                <div className="mt-4 flex flex-col gap-2 sm:flex-row sm:items-center">
+                  <input
+                    type="text"
+                    value={novaSecaoCardapio}
+                    onChange={(e) => setNovaSecaoCardapio(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") {
+                        e.preventDefault();
+                        adicionarSecaoCardapioDigitada();
+                      }
+                    }}
+                    placeholder="Nome da nova seção (ex.: Bebidas)"
+                    maxLength={48}
+                    className="min-w-0 flex-1 rounded-xl border border-zinc-200 bg-white px-3 py-2.5 text-sm text-zinc-900 outline-none transition focus:border-transparent focus:ring-2 focus:ring-zinc-900"
+                  />
+                  <button
+                    type="button"
+                    onClick={adicionarSecaoCardapioDigitada}
+                    className="shrink-0 rounded-xl border border-zinc-200 bg-zinc-900 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-zinc-800"
+                  >
+                    Adicionar seção
+                  </button>
                 </div>
-                <span className="rounded-full bg-[#f5f5f7] px-3 py-1 text-xs font-medium text-[#6e6e73]">
-                  {pratosRows.length} {pratosRows.length === 1 ? "item" : "itens"}
-                </span>
               </div>
-              <div className="overflow-x-auto">
-                <table className="min-w-full divide-y divide-black/[0.06] text-left text-sm">
-                  <thead className="bg-[#fafafa] text-[11px] font-semibold uppercase tracking-wide text-[#86868b]">
-                    <tr>
-                      <th className="px-5 py-3 font-medium">Nome</th>
-                      <th className="px-5 py-3 font-medium">Categoria</th>
-                      <th className="px-5 py-3 font-medium">Preço</th>
-                      <th className="px-5 py-3 font-medium">Status</th>
-                      <th className="px-5 py-3 text-right font-medium">Ações</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-black/[0.06]">
-                    {pratosRows.map((prato) => (
-                      <tr key={prato.id} className="transition hover:bg-[#fafafa]/80">
-                        <td className="px-5 py-3">
-                          <div className="font-medium text-[#1d1d1f]">{prato.nome}</div>
-                          {prato.descricao ? (
-                            <div className="mt-0.5 line-clamp-2 text-xs text-[#86868b]">
-                              {prato.descricao}
-                            </div>
-                          ) : null}
-                        </td>
-                        <td className="whitespace-nowrap px-5 py-3 text-[#424245]">
-                          {prato.categoria?.trim() ? prato.categoria : (
-                            <span className="text-[#aeaeb2]">—</span>
-                          )}
-                        </td>
-                        <td className="whitespace-nowrap px-5 py-3 text-[#424245]">
-                          {formatBRL(prato.preco)}
-                        </td>
-                        <td className="px-5 py-3">
-                          <span
-                            className={[
-                              "inline-flex rounded-full px-2.5 py-0.5 text-xs font-medium",
-                              prato.status === "ativo"
-                                ? "bg-emerald-50 text-emerald-800 ring-1 ring-emerald-200/60"
-                                : "bg-amber-50 text-amber-900 ring-1 ring-amber-200/60",
-                            ].join(" ")}
-                          >
-                            {prato.status === "ativo" ? "Ativo" : "Pausado"}
-                          </span>
-                        </td>
-                        <td className="whitespace-nowrap px-5 py-3 text-right">
-                          <button
-                            type="button"
-                            disabled={pratoDeletingId !== null}
-                            onClick={() => openEditPrato(prato)}
-                            className="mr-2 rounded-lg px-2 py-1 text-xs font-semibold text-[#0071e3] transition hover:bg-[#0071e3]/8 disabled:cursor-not-allowed disabled:opacity-40"
-                          >
-                            Editar
-                          </button>
-                          <button
-                            type="button"
-                            disabled={pratoDeletingId !== null}
-                            onClick={() => void handleDeletePrato(prato)}
-                            className="inline-flex min-w-[4.5rem] items-center justify-center rounded-lg px-2 py-1 text-xs font-semibold text-red-600 transition hover:bg-red-50 disabled:cursor-wait disabled:opacity-60"
-                          >
-                            {pratoDeletingId === prato.id ? (
-                              <>
-                                <span
-                                  className="mr-1.5 h-3.5 w-3.5 shrink-0 animate-spin rounded-full border-2 border-red-200 border-t-red-600"
-                                  aria-hidden
-                                />
-                                Excluindo…
-                              </>
-                            ) : (
-                              "Excluir"
-                            )}
-                          </button>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
+
+              {cfgMsg ? (
+                <p
+                  className={
+                    cfgMsg === "Configurações salvas com sucesso."
+                      ? "text-center text-sm font-medium text-emerald-700"
+                      : cfgMsg.startsWith("Horário e taxa não foram gravados") ||
+                          cfgMsg.startsWith("Parte dos dados")
+                        ? "text-center text-sm font-medium text-amber-800"
+                        : "text-center text-sm font-medium text-red-600"
+                  }
+                  role="status"
+                >
+                  {cfgMsg}
+                </p>
+              ) : null}
+
+              <p className="text-center text-[11px] leading-relaxed text-zinc-500">
+                O botão &quot;Salvar cardápio&quot; no topo grava também nome, WhatsApp e demais dados do painel de
+                configuração já preenchidos — use após ajustar seções ou a frase.
+              </p>
             </div>
+          ) : null}
+
+          {tab === "pratos" ? (
+            <AdminPratosTable
+              pratosRows={pratosRows}
+              pratoDeletingId={pratoDeletingId}
+              onEdit={openEditPrato}
+              onDelete={(p) => void handleDeletePrato(p)}
+            />
           ) : null}
 
           {tab === "configuracoes" ? (
@@ -2438,21 +2642,6 @@ function AdminPageInner() {
                         />
                       </div>
                     ) : null}
-                  </div>
-
-                  <div className="rounded-2xl border border-zinc-100 bg-white px-5 py-4 sm:px-6">
-                    <label htmlFor="cfg-frase-vitrine" className="text-sm font-medium text-zinc-800">
-                      Frase no cardápio público
-                    </label>
-                    <input
-                      id="cfg-frase-vitrine"
-                      type="text"
-                      value={cfgMensagemBoasVindas}
-                      onChange={(e) => setCfgMensagemBoasVindas(e.target.value.slice(0, 200))}
-                      maxLength={200}
-                      placeholder="Uma frase de impacto para quem abre o link do cardápio."
-                      className="mt-2 w-full rounded-xl border border-zinc-200 bg-zinc-50/50 px-3 py-2.5 text-sm text-zinc-900 outline-none transition placeholder:text-zinc-400 focus:border-transparent focus:ring-2 focus:ring-zinc-900"
-                    />
                   </div>
 
                   <EntregaComercialSection
