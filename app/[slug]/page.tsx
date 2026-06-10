@@ -30,6 +30,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { UtensilsCrossed } from "lucide-react";
 import { isValidSlug } from "@/lib/billing/slug";
 import { latin1SafeFetch, sanitizeFetchInit } from "@/lib/fetch-latin1-safe";
+import { expandLatin1UserText, jsonStringifyLatin1Wire } from "@/lib/restaurante/json-latin1-wire";
 import { isRetryableSupabaseError, withRetry } from "@/lib/with-retry";
 
 /** Após esgotar retries ou falha de rede, evita mensagens técnicas cruas para o cliente final. */
@@ -83,7 +84,7 @@ function waMeUrl(telefone: string, message: string) {
   if (d.length === 10 && !d.startsWith("55")) {
     d = `55${d}`;
   }
-  const text = encodeURIComponent(message);
+  const text = encodeURIComponent(expandLatin1UserText(message));
   return `https://wa.me/${d}?text=${text}`;
 }
 
@@ -766,7 +767,7 @@ export default function PublicCardapioPage() {
           method: "POST",
           headers: { "Content-Type": "application/json; charset=utf-8" },
           cache: "no-store",
-          body: JSON.stringify({
+          body: jsonStringifyLatin1Wire({
             restauranteId: restaurante.id,
             cliente: nomeOk,
             telefone: formatarTelefoneWhatsappBR(clienteTelefoneDisplay),

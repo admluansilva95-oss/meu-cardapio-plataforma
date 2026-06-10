@@ -50,7 +50,7 @@ function linhasItensComMarcador(
   itens: CarrinhoItem[],
   marcador: "bullet" | "ascii",
 ): string[] {
-  const prefix = marcador === "bullet" ? "• " : "- ";
+  const prefix = "- "; /* sempre ASCII: U+2022 (•) quebra ByteString no Chrome em alguns fluxos */
   const linhas: string[] = [];
   for (const { prato, quantidade, observacoes } of itens) {
     const unit = formatBRL(prato.preco);
@@ -104,41 +104,41 @@ export function montarTextoPedidoResumoParaApi(p: PedidoWhatsAppFormatadoInput):
 }
 
 /**
- * Texto formatado para **abrir no WhatsApp** (`wa.me` / `window.open`) — pode usar `•` e emojis.
- * Não enviar este retorno no corpo de `fetch` para a API.
+ * Texto formatado para **abrir no WhatsApp** (`wa.me` / `window.open`).
+ * Só caracteres Latin-1 (sem U+2022 `•`, sem emojis) para evitar `ByteString` no Chrome.
  */
 export function montarTextoPedidoWhatsAppFormatado(p: PedidoWhatsAppFormatadoInput): string {
   const tipoLabel =
     p.tipoEntrega === "retirada" ? "Retirada no Balcão" : "Entrega";
 
   const partes: string[] = [
-    "*🧾 NOVO PEDIDO RECEBIDO!*",
+    "*NOVO PEDIDO RECEBIDO!*",
     "--------------------------------",
-    "*👤 CLIENTE:*",
-    `• Nome: ${p.nomeCliente.trim()}`,
-    `• Telefone: ${p.telefoneCliente.trim()}`,
+    "*CLIENTE:*",
+    `- Nome: ${p.nomeCliente.trim()}`,
+    `- Telefone: ${p.telefoneCliente.trim()}`,
     "",
-    "*📍 ENTREGA/RETIRADA:*",
-    `• Tipo: ${tipoLabel}`,
-    `• Endereço: ${p.enderecoLinha}`,
-    `• Bairro: ${p.bairroLinha}`,
-    `• Ref/Comp: ${p.refCompLinha}`,
+    "*ENTREGA / RETIRADA:*",
+    `- Tipo: ${tipoLabel}`,
+    `- Endereco: ${p.enderecoLinha}`,
+    `- Bairro: ${p.bairroLinha}`,
+    `- Ref/Comp: ${p.refCompLinha}`,
     "",
-    "*🍔 ITENS DO PEDIDO:*",
-    ...linhasItensComMarcador(p.itens, "bullet"),
+    "*ITENS:*",
+    ...linhasItensComMarcador(p.itens, "ascii"),
     "",
-    "*💳 PAGAMENTO:*",
-    `• Forma: ${labelFormaPagamento(p.formaPagamento)}`,
-    `• Troco para: ${p.trocoParaTexto}`,
-    `• Valor do Troco: ${formatBRL(Math.max(0, p.valorTrocoReais))}`,
+    "*PAGAMENTO:*",
+    `- Forma: ${labelFormaPagamento(p.formaPagamento)}`,
+    `- Troco para: ${p.trocoParaTexto}`,
+    `- Valor do Troco: ${formatBRL(Math.max(0, p.valorTrocoReais))}`,
     "",
     "--------------------------------",
-    "*💰 VALORES:*",
-    `• Subtotal Itens: ${formatBRL(p.subtotalItens)}`,
-    `• Taxa de Entrega: ${formatBRL(Math.max(0, p.taxaEntrega))}`,
-    `• *TOTAL GERAL: ${formatBRL(p.totalGeral)}*`,
+    "*VALORES:*",
+    `- Subtotal Itens: ${formatBRL(p.subtotalItens)}`,
+    `- Taxa de Entrega: ${formatBRL(Math.max(0, p.taxaEntrega))}`,
+    `- *TOTAL GERAL: ${formatBRL(p.totalGeral)}*`,
     "--------------------------------",
   ];
 
-  return partes.join("\n");
+  return expandLatin1UserText(partes.join("\n"));
 }

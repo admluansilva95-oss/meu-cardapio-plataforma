@@ -16,6 +16,7 @@ import { isRetryableSupabaseError, withRetry } from "@/lib/with-retry";
 import { mensagemErroSupabasePainel } from "@/lib/supabase/mensagem-erro";
 import { mensagemUploadStorageAmigavel } from "@/lib/restaurante/mensagem-upload-storage";
 import { sanitizarNomeArquivoStorageBase } from "@/lib/restaurante/sanitizar-nome-arquivo-storage";
+import { expandLatin1UserText } from "@/lib/restaurante/json-latin1-wire";
 import { latin1SafeFetch, initJsonPost, sanitizeFetchInit } from "@/lib/fetch-latin1-safe";
 import {
   normalizarPrecoCampoAoSair,
@@ -424,7 +425,7 @@ function waMeUrl(telefone: string, message: string) {
   if (d.length === 10 && !d.startsWith("55")) {
     d = `55${d}`;
   }
-  const text = encodeURIComponent(message);
+  const text = encodeURIComponent(expandLatin1UserText(message));
   return `https://wa.me/${d}?text=${text}`;
 }
 

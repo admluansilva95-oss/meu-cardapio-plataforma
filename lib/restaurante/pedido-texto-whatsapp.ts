@@ -1,4 +1,5 @@
 import type { CarrinhoItem, Restaurante } from "@/types";
+import { expandLatin1UserText } from "@/lib/restaurante/json-latin1-wire";
 
 export type TipoEntregaPedido = "entrega" | "retirada";
 
@@ -37,7 +38,7 @@ export function buildPedidoTextoWhatsApp(
   const tipoEntrega = opts?.tipoEntrega ?? "entrega";
   const linhasItens = itens.map(({ prato, quantidade }) => {
     const sub = prato.preco * quantidade;
-    return `• ${quantidade}x ${prato.nome} - ${formatBRL(sub)}`;
+    return `- ${quantidade}x ${prato.nome} - ${formatBRL(sub)}`;
   });
   const subtotal = itens.reduce((acc, { prato, quantidade }) => acc + prato.preco * quantidade, 0);
   const { valor: taxa, linhaExtra } = taxaEntregaParaPedido(restaurante, zonaEntregaId, {
@@ -62,5 +63,5 @@ export function buildPedidoTextoWhatsApp(
     blocos.push("");
   }
   blocos.push(`*Total:* ${formatBRL(total)}`);
-  return blocos.join("\n");
+  return expandLatin1UserText(blocos.join("\n"));
 }
