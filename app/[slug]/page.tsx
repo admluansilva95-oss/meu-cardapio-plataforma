@@ -32,6 +32,7 @@ import { isValidSlug } from "@/lib/billing/slug";
 import { normalizeCorTema } from "@/lib/restaurante/cor-tema";
 import { expandLatin1UserText } from "@/lib/restaurante/json-latin1-wire";
 import { registrarPedidoVitrineNaApi } from "@/lib/restaurante/registrar-pedido-vitrine-client";
+import { xhrGetJson } from "@/lib/restaurante/xhr-get-json-client";
 import { buildWhatsappSendHref } from "@/lib/restaurante/whatsapp-href";
 import { openUrlNovaGuia } from "@/lib/restaurante/open-url-nova-guia";
 import { isRetryableSupabaseError, withRetry } from "@/lib/with-retry";
@@ -308,27 +309,15 @@ export default function PublicCardapioPage() {
       const result = await withRetry(
         async () => {
           try {
-            const res = await globalThis.fetch(
+            const { status, json: bodyRaw } = await xhrGetJson(
               `/api/public/cardapio?slug=${encodeURIComponent(slug)}`,
-              {
-                method: "GET",
-                cache: "no-store",
-                credentials: "omit",
-                referrerPolicy: "no-referrer",
-                signal: ac.signal,
-              },
+              ac.signal,
             );
-            let body: unknown = {};
-            try {
-              body = await res.json();
-            } catch {
-              body = {};
-            }
-            const b = body as { error?: string; restaurante?: unknown; pratos?: unknown };
-            if (!res.ok) {
+            const b = bodyRaw as { error?: string; restaurante?: unknown; pratos?: unknown };
+            if (status < 200 || status >= 300) {
               return {
                 data: null as { restaurante: RestauranteRow | null; pratos: unknown[] } | null,
-                error: { message: b.error ?? `Erro ${res.status}` },
+                error: { message: b.error ?? `Erro ${status}` },
               };
             }
             return {
@@ -753,7 +742,7 @@ export default function PublicCardapioPage() {
 
     setCheckoutSubmitting(true);
     try {
-      /** Registro via `fetch` (fallback XHR se ByteString) + payload sanitizado. */
+      /** Registro via XMLHttpRequest + corpo UTF-8 (evita ByteString do `fetch` em alguns runtimes). */
       const { status, json } = await registrarPedidoVitrineNaApi("/api/pedidos/vitrine", {
         restauranteId: restaurante.id,
         cliente: nomeOk,

@@ -1182,10 +1182,6 @@ function AdminPageInner() {
   const [cfgVitrineFechada, setCfgVitrineFechada] = useState(false);
   const [cfgMensagemFechado, setCfgMensagemFechado] = useState("");
   const [cfgMensagemBoasVindas, setCfgMensagemBoasVindas] = useState("");
-  /** Textos opcionais da faixa de status na vitrine pública (colunas `texto_vitrine_*`, `mensagem_fora_horario`). */
-  const [cfgTextoVitrineAberto, setCfgTextoVitrineAberto] = useState("");
-  const [cfgTextoVitrineFechado, setCfgTextoVitrineFechado] = useState("");
-  const [cfgMensagemForaHorario, setCfgMensagemForaHorario] = useState("");
   const [novaSecaoCardapio, setNovaSecaoCardapio] = useState("");
   const [cfgMsg, setCfgMsg] = useState<string | null>(null);
   const [cfgLogoUrl, setCfgLogoUrl] = useState<string | null>(null);
@@ -1215,9 +1211,6 @@ function AdminPageInner() {
       vf: restaurante.vitrine_fechada,
       mf: restaurante.mensagem_fechado,
       mb: restaurante.mensagem_boas_vindas,
-      tva: restaurante.texto_vitrine_aberto,
-      tvf: restaurante.texto_vitrine_fechado,
-      mfh: restaurante.mensagem_fora_horario,
       ccMerged: mergedCats,
     });
   }, [restaurante, pratos]);
@@ -1480,9 +1473,6 @@ function AdminPageInner() {
     setCfgVitrineFechada(restaurante.vitrine_fechada === true);
     setCfgMensagemFechado(restaurante.mensagem_fechado ?? "");
     setCfgMensagemBoasVindas(restaurante.mensagem_boas_vindas ?? "");
-    setCfgTextoVitrineAberto(restaurante.texto_vitrine_aberto ?? "");
-    setCfgTextoVitrineFechado(restaurante.texto_vitrine_fechado ?? "");
-    setCfgMensagemForaHorario(restaurante.mensagem_fora_horario ?? "");
     if (tab === "configuracoes") {
       setCfgMsg(null);
     }
@@ -1636,9 +1626,6 @@ function AdminPageInner() {
           vitrine_fechada: cfgVitrineFechada,
           mensagem_fechado: cfgVitrineFechada ? cfgMensagemFechado.trim() || null : null,
           mensagem_boas_vindas: cfgMensagemBoasVindas.trim() || null,
-          texto_vitrine_aberto: cfgTextoVitrineAberto.trim() || null,
-          texto_vitrine_fechado: cfgTextoVitrineFechado.trim() || null,
-          mensagem_fora_horario: cfgMensagemForaHorario.trim() || null,
           funcionamento_semana: cfgFuncionamento,
           taxas_entrega_zonas: zonasApi,
           retirada_balcao: cfgRetiradaBalcao,
@@ -1686,9 +1673,6 @@ function AdminPageInner() {
     cfgVitrineFechada,
     cfgMensagemFechado,
     cfgMensagemBoasVindas,
-    cfgTextoVitrineAberto,
-    cfgTextoVitrineFechado,
-    cfgMensagemForaHorario,
     cfgLogoUrl,
     cfgLogoFile,
     supabase,
@@ -1805,7 +1789,7 @@ function AdminPageInner() {
   );
 
   const atualizarColunaPedido = async (pedidoId: string, nova: KanbanCol) => {
-    if (pedidoBusyId) return;
+    if (pedidoBusyId || !restaurante?.id) return;
     const anterior = pedidos.find((p) => p.id === pedidoId);
     if (!anterior || anterior.coluna === nova) return;
 
@@ -1816,7 +1800,11 @@ function AdminPageInner() {
     );
 
     try {
-      const { error } = await supabase.from("pedidos").update({ coluna: nova }).eq("id", pedidoId);
+      const { error } = await supabase
+        .from("pedidos")
+        .update({ coluna: nova })
+        .eq("id", pedidoId)
+        .eq("restaurante_id", restaurante.id);
       if (error) {
         setFetchError(error.message);
         setPedidos((lista) =>
@@ -1830,7 +1818,7 @@ function AdminPageInner() {
   };
 
   const avancarPedido = async (id: string) => {
-    if (pedidoBusyId) return;
+    if (pedidoBusyId || !restaurante?.id) return;
     const atual = pedidos.find((p) => p.id === id);
     if (!atual) return;
     const destino = nextColuna(atual.coluna);
@@ -1844,7 +1832,11 @@ function AdminPageInner() {
     );
 
     try {
-      const { error } = await supabase.from("pedidos").update({ coluna: destino }).eq("id", id);
+      const { error } = await supabase
+        .from("pedidos")
+        .update({ coluna: destino })
+        .eq("id", id)
+        .eq("restaurante_id", restaurante.id);
       if (error) {
         setFetchError(error.message);
         setPedidos((lista) =>
@@ -1862,7 +1854,7 @@ function AdminPageInner() {
   };
 
   const cancelarPedido = async (id: string) => {
-    if (pedidoBusyId) return;
+    if (pedidoBusyId || !restaurante?.id) return;
     const prev = pedidos;
     setPedidoBusyId(id);
     setPedidoBusyKind("cancel");
@@ -1870,7 +1862,11 @@ function AdminPageInner() {
     setPedidoModal((cur) => (cur?.id === id ? null : cur));
 
     try {
-      const { error } = await supabase.from("pedidos").delete().eq("id", id);
+      const { error } = await supabase
+        .from("pedidos")
+        .delete()
+        .eq("id", id)
+        .eq("restaurante_id", restaurante.id);
       if (error) {
         setFetchError(error.message);
         setPedidos(prev);
@@ -1888,7 +1884,7 @@ function AdminPageInner() {
     pagamento: FormaPagamento;
     observacaoExtra: string;
   }) => {
-    if (!pedidoModal || pedidoModalSaving) return;
+    if (!pedidoModal || pedidoModalSaving || !restaurante?.id) return;
     const id = pedidoModal.id;
     const extra = patch.observacaoExtra.trim();
     const observacoes =
@@ -1915,7 +1911,8 @@ function AdminPageInner() {
           pagamento: patch.pagamento,
           observacoes,
         })
-        .eq("id", id);
+        .eq("id", id)
+        .eq("restaurante_id", restaurante.id);
 
       if (error) {
         setFetchError(error.message);
@@ -2003,7 +2000,8 @@ function AdminPageInner() {
             status: payload.status,
             imagem: imagemParaDb,
           })
-          .eq("id", payload.id);
+          .eq("id", payload.id)
+          .eq("restaurante_id", payload.restaurante_id);
 
         if (error) {
           console.error("[pratos DB] Falha no UPDATE:", {
@@ -2440,50 +2438,6 @@ function AdminPageInner() {
                   maxLength={200}
                   placeholder="Uma frase de impacto para quem abre o link do cardápio."
                   className="mt-3 w-full rounded-xl border border-zinc-200 bg-zinc-50/50 px-3 py-2.5 text-sm text-zinc-900 outline-none transition placeholder:text-zinc-400 focus:border-transparent focus:ring-2 focus:ring-zinc-900"
-                />
-              </div>
-
-              <div className="rounded-3xl border border-zinc-100 bg-white px-5 py-6 shadow-sm sm:px-7 sm:py-8">
-                <h2 className="text-sm font-semibold tracking-tight text-[#1d1d1f]">Textos da faixa de status (vitrine)</h2>
-                <p className="mt-1 text-xs leading-relaxed text-[#86868b]">
-                  Opcionais: deixe em branco para usar os textos padrão do cardápio público. São gravados no banco ao
-                  salvar.
-                </p>
-                <label className="mt-4 block text-[11px] font-medium text-zinc-500" htmlFor="cfg-tva">
-                  Linha curta quando a vitrine está aberta (badge &quot;Aberto&quot;)
-                </label>
-                <input
-                  id="cfg-tva"
-                  type="text"
-                  value={cfgTextoVitrineAberto}
-                  onChange={(e) => setCfgTextoVitrineAberto(e.target.value.slice(0, 200))}
-                  maxLength={200}
-                  placeholder="Ex.: Faça seu pedido e receba em instantes."
-                  className="mt-1 w-full rounded-xl border border-zinc-200 bg-zinc-50/50 px-3 py-2.5 text-sm text-zinc-900 outline-none transition placeholder:text-zinc-400 focus:border-transparent focus:ring-2 focus:ring-zinc-900"
-                />
-                <label className="mt-3 block text-[11px] font-medium text-zinc-500" htmlFor="cfg-tvf">
-                  Texto curto no badge quando fechado (manual ou horário)
-                </label>
-                <input
-                  id="cfg-tvf"
-                  type="text"
-                  value={cfgTextoVitrineFechado}
-                  onChange={(e) => setCfgTextoVitrineFechado(e.target.value.slice(0, 200))}
-                  maxLength={200}
-                  placeholder="Sobrescreve a linha ao lado de &quot;Fechado&quot; no badge."
-                  className="mt-1 w-full rounded-xl border border-zinc-200 bg-zinc-50/50 px-3 py-2.5 text-sm text-zinc-900 outline-none transition placeholder:text-zinc-400 focus:border-transparent focus:ring-2 focus:ring-zinc-900"
-                />
-                <label className="mt-3 block text-[11px] font-medium text-zinc-500" htmlFor="cfg-mfh">
-                  Faixa âmbar fora do horário (quando não está pausado manualmente)
-                </label>
-                <textarea
-                  id="cfg-mfh"
-                  rows={2}
-                  value={cfgMensagemForaHorario}
-                  onChange={(e) => setCfgMensagemForaHorario(e.target.value.slice(0, 400))}
-                  maxLength={400}
-                  placeholder="Mensagem na faixa superior quando o relógio está fora da agenda."
-                  className="mt-1 w-full resize-y rounded-xl border border-zinc-200 bg-zinc-50/50 px-3 py-2.5 text-sm text-zinc-900 outline-none transition placeholder:text-zinc-400 focus:border-transparent focus:ring-2 focus:ring-zinc-900"
                 />
               </div>
 

@@ -118,7 +118,10 @@ export async function POST(request: Request) {
 
   if (restErr) {
     console.error("[api/pedidos/vitrine] select restaurante:", restErr);
-    return NextResponse.json({ error: restErr.message }, { status: 500 });
+    return NextResponse.json(
+      { error: "Erro interno ao consultar o estabelecimento." },
+      { status: 500 },
+    );
   }
   if (!rest) {
     return NextResponse.json({ error: "Restaurante não encontrado." }, { status: 404 });
@@ -178,7 +181,7 @@ export async function POST(request: Request) {
       raw: insErr,
     });
     return NextResponse.json(
-      { error: insErr.message || "Falha ao registrar o pedido no banco." },
+      { error: "Não foi possível registrar o pedido. Tente novamente em instantes." },
       { status: 500 },
     );
   }

@@ -64,7 +64,16 @@ export async function proxy(request: NextRequest) {
 
   if (assinaturasError) {
     console.error("[proxy/admin] assinaturas:", assinaturasError.message);
-    return response;
+    /** Falha fechada: não liberar o painel se não for possível verificar assinatura (evita bypass por erro transitório). */
+    const fallback = request.nextUrl.clone();
+    fallback.pathname = "/login";
+    fallback.search = "";
+    fallback.searchParams.set("error", "billing_check");
+    fallback.searchParams.set(
+      "error_description",
+      "Não foi possível verificar sua assinatura. Tente novamente em instantes ou entre em contato com o suporte.",
+    );
+    return NextResponse.redirect(fallback);
   }
 
   // Stripe success_url: /admin?checkout=success&success=true — libera acesso antes do
@@ -96,7 +105,9 @@ export async function proxy(request: NextRequest) {
 
     if (alvoErr) {
       console.error("[proxy/admin] slug tenant:", alvoErr.message);
-      return response;
+      const url = request.nextUrl.clone();
+      url.searchParams.delete("slug");
+      return NextResponse.redirect(url);
     }
 
     if (alvo?.owner_id === user.id) {
@@ -115,7 +126,7 @@ export async function proxy(request: NextRequest) {
 
     if (meuErr) {
       console.error("[proxy/admin] meu restaurante:", meuErr.message);
-      return response;
+      return NextResponse.redirect(url);
     }
     if (meu?.slug) {
       url.searchParams.set("slug", meu.slug);

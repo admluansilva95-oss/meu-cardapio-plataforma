@@ -49,7 +49,10 @@ export async function GET(request: NextRequest) {
 
   if (restErr) {
     console.error("[api/public/cardapio] restaurantes:", restErr.message);
-    return NextResponse.json({ error: restErr.message }, { status: 500 });
+    return NextResponse.json(
+      { error: "Não foi possível carregar o cardápio. Tente novamente em instantes." },
+      { status: 500 },
+    );
   }
 
   if (!restaurante) {
@@ -69,7 +72,10 @@ export async function GET(request: NextRequest) {
 
   if (pratosErr) {
     console.error("[api/public/cardapio] pratos:", pratosErr.message);
-    return NextResponse.json({ error: pratosErr.message }, { status: 500 });
+    return NextResponse.json(
+      { error: "Não foi possível carregar o cardápio. Tente novamente em instantes." },
+      { status: 500 },
+    );
   }
 
   const res = NextResponse.json({

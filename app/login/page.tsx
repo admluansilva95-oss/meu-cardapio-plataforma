@@ -64,8 +64,9 @@ function LoginForm() {
 
     try {
       const supabase = createBrowserSupabaseClient();
+      const emailNorm = email.trim().toLowerCase();
       const { data, error } = await supabase.auth.signInWithPassword({
-        email,
+        email: emailNorm,
         password,
       });
 
@@ -119,9 +120,12 @@ function LoginForm() {
 
         {authError ? (
           <p className="mb-4 rounded-2xl border border-red-500/30 bg-red-500/10 px-4 py-3 text-center text-sm text-red-100">
-            {authError === "otp_expired"
-              ? "O link de confirmação expirou ou já foi usado. Peça um novo e-mail em “Esqueci a senha” ou cadastre-se de novo."
-              : authErrorDetail ?? `Não foi possível concluir a autenticação (${authError}).`}
+            {authError === "billing_check"
+              ? authErrorDetail ??
+                "Não foi possível confirmar sua assinatura. Tente de novo em instantes."
+              : authError === "otp_expired"
+                ? "O link de confirmação expirou ou já foi usado. Peça um novo e-mail em “Esqueci a senha” ou cadastre-se de novo."
+                : authErrorDetail ?? `Não foi possível concluir a autenticação (${authError}).`}
           </p>
         ) : null}
 

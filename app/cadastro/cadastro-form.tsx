@@ -49,6 +49,19 @@ export function CadastroForm() {
       return;
     }
 
+    const emailNorm = email.trim().toLowerCase();
+    if (!emailNorm || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(emailNorm)) {
+      setErrorMessage("Informe um e-mail válido.");
+      setLoading(false);
+      return;
+    }
+
+    if (password.length < 6) {
+      setErrorMessage("A senha deve ter pelo menos 6 caracteres.");
+      setLoading(false);
+      return;
+    }
+
     try {
       const supabase = createBrowserSupabaseClient();
       const afterConfirmPath = buildAssinarPathWithCarry({
@@ -57,7 +70,7 @@ export function CadastroForm() {
         whatsapp: whatsapp.trim() || undefined,
       });
       const { data, error } = await supabase.auth.signUp({
-        email,
+        email: emailNorm,
         password,
         options: {
           emailRedirectTo: `${getPublicAppUrl()}/auth/callback?next=${encodeURIComponent(afterConfirmPath)}`,
