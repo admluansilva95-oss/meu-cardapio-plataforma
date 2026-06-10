@@ -41,6 +41,24 @@ export function slugifySecaoCardapio(titulo: string): string {
 }
 
 /**
+ * Categorias em que o cliente normalmente não monta/remover ingredientes (ex.: bebida, doce).
+ * Usado na vitrine para esconder o campo “Observações” no checkout.
+ */
+export function categoriaOcultaObservacoesCliente(categoria: string | null | undefined): boolean {
+  const slug = slugifySecaoCardapio(categoria?.trim() || "");
+  return (
+    slug === "sobremesas" ||
+    slug === "sobremesa" ||
+    slug.startsWith("sobremesas-") ||
+    slug.startsWith("sobremesa-") ||
+    slug === "bebidas" ||
+    slug === "bebida" ||
+    slug.startsWith("bebidas-") ||
+    slug.startsWith("bebida-")
+  );
+}
+
+/**
  * Monta seções na ordem do cadastro (`cardapio_categorias`), depois inclui categorias dos pratos
  * que ainda não apareceram.
  */

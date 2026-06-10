@@ -22,13 +22,14 @@ import {
   ordenarSecoesCardapio,
   parseCardapioCategorias,
   slugifySecaoCardapio,
+  categoriaOcultaObservacoesCliente,
 } from "@/lib/restaurante/cardapio-categorias";
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { UtensilsCrossed } from "lucide-react";
 import { isValidSlug } from "@/lib/billing/slug";
-import { sanitizeFetchInit } from "@/lib/fetch-latin1-safe";
+import { latin1SafeFetch, sanitizeFetchInit } from "@/lib/fetch-latin1-safe";
 import { isRetryableSupabaseError, withRetry } from "@/lib/with-retry";
 
 /** Após esgotar retries ou falha de rede, evita mensagens técnicas cruas para o cliente final. */
@@ -316,9 +317,14 @@ export default function PublicCardapioPage() {
       const result = await withRetry(
         async () => {
           try {
-            const res = await fetch(
+            const res = await latin1SafeFetch(
               `/api/public/cardapio?slug=${encodeURIComponent(slug)}`,
-              { method: "GET", cache: "no-store", credentials: "omit" },
+              sanitizeFetchInit({
+                method: "GET",
+                cache: "no-store",
+                credentials: "omit",
+                signal: ac.signal,
+              }),
             );
             let body: unknown = {};
             try {
@@ -745,13 +751,16 @@ export default function PublicCardapioPage() {
 
     const itensPedido = cart.map(({ prato, quantidade, observacoes }) => {
       const linha = `${quantidade}x ${prato.nome} (${formatBRL(prato.preco)} cada)`;
-      const o = observacoes?.trim();
+      const o =
+        observacoes?.trim() && !categoriaOcultaObservacoesCliente(prato.categoria)
+          ? observacoes.trim()
+          : "";
       return o ? `${linha} | Obs: ${o}` : linha;
     });
 
     setCheckoutSubmitting(true);
     try {
-      const res = await fetch(
+      const res = await latin1SafeFetch(
         "/api/pedidos/vitrine",
         sanitizeFetchInit({
           method: "POST",
@@ -1297,17 +1306,21 @@ export default function PublicCardapioPage() {
                               </button>
                             </div>
                           </div>
-                          <label className="mt-3 block text-[11px] font-medium text-zinc-500" htmlFor={`obs-${prato.id}`}>
-                            Observações (opcional)
-                          </label>
-                          <textarea
-                            id={`obs-${prato.id}`}
-                            rows={2}
-                            value={observacoes ?? ""}
-                            onChange={(e) => setItemObservacoes(prato.id, e.target.value)}
-                            placeholder="Ex.: sem cebola, ponto da carne…"
-                            className="mt-1 w-full resize-none rounded-xl border border-zinc-200 bg-white px-3 py-2.5 text-xs text-zinc-900 outline-none transition placeholder:text-zinc-400 focus:ring-2 focus:ring-zinc-950"
-                          />
+                          {categoriaOcultaObservacoesCliente(prato.categoria) ? null : (
+                            <>
+                              <label className="mt-3 block text-[11px] font-medium text-zinc-500" htmlFor={`obs-${prato.id}`}>
+                                Observações (opcional)
+                              </label>
+                              <textarea
+                                id={`obs-${prato.id}`}
+                                rows={2}
+                                value={observacoes ?? ""}
+                                onChange={(e) => setItemObservacoes(prato.id, e.target.value)}
+                                placeholder="Ex.: sem cebola, ponto da carne…"
+                                className="mt-1 w-full resize-none rounded-xl border border-zinc-200 bg-white px-3 py-2.5 text-xs text-zinc-900 outline-none transition placeholder:text-zinc-400 focus:ring-2 focus:ring-zinc-950"
+                              />
+                            </>
+                          )}
                         </li>
                       ))}
                     </ul>

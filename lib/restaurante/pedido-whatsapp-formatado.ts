@@ -1,6 +1,7 @@
 import type { CarrinhoItem } from "@/types";
 import type { TipoEntregaPedido } from "@/lib/restaurante/pedido-texto-whatsapp";
-import { latin1SafeString } from "@/lib/restaurante/json-latin1-wire";
+import { expandLatin1UserText } from "@/lib/restaurante/json-latin1-wire";
+import { categoriaOcultaObservacoesCliente } from "@/lib/restaurante/cardapio-categorias";
 
 export type FormaPagamentoPedidoCliente =
   | "dinheiro"
@@ -55,7 +56,7 @@ function linhasItensComMarcador(
     const unit = formatBRL(prato.preco);
     linhas.push(`${prefix}${quantidade}x ${prato.nome} (${unit} cada)`);
     const obs = observacoes?.trim();
-    if (obs) {
+    if (obs && !categoriaOcultaObservacoesCliente(prato.categoria)) {
       linhas.push(marcador === "bullet" ? `  _Obs: ${obs}_` : `  Obs: ${obs}`);
     }
   }
@@ -99,7 +100,7 @@ export function montarTextoPedidoResumoParaApi(p: PedidoWhatsAppFormatadoInput):
     "--------------------------------",
   ];
 
-  return latin1SafeString(partes.join("\n"));
+  return expandLatin1UserText(partes.join("\n"));
 }
 
 /**

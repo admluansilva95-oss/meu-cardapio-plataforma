@@ -1,4 +1,4 @@
-import { sanitizeFetchInit } from "@/lib/fetch-latin1-safe";
+import { initJsonPost, latin1SafeFetch, sanitizeFetchInit } from "@/lib/fetch-latin1-safe";
 
 export type StartCheckoutParams = {
   priceId: string;
@@ -30,21 +30,19 @@ export async function startSubscriptionCheckout(
 
   let response: Response;
   try {
-    response = await fetch(
+    response = await latin1SafeFetch(
       "/api/checkout/create-session",
       sanitizeFetchInit({
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${params.accessToken}`,
-        },
-        body: JSON.stringify({
-          priceId: params.priceId,
-          userId: params.userId,
-          slug: params.slug,
-          restaurantName: params.restaurantName,
-          whatsapp: params.whatsapp,
-        }),
+        ...initJsonPost(
+          {
+            priceId: params.priceId,
+            userId: params.userId,
+            slug: params.slug,
+            restaurantName: params.restaurantName,
+            whatsapp: params.whatsapp,
+          },
+          params.accessToken,
+        ),
         signal: controller.signal,
       }),
     );

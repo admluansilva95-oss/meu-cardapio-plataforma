@@ -18,13 +18,16 @@ export function latin1SafeString(s: string): string {
  */
 export function expandLatin1UserText(s: string): string {
   const t = s
-    .replace(/\u2022/g, "-") /* • bullet */
-    .replace(/\u2013|\u2014/g, "-") /* – — */
+    .replace(/\uFEFF/g, "") /* BOM */
+    /* Espaços tipográficos (ex.: `toLocaleString` pt-BR) — fora de Latin-1 e disparam ByteString no Chrome */
+    .replace(/[\u2000-\u200A\u202F\u205F]/g, " ")
+    /* Bullets / marcadores comuns (Word, Google Docs, iOS) — U+2022 = 8226 */
+    .replace(/[\u2022\u2023\u2043\u2219\u25CF\u25AA\u25E6\u29BB\u30FB]/g, "-")
+    .replace(/\u2013|\u2014|\u2010|\u2011|\u2212/g, "-") /* – — ‐ ‑ − */
     .replace(/\u2026/g, "...") /* … */
     .replace(/\u00A0/g, " ")
     .replace(/[\u2018\u2019]/g, "'")
-    .replace(/[\u201C\u201D]/g, '"')
-    .replace(/\uFEFF/g, ""); /* BOM */
+    .replace(/[\u201C\u201D]/g, '"');
   return latin1SafeString(t);
 }
 

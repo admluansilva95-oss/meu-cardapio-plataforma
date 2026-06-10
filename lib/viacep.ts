@@ -1,3 +1,5 @@
+import { latin1SafeFetch } from "@/lib/fetch-latin1-safe";
+
 export type ViaCepResposta = {
   cep?: string;
   logradouro?: string;
@@ -13,7 +15,7 @@ export async function buscarEnderecoPorCep(cepDigits: string): Promise<ViaCepRes
   if (limpo.length !== 8) return null;
   const url = `https://viacep.com.br/ws/${limpo}/json/`;
   try {
-    const res = await fetch(url, { method: "GET", cache: "no-store" });
+    const res = await latin1SafeFetch(url, { method: "GET", cache: "no-store" });
     if (!res.ok) return null;
     const data = (await res.json()) as ViaCepResposta;
     if (data.erro === true || data.erro === "true") return null;
