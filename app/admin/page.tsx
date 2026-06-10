@@ -429,6 +429,24 @@ function waMeUrl(telefone: string, message: string) {
   return `https://wa.me/${d}?text=${text}`;
 }
 
+function isPedidoRetiradaBalcao(p: Pedido): boolean {
+  return (p.observacoes ?? "").includes("RETIRADA NO BALCAO");
+}
+
+/** Rótulo do botão que avança a esteira e dispara o WhatsApp automático. */
+function textoBotaoAvancarComWhatsApp(p: Pedido): string {
+  if (p.coluna === "pronto" && isPedidoRetiradaBalcao(p)) {
+    return "Registrar retirada + WhatsApp";
+  }
+  return "Avançar status + WhatsApp";
+}
+
+/** Mensagem quando o card já está na última coluna (`entregue`). */
+function textoEtapaFinalKanban(p: Pedido): string {
+  if (isPedidoRetiradaBalcao(p)) return "Retirado no balcão.";
+  return "Pedido na etapa final da esteira.";
+}
+
 function nextColuna(c: KanbanCol): KanbanCol | null {
   if (c === "recebidos") return "cozinha";
   if (c === "cozinha") return "pronto";
@@ -438,13 +456,21 @@ function nextColuna(c: KanbanCol): KanbanCol | null {
 
 function mensagemParaColuna(p: Pedido, destino: KanbanCol): string {
   if (destino === "cozinha") {
-    return `Olá ${p.cliente}, seu pedido entrou em preparo!`;
+    return isPedidoRetiradaBalcao(p)
+      ? `Olá ${p.cliente}, seu pedido (retirada no balcão) entrou em preparo!`
+      : `Olá ${p.cliente}, seu pedido entrou em preparo!`;
   }
   if (destino === "pronto") {
+    if (isPedidoRetiradaBalcao(p)) {
+      return `Olá ${p.cliente}, seu pedido está pronto para retirada no balcão. Aguardamos você no estabelecimento. Obrigado pela preferência!`;
+    }
     const m = p.motoboy?.trim() || "nossa equipe";
     return `Olá ${p.cliente}, seu pedido está pronto e já saiu para entrega com o motoboy ${m}. Obrigado pela preferência!`;
   }
   if (destino === "entregue") {
+    if (isPedidoRetiradaBalcao(p)) {
+      return `Olá ${p.cliente}, registramos a retirada do seu pedido no balcão. Obrigado pela preferência!`;
+    }
     return `Olá ${p.cliente}, seu pedido foi entregue. Obrigado pela preferência!`;
   }
   return `Olá ${p.cliente}, atualização do seu pedido.`;
@@ -709,7 +735,13 @@ function PedidoCard(props: {
           Total {formatBRL(pedido.total)}
         </span>
         <span className="rounded-full bg-[#f5f5f7] px-2 py-0.5">{pedido.pagamento}</span>
-        <span className="rounded-full bg-[#f5f5f7] px-2 py-0.5">Motoboy: {pedido.motoboy}</span>
+        {pedido.motoboy?.trim() ? (
+          <span className="rounded-full bg-[#f5f5f7] px-2 py-0.5">Motoboy: {pedido.motoboy}</span>
+        ) : isPedidoRetiradaBalcao(pedido) ? (
+          <span className="rounded-full bg-emerald-50 px-2 py-0.5 font-medium text-emerald-900">
+            Retirada no balcão
+          </span>
+        ) : null}
       </div>
       {pedido.observacoes ? (
         <p className="mt-2 rounded-xl bg-[#f5f5f7] px-3 py-2 text-[11px] leading-relaxed text-[#6e6e73]">
@@ -733,12 +765,12 @@ function PedidoCard(props: {
                 {busyLabel ?? "Atualizando…"}
               </>
             ) : (
-              "Avançar status + WhatsApp"
+              textoBotaoAvancarComWhatsApp(pedido)
             )}
           </button>
         ) : (
           <p className="rounded-xl border border-dashed border-black/[0.08] bg-[#fafafa] px-3 py-2 text-center text-[11px] text-[#86868b]">
-            Pedido na etapa final da esteira.
+            {textoEtapaFinalKanban(pedido)}
           </p>
         )}
         <button

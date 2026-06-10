@@ -775,6 +775,7 @@ export default function PublicCardapioPage() {
             formaPagamento,
             itens: itensPedido,
             observacoes: observacoesApi,
+            tipoEntrega,
           }),
         }),
       );
@@ -1566,8 +1567,10 @@ export default function PublicCardapioPage() {
                         </div>
                       ) : (
                         <p className="rounded-2xl border border-emerald-100 bg-emerald-50/60 px-4 py-3 text-sm leading-relaxed text-emerald-900">
-                          Retirada no balcão — sem taxa de entrega. Combine o horário pelo WhatsApp após enviar o
-                          pedido.
+                          <span className="font-semibold">Retirada no balcão</span> — sem taxa de entrega. O pedido
+                          entra no painel do restaurante (esteira em &quot;Pendente&quot;) para preparo e acompanhamento.
+                          Quando estiver pronto, retire no balcão. O WhatsApp abre em seguida para você combinar
+                          detalhes com o local, se precisar.
                         </p>
                       )}
                     </section>

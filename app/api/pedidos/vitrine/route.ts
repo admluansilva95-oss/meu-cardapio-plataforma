@@ -29,7 +29,14 @@ type Body = {
   itens?: unknown;
   /** Texto resumo para o painel (sem bullets U+2022); o cliente monta o WhatsApp à parte. */
   observacoes?: string;
+  /** `retirada` = retirada no balcão (exige `restaurantes.retirada_balcao`). */
+  tipoEntrega?: string;
 };
+
+const PREFIXO_OBS_BALCAO =
+  "=== RETIRADA NO BALCAO ===\n" +
+  "NAO enviar para entrega: cliente retira no estabelecimento.\n" +
+  "Acompanhe na esteira ate disponibilizar para retirada no balcao.\n\n";
 
 /**
  * Registra pedido originado na vitrine (antes do cliente abrir o WhatsApp).
@@ -96,13 +103,16 @@ export async function POST(request: Request) {
   }
 
   const obsRaw = typeof body.observacoes === "string" ? body.observacoes : "";
-  const observacoes = latin1SafeString(
+  const obsSan = latin1SafeString(
     obsRaw.length > 12000 ? obsRaw.slice(0, 12000) : obsRaw,
   ).slice(0, 12000);
 
+  const tipoEntrega =
+    body.tipoEntrega === "retirada" || body.tipoEntrega === "entrega" ? body.tipoEntrega : "entrega";
+
   const { data: rest, error: restErr } = await admin
     .from("restaurantes")
-    .select("id, vitrine_fechada, funcionamento_semana")
+    .select("id, vitrine_fechada, funcionamento_semana, retirada_balcao")
     .eq("id", restauranteId)
     .maybeSingle();
 
@@ -114,10 +124,26 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Restaurante não encontrado." }, { status: 404 });
   }
 
-  const row = rest as { id: string; vitrine_fechada?: boolean | null; funcionamento_semana?: unknown };
+  const row = rest as {
+    id: string;
+    vitrine_fechada?: boolean | null;
+    funcionamento_semana?: unknown;
+    retirada_balcao?: boolean | null;
+  };
   if (row.vitrine_fechada === true) {
     return NextResponse.json({ error: "Restaurante fechado para novos pedidos." }, { status: 409 });
   }
+
+  if (tipoEntrega === "retirada" && row.retirada_balcao !== true) {
+    return NextResponse.json(
+      { error: "Este restaurante não oferece retirada no balcão." },
+      { status: 400 },
+    );
+  }
+
+  const observacoes = latin1SafeString(
+    (tipoEntrega === "retirada" ? PREFIXO_OBS_BALCAO : "") + obsSan,
+  ).slice(0, 12000);
 
   const funcionamento_semana = parseFuncionamentoSemana(row.funcionamento_semana) ?? undefined;
   const horarioStub = { funcionamento_semana } as Restaurante;

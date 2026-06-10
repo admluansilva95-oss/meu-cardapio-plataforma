@@ -73,6 +73,14 @@ export function montarTextoPedidoResumoParaApi(p: PedidoWhatsAppFormatadoInput):
 
   const partes: string[] = [
     "NOVO PEDIDO (resumo para o painel)",
+  ];
+  if (p.tipoEntrega === "retirada") {
+    partes.push(
+      "*** RETIRADA NO BALCAO — NAO ENVIAR PARA ENTREGA (CLIENTE RETIRA NO LOCAL) ***",
+      "",
+    );
+  }
+  partes.push(
     "--------------------------------",
     "CLIENTE:",
     `- Nome: ${p.nomeCliente.trim()}`,
@@ -98,7 +106,7 @@ export function montarTextoPedidoResumoParaApi(p: PedidoWhatsAppFormatadoInput):
     `- Taxa de Entrega: ${formatBRL(Math.max(0, p.taxaEntrega))}`,
     `- TOTAL GERAL: ${formatBRL(p.totalGeral)}`,
     "--------------------------------",
-  ];
+  );
 
   return expandLatin1UserText(partes.join("\n"));
 }
@@ -113,6 +121,11 @@ export function montarTextoPedidoWhatsAppFormatado(p: PedidoWhatsAppFormatadoInp
 
   const partes: string[] = [
     "*NOVO PEDIDO RECEBIDO!*",
+  ];
+  if (p.tipoEntrega === "retirada") {
+    partes.push("*RETIRADA NO BALCAO* — cliente retira no local (sem entrega).", "");
+  }
+  partes.push(
     "--------------------------------",
     "*CLIENTE:*",
     `- Nome: ${p.nomeCliente.trim()}`,
@@ -138,7 +151,7 @@ export function montarTextoPedidoWhatsAppFormatado(p: PedidoWhatsAppFormatadoInp
     `- Taxa de Entrega: ${formatBRL(Math.max(0, p.taxaEntrega))}`,
     `- *TOTAL GERAL: ${formatBRL(p.totalGeral)}*`,
     "--------------------------------",
-  ];
+  );
 
   return expandLatin1UserText(partes.join("\n"));
 }
