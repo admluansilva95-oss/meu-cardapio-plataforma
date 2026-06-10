@@ -19,7 +19,8 @@ import { sanitizarNomeArquivoStorageBase } from "@/lib/restaurante/sanitizar-nom
 import { expandLatin1UserText } from "@/lib/restaurante/json-latin1-wire";
 import { openUrlNovaGuia } from "@/lib/restaurante/open-url-nova-guia";
 import { buildWhatsappSendHref } from "@/lib/restaurante/whatsapp-href";
-import { latin1SafeFetch, initJsonPost, sanitizeFetchInit } from "@/lib/fetch-latin1-safe";
+import { latin1SafeFetch, sanitizeFetchInit } from "@/lib/fetch-latin1-safe";
+import { postJsonComBearer } from "@/lib/restaurante/post-json-bearer-client";
 import {
   normalizarPrecoCampoAoSair,
   parsePrecoBrasileiro,
@@ -1181,6 +1182,10 @@ function AdminPageInner() {
   const [cfgVitrineFechada, setCfgVitrineFechada] = useState(false);
   const [cfgMensagemFechado, setCfgMensagemFechado] = useState("");
   const [cfgMensagemBoasVindas, setCfgMensagemBoasVindas] = useState("");
+  /** Textos opcionais da faixa de status na vitrine pública (colunas `texto_vitrine_*`, `mensagem_fora_horario`). */
+  const [cfgTextoVitrineAberto, setCfgTextoVitrineAberto] = useState("");
+  const [cfgTextoVitrineFechado, setCfgTextoVitrineFechado] = useState("");
+  const [cfgMensagemForaHorario, setCfgMensagemForaHorario] = useState("");
   const [novaSecaoCardapio, setNovaSecaoCardapio] = useState("");
   const [cfgMsg, setCfgMsg] = useState<string | null>(null);
   const [cfgLogoUrl, setCfgLogoUrl] = useState<string | null>(null);
@@ -1210,6 +1215,9 @@ function AdminPageInner() {
       vf: restaurante.vitrine_fechada,
       mf: restaurante.mensagem_fechado,
       mb: restaurante.mensagem_boas_vindas,
+      tva: restaurante.texto_vitrine_aberto,
+      tvf: restaurante.texto_vitrine_fechado,
+      mfh: restaurante.mensagem_fora_horario,
       ccMerged: mergedCats,
     });
   }, [restaurante, pratos]);
@@ -1472,6 +1480,9 @@ function AdminPageInner() {
     setCfgVitrineFechada(restaurante.vitrine_fechada === true);
     setCfgMensagemFechado(restaurante.mensagem_fechado ?? "");
     setCfgMensagemBoasVindas(restaurante.mensagem_boas_vindas ?? "");
+    setCfgTextoVitrineAberto(restaurante.texto_vitrine_aberto ?? "");
+    setCfgTextoVitrineFechado(restaurante.texto_vitrine_fechado ?? "");
+    setCfgMensagemForaHorario(restaurante.mensagem_fora_horario ?? "");
     if (tab === "configuracoes") {
       setCfgMsg(null);
     }
@@ -1496,6 +1507,7 @@ function AdminPageInner() {
             headers: { Authorization: `Bearer ${token}` },
             credentials: "include",
             cache: "no-store",
+            referrerPolicy: "no-referrer",
           }),
         );
         const j = (await res.json()) as {
@@ -1612,28 +1624,29 @@ function AdminPageInner() {
         return;
       }
 
-      const res = await latin1SafeFetch(
+      const res = await postJsonComBearer(
         "/api/restaurante/config",
-        initJsonPost(
-          {
-            restauranteId: restaurante.id,
-            nome: nomeLimpo,
-            whatsapp: cfgWhatsapp.trim(),
-            cor_tema: corOk,
-            horario_funcionamento: resumoHorario,
-            taxa_entrega: taxaSync,
-            vitrine_fechada: cfgVitrineFechada,
-            mensagem_fechado: cfgVitrineFechada ? cfgMensagemFechado.trim() || null : null,
-            mensagem_boas_vindas: cfgMensagemBoasVindas.trim() || null,
-            funcionamento_semana: cfgFuncionamento,
-            taxas_entrega_zonas: zonasApi,
-            retirada_balcao: cfgRetiradaBalcao,
-            entrega_modo: cfgEntregaModo,
-            cardapio_categorias: cfgCardapioCategorias,
-            logo: logoOut,
-          },
-          token,
-        ),
+        {
+          restauranteId: restaurante.id,
+          nome: nomeLimpo,
+          whatsapp: cfgWhatsapp.trim(),
+          cor_tema: corOk,
+          horario_funcionamento: resumoHorario,
+          taxa_entrega: taxaSync,
+          vitrine_fechada: cfgVitrineFechada,
+          mensagem_fechado: cfgVitrineFechada ? cfgMensagemFechado.trim() || null : null,
+          mensagem_boas_vindas: cfgMensagemBoasVindas.trim() || null,
+          texto_vitrine_aberto: cfgTextoVitrineAberto.trim() || null,
+          texto_vitrine_fechado: cfgTextoVitrineFechado.trim() || null,
+          mensagem_fora_horario: cfgMensagemForaHorario.trim() || null,
+          funcionamento_semana: cfgFuncionamento,
+          taxas_entrega_zonas: zonasApi,
+          retirada_balcao: cfgRetiradaBalcao,
+          entrega_modo: cfgEntregaModo,
+          cardapio_categorias: cfgCardapioCategorias,
+          logo: logoOut,
+        },
+        token,
       );
 
       const json = (await res.json()) as { error?: string; warning?: string };
@@ -1673,6 +1686,9 @@ function AdminPageInner() {
     cfgVitrineFechada,
     cfgMensagemFechado,
     cfgMensagemBoasVindas,
+    cfgTextoVitrineAberto,
+    cfgTextoVitrineFechado,
+    cfgMensagemForaHorario,
     cfgLogoUrl,
     cfgLogoFile,
     supabase,
@@ -2424,6 +2440,50 @@ function AdminPageInner() {
                   maxLength={200}
                   placeholder="Uma frase de impacto para quem abre o link do cardápio."
                   className="mt-3 w-full rounded-xl border border-zinc-200 bg-zinc-50/50 px-3 py-2.5 text-sm text-zinc-900 outline-none transition placeholder:text-zinc-400 focus:border-transparent focus:ring-2 focus:ring-zinc-900"
+                />
+              </div>
+
+              <div className="rounded-3xl border border-zinc-100 bg-white px-5 py-6 shadow-sm sm:px-7 sm:py-8">
+                <h2 className="text-sm font-semibold tracking-tight text-[#1d1d1f]">Textos da faixa de status (vitrine)</h2>
+                <p className="mt-1 text-xs leading-relaxed text-[#86868b]">
+                  Opcionais: deixe em branco para usar os textos padrão do cardápio público. São gravados no banco ao
+                  salvar.
+                </p>
+                <label className="mt-4 block text-[11px] font-medium text-zinc-500" htmlFor="cfg-tva">
+                  Linha curta quando a vitrine está aberta (badge &quot;Aberto&quot;)
+                </label>
+                <input
+                  id="cfg-tva"
+                  type="text"
+                  value={cfgTextoVitrineAberto}
+                  onChange={(e) => setCfgTextoVitrineAberto(e.target.value.slice(0, 200))}
+                  maxLength={200}
+                  placeholder="Ex.: Faça seu pedido e receba em instantes."
+                  className="mt-1 w-full rounded-xl border border-zinc-200 bg-zinc-50/50 px-3 py-2.5 text-sm text-zinc-900 outline-none transition placeholder:text-zinc-400 focus:border-transparent focus:ring-2 focus:ring-zinc-900"
+                />
+                <label className="mt-3 block text-[11px] font-medium text-zinc-500" htmlFor="cfg-tvf">
+                  Texto curto no badge quando fechado (manual ou horário)
+                </label>
+                <input
+                  id="cfg-tvf"
+                  type="text"
+                  value={cfgTextoVitrineFechado}
+                  onChange={(e) => setCfgTextoVitrineFechado(e.target.value.slice(0, 200))}
+                  maxLength={200}
+                  placeholder="Sobrescreve a linha ao lado de &quot;Fechado&quot; no badge."
+                  className="mt-1 w-full rounded-xl border border-zinc-200 bg-zinc-50/50 px-3 py-2.5 text-sm text-zinc-900 outline-none transition placeholder:text-zinc-400 focus:border-transparent focus:ring-2 focus:ring-zinc-900"
+                />
+                <label className="mt-3 block text-[11px] font-medium text-zinc-500" htmlFor="cfg-mfh">
+                  Faixa âmbar fora do horário (quando não está pausado manualmente)
+                </label>
+                <textarea
+                  id="cfg-mfh"
+                  rows={2}
+                  value={cfgMensagemForaHorario}
+                  onChange={(e) => setCfgMensagemForaHorario(e.target.value.slice(0, 400))}
+                  maxLength={400}
+                  placeholder="Mensagem na faixa superior quando o relógio está fora da agenda."
+                  className="mt-1 w-full resize-y rounded-xl border border-zinc-200 bg-zinc-50/50 px-3 py-2.5 text-sm text-zinc-900 outline-none transition placeholder:text-zinc-400 focus:border-transparent focus:ring-2 focus:ring-zinc-900"
                 />
               </div>
 
