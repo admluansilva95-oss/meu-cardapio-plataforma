@@ -31,7 +31,8 @@ import { UtensilsCrossed } from "lucide-react";
 import { isValidSlug } from "@/lib/billing/slug";
 import { latin1SafeFetch, sanitizeFetchInit } from "@/lib/fetch-latin1-safe";
 import { expandLatin1UserText } from "@/lib/restaurante/json-latin1-wire";
-import { postPedidoVitrineViaXhr } from "@/lib/restaurante/post-pedido-vitrine-xhr";
+import { registrarPedidoVitrineNaApi } from "@/lib/restaurante/registrar-pedido-vitrine-client";
+import { buildWhatsappSendHref } from "@/lib/restaurante/whatsapp-href";
 import { openUrlNovaGuia } from "@/lib/restaurante/open-url-nova-guia";
 import { isRetryableSupabaseError, withRetry } from "@/lib/with-retry";
 
@@ -75,19 +76,6 @@ function toNumber(value: string | number | null | undefined): number {
 
 function digitsOnly(input: string) {
   return input.replace(/\D/g, "");
-}
-
-/** Mesma convenção do painel admin: prefixa 55 quando faltar DDI. */
-function waMeUrl(telefone: string, message: string) {
-  let d = digitsOnly(telefone);
-  if (d.length === 11 && !d.startsWith("55")) {
-    d = `55${d}`;
-  }
-  if (d.length === 10 && !d.startsWith("55")) {
-    d = `55${d}`;
-  }
-  const text = encodeURIComponent(expandLatin1UserText(message));
-  return `https://wa.me/${d}?text=${text}`;
 }
 
 type RestauranteRow = {
@@ -326,6 +314,7 @@ export default function PublicCardapioPage() {
                 method: "GET",
                 cache: "no-store",
                 credentials: "omit",
+                referrerPolicy: "no-referrer",
                 signal: ac.signal,
               }),
             );
@@ -455,8 +444,9 @@ export default function PublicCardapioPage() {
     if (!cartHydrated || !slug) return;
     const payload: StoredCartLine[] = cart.map(({ prato, quantidade, observacoes }) => {
       const o = observacoes?.trim();
-      return o
-        ? { i: prato.id, q: quantidade, o: o.slice(0, 400) }
+      const oWire = o ? expandLatin1UserText(o.slice(0, 400)) : undefined;
+      return oWire
+        ? { i: prato.id, q: quantidade, o: oWire }
         : { i: prato.id, q: quantidade };
     });
     try {
@@ -468,9 +458,9 @@ export default function PublicCardapioPage() {
 
   useEffect(() => {
     if (restaurante?.nome) {
-      document.title = `${restaurante.nome} · Cardápio`;
+      document.title = expandLatin1UserText(`${restaurante.nome} - Cardápio`);
     } else if (slug) {
-      document.title = `${formatSlugToDisplayName(slug)} · Cardápio`;
+      document.title = expandLatin1UserText(`${formatSlugToDisplayName(slug)} - Cardápio`);
     } else {
       document.title = "Cardápio";
     }
@@ -764,7 +754,7 @@ export default function PublicCardapioPage() {
     setCheckoutSubmitting(true);
     try {
       /** `XMLHttpRequest` + corpo UTF-8: evita `ByteString` em alguns Chromium/Electron com `fetch`. */
-      const { status, json } = await postPedidoVitrineViaXhr("/api/pedidos/vitrine", {
+      const { status, json } = await registrarPedidoVitrineNaApi("/api/pedidos/vitrine", {
         restauranteId: restaurante.id,
         cliente: nomeOk,
         telefone: formatarTelefoneWhatsappBR(clienteTelefoneDisplay),
@@ -784,8 +774,7 @@ export default function PublicCardapioPage() {
         return;
       }
       const textoWhatsAppComBullets = montarTextoPedidoWhatsAppFormatado(payloadPedido);
-      const href = waMeUrl(restaurante.whatsapp, textoWhatsAppComBullets);
-      openUrlNovaGuia(href);
+      openUrlNovaGuia(buildWhatsappSendHref(restaurante.whatsapp, textoWhatsAppComBullets));
     } catch (e) {
       console.error("[checkout] falha ao registrar pedido:", e);
       setCheckoutErro("Falha de rede ao registrar o pedido. Verifique sua conexão e tente de novo.");

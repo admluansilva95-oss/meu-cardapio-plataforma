@@ -18,6 +18,7 @@ import { mensagemUploadStorageAmigavel } from "@/lib/restaurante/mensagem-upload
 import { sanitizarNomeArquivoStorageBase } from "@/lib/restaurante/sanitizar-nome-arquivo-storage";
 import { expandLatin1UserText } from "@/lib/restaurante/json-latin1-wire";
 import { openUrlNovaGuia } from "@/lib/restaurante/open-url-nova-guia";
+import { buildWhatsappSendHref } from "@/lib/restaurante/whatsapp-href";
 import { latin1SafeFetch, initJsonPost, sanitizeFetchInit } from "@/lib/fetch-latin1-safe";
 import {
   normalizarPrecoCampoAoSair,
@@ -416,18 +417,6 @@ const PRESET_CORES_TEMA = [
 
 function digitsOnly(input: string) {
   return input.replace(/\D/g, "");
-}
-
-function waMeUrl(telefone: string, message: string) {
-  let d = digitsOnly(telefone);
-  if (d.length === 11 && !d.startsWith("55")) {
-    d = `55${d}`;
-  }
-  if (d.length === 10 && !d.startsWith("55")) {
-    d = `55${d}`;
-  }
-  const text = encodeURIComponent(expandLatin1UserText(message));
-  return `https://wa.me/${d}?text=${text}`;
 }
 
 function isPedidoRetiradaBalcao(p: Pedido): boolean {
@@ -1849,8 +1838,7 @@ function AdminPageInner() {
       }
 
       const msg = mensagemParaColuna(atual, destino);
-      const url = waMeUrl(atual.telefone, msg);
-      openUrlNovaGuia(url);
+      openUrlNovaGuia(buildWhatsappSendHref(atual.telefone, msg));
     } finally {
       setPedidoBusyId(null);
       setPedidoBusyKind(null);

@@ -1,18 +1,7 @@
 /**
- * Abre URL em nova aba sem depender só de `window.open` (alguns webviews tratam URLs longas de forma estrita).
+ * Abre URL em nova aba só via `<a target="_blank">` (evita `window.open` + URLs longas em webviews).
  */
 export function openUrlNovaGuia(href: string): void {
-  try {
-    const w = window.open(href, "_blank", "noopener,noreferrer");
-    if (w == null) {
-      openUrlViaAnchor(href);
-    }
-  } catch {
-    openUrlViaAnchor(href);
-  }
-}
-
-function openUrlViaAnchor(href: string): void {
   const a = document.createElement("a");
   a.href = href;
   a.target = "_blank";

@@ -7,7 +7,7 @@ import {
   taxaEntregaParaPedido,
   type TipoEntregaPedido,
 } from "@/lib/restaurante/pedido-texto-whatsapp";
-import { expandLatin1UserText } from "@/lib/restaurante/json-latin1-wire";
+import { buildWhatsappSendHref } from "@/lib/restaurante/whatsapp-href";
 
 export interface OrderPreviewProps {
   restaurante: Restaurante;
@@ -43,9 +43,8 @@ export function OrderPreview({
 
   const href = useMemo(() => {
     if (!waNumber) return null;
-    const text = encodeURIComponent(expandLatin1UserText(textoPedido));
-    return `https://wa.me/${waNumber}?text=${text}`;
-  }, [waNumber, textoPedido]);
+    return buildWhatsappSendHref(restaurante.whatsapp, textoPedido);
+  }, [waNumber, restaurante.whatsapp, textoPedido]);
 
   const subtotal = itens.reduce((acc, { prato, quantidade }) => acc + prato.preco * quantidade, 0);
   const { valor: taxaBase } = taxaEntregaParaPedido(restaurante, zonaUnica, { tipo: tipoEntrega });

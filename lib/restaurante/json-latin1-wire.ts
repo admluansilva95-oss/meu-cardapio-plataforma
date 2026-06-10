@@ -43,3 +43,24 @@ export function jsonStringifyLatin1Wire(value: unknown): string {
     return expandLatin1UserText(v);
   });
 }
+
+/**
+ * Percorre objetos/arrays e normaliza **todas** as strings (nomes de pratos, obs, etc.)
+ * antes do `JSON.stringify` — cobre qualquer caminho que escape ao replacer isolado.
+ */
+export function deepSanitizeStringsForWire(input: unknown): unknown {
+  if (typeof input === "string") return expandLatin1UserText(input);
+  if (input == null || typeof input === "number" || typeof input === "boolean") return input;
+  if (Array.isArray(input)) return input.map(deepSanitizeStringsForWire);
+  if (typeof input === "object") {
+    const src = input as Record<string, unknown>;
+    const out: Record<string, unknown> = {};
+    for (const [k, v] of Object.entries(src)) {
+      const sk = latin1SafeString(k);
+      if (!sk) continue;
+      out[sk] = deepSanitizeStringsForWire(v);
+    }
+    return out;
+  }
+  return input;
+}
