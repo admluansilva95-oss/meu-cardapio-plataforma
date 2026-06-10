@@ -29,6 +29,7 @@ import { useParams } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { UtensilsCrossed } from "lucide-react";
 import { isValidSlug } from "@/lib/billing/slug";
+import { normalizeCorTema } from "@/lib/restaurante/cor-tema";
 import { latin1SafeFetch, sanitizeFetchInit } from "@/lib/fetch-latin1-safe";
 import { expandLatin1UserText } from "@/lib/restaurante/json-latin1-wire";
 import { registrarPedidoVitrineNaApi } from "@/lib/restaurante/registrar-pedido-vitrine-client";
@@ -123,7 +124,7 @@ function mapRestauranteRow(row: RestauranteRow): Restaurante {
     slug: row.slug,
     whatsapp: row.whatsapp?.trim() || "+5500000000000",
     logo: row.logo ?? null,
-    cor_tema: row.cor_tema?.trim() || "#0d9488",
+    cor_tema: normalizeCorTema(row.cor_tema ?? ""),
     horario_funcionamento: row.horario_funcionamento?.trim() || null,
     taxa_entrega: taxaEntrega,
     vitrine_fechada: row.vitrine_fechada === true,
@@ -616,7 +617,7 @@ export default function PublicCardapioPage() {
     if (!cartOpen) setCheckoutErro(null);
   }, [cartOpen]);
 
-  const accent = restaurante?.cor_tema?.trim() || "#1d1d1f";
+  const accent = restaurante ? normalizeCorTema(restaurante.cor_tema) : "#1d1d1f";
 
   const addToCart = (prato: Prato) => {
     if (restaurante && pedidosBloqueados) return;
@@ -753,7 +754,7 @@ export default function PublicCardapioPage() {
 
     setCheckoutSubmitting(true);
     try {
-      /** `XMLHttpRequest` + corpo UTF-8: evita `ByteString` em alguns Chromium/Electron com `fetch`. */
+      /** Registro via `fetch` (fallback XHR se ByteString) + payload sanitizado. */
       const { status, json } = await registrarPedidoVitrineNaApi("/api/pedidos/vitrine", {
         restauranteId: restaurante.id,
         cliente: nomeOk,

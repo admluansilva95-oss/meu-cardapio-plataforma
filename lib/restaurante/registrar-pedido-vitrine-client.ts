@@ -14,6 +14,29 @@ export type VitrinePedidoJson = {
  * - `referrerPolicy: "no-referrer"` evita cabeçalho `Referer` com Unicode (ByteString em alguns runtimes).
  * - corpo como `ArrayBuffer` UTF-8 (evita tratar o JSON como USVString).
  */
+function parseResJson(res: Response): Promise<VitrinePedidoJson> {
+  return res.json().catch(() => ({} as VitrinePedidoJson));
+}
+
+function postPedidoVitrineXhr(url: string, bodyUtf8: Uint8Array): Promise<{ status: number; json: VitrinePedidoJson }> {
+  return new Promise((resolve, reject) => {
+    const xhr = new XMLHttpRequest();
+    xhr.open("POST", url, true);
+    xhr.setRequestHeader("Content-Type", "application/json; charset=utf-8");
+    xhr.onload = () => {
+      let json: VitrinePedidoJson = {};
+      try {
+        json = xhr.responseText ? (JSON.parse(xhr.responseText) as VitrinePedidoJson) : {};
+      } catch {
+        json = {};
+      }
+      resolve({ status: xhr.status, json });
+    };
+    xhr.onerror = () => reject(new Error("XHR falhou."));
+    xhr.send(bodyUtf8);
+  });
+}
+
 export async function registrarPedidoVitrineNaApi(
   url: string,
   payload: unknown,
@@ -26,23 +49,28 @@ export async function registrarPedidoVitrineNaApi(
       ? u8.buffer
       : u8.slice().buffer;
 
-  const res = await globalThis.fetch(url, {
-    method: "POST",
-    mode: "same-origin",
-    credentials: "same-origin",
-    cache: "no-store",
-    referrerPolicy: "no-referrer",
-    headers: {
-      "Content-Type": "application/json; charset=utf-8",
-    },
-    body,
-  });
+  const doFetch = async () => {
+    const res = await globalThis.fetch(url, {
+      method: "POST",
+      mode: "same-origin",
+      credentials: "same-origin",
+      cache: "no-store",
+      referrerPolicy: "no-referrer",
+      headers: {
+        "Content-Type": "application/json; charset=utf-8",
+      },
+      body,
+    });
+    return { status: res.status, json: await parseResJson(res) };
+  };
 
-  let json: VitrinePedidoJson = {};
   try {
-    json = (await res.json()) as VitrinePedidoJson;
-  } catch {
-    json = {};
+    return await doFetch();
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    if (/ByteString|Latin-1|USVString/i.test(msg)) {
+      return postPedidoVitrineXhr(url, u8);
+    }
+    throw e;
   }
-  return { status: res.status, json };
 }

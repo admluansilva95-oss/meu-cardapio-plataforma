@@ -387,7 +387,7 @@ function mapRestauranteRow(row: {
     slug: row.slug,
     whatsapp: row.whatsapp?.trim() || "+5500000000000",
     logo: row.logo ?? null,
-    cor_tema: row.cor_tema?.trim() || "#0d9488",
+    cor_tema: normalizeCorTema(row.cor_tema ?? ""),
     horario_funcionamento: row.horario_funcionamento?.trim() || null,
     taxa_entrega: taxaEntrega,
     vitrine_fechada: row.vitrine_fechada === true,
