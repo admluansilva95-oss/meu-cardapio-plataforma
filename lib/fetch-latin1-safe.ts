@@ -20,12 +20,21 @@ function sanitizeJsonBodyString(raw: string): string {
   return latin1SafeString(raw);
 }
 
-/**
- * JSON como `Blob` UTF-8: evita `ByteString` em runtimes (ex.: Electron) que exigem Latin-1
- * quando `body` é `string` (caracteres como `•` U+2022 no índice 0).
- */
-function jsonBodyBlobUtf8(json: string): Blob {
-  return new Blob([json], { type: "application/json; charset=utf-8" });
+/** JSON como `Blob` de bytes UTF-8 (via `TextEncoder`), sem passar a string UTF-16 direto ao `Blob`. */
+function jsonBodyUtf8Blob(json: string): Blob {
+  return new Blob([new TextEncoder().encode(json)], {
+    type: "application/json; charset=utf-8",
+  });
+}
+
+function isBufferSourceJsonBody(body: RequestInit["body"]): boolean {
+  if (body == null) return false;
+  if (body instanceof Blob) return true;
+  if (typeof ArrayBuffer !== "undefined") {
+    if (body instanceof ArrayBuffer) return true;
+    if (ArrayBuffer.isView(body)) return true;
+  }
+  return false;
 }
 
 function sanitizeReferrer(ref: RequestInit["referrer"]): RequestInit["referrer"] {
@@ -43,7 +52,7 @@ export function sanitizeFetchInit(init: RequestInit): RequestInit {
   const out: RequestInit = { ...init };
 
   if (typeof out.body === "string") {
-    out.body = jsonBodyBlobUtf8(sanitizeJsonBodyString(out.body));
+    out.body = jsonBodyUtf8Blob(sanitizeJsonBodyString(out.body));
   }
 
   out.referrer = sanitizeReferrer(out.referrer);
@@ -51,7 +60,7 @@ export function sanitizeFetchInit(init: RequestInit): RequestInit {
   const headersSource = out.headers != null ? (out.headers as HeadersInit) : undefined;
   const h = new Headers(headersSource);
 
-  if (out.headers != null || out.body instanceof Blob) {
+  if (out.headers != null || isBufferSourceJsonBody(out.body)) {
     out.headers = cloneHeadersLatin1Safe(h);
   } else {
     out.headers = undefined;
@@ -74,11 +83,12 @@ export function initJsonPost(payload: unknown, bearerToken: string): RequestInit
     headers: cloneHeadersLatin1Safe(
       new Headers({
         Authorization: `Bearer ${bearerToken}`,
+        "Content-Type": "application/json; charset=utf-8",
       }),
     ),
     credentials: "include",
     cache: "no-store",
-    body: jsonBodyBlobUtf8(json),
+    body: jsonBodyUtf8Blob(json),
   };
 }
 
@@ -129,7 +139,7 @@ async function fetchWithSanitizedRequest(input: Request, baseFetch: typeof fetch
     const req = new Request(input.url, {
       method,
       headers: h,
-      body: jsonBodyBlobUtf8(bodyOut),
+      body: jsonBodyUtf8Blob(bodyOut),
       mode: input.mode,
       credentials: input.credentials,
       cache: input.cache,

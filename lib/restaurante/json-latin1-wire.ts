@@ -17,12 +17,14 @@ export function latin1SafeString(s: string): string {
  * depois remove qualquer caractere ainda fora de Latin-1.
  */
 export function expandLatin1UserText(s: string): string {
+  /* NFKC reduz variantes de compatibilidade (ex.: bullets “estranhos”) para formas cobertas abaixo. */
   const t = s
+    .normalize("NFKC")
     .replace(/\uFEFF/g, "") /* BOM */
     /* Espaços tipográficos (ex.: `toLocaleString` pt-BR) — fora de Latin-1 e disparam ByteString no Chrome */
     .replace(/[\u2000-\u200A\u202F\u205F]/g, " ")
-    /* Bullets / marcadores comuns (Word, Google Docs, iOS) — U+2022 = 8226 */
-    .replace(/[\u2022\u2023\u2043\u2219\u25CF\u25AA\u25E6\u29BB\u30FB]/g, "-")
+    /* Bullets / marcadores (Word, iOS, Docs) — U+2022 = 8226; setas-bala 204C/204D */
+    .replace(/[\u2022\u2023\u2024\u2025\u2043\u204C\u204D\u2219\u25CF\u25AA\u25E6\u29BB\u30FB]/g, "-")
     .replace(/\u2013|\u2014|\u2010|\u2011|\u2212/g, "-") /* – — ‐ ‑ − */
     .replace(/\u2026/g, "...") /* … */
     .replace(/\u00A0/g, " ")
