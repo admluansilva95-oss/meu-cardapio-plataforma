@@ -1,8 +1,13 @@
-import { deepSanitizeStringsForWire, jsonStringifyLatin1Wire } from "@/lib/restaurante/json-latin1-wire";
+import {
+  deepSanitizeStringsForWire,
+  expandLatin1UserText,
+  jsonStringifyLatin1Wire,
+} from "@/lib/restaurante/json-latin1-wire";
 
 /**
- * POST JSON com `Authorization: Bearer` — `fetch` nativo, corpo `ArrayBuffer` UTF-8,
- * `referrerPolicy: no-referrer` (evita `ByteString` em alguns runtimes ao salvar config).
+ * POST JSON com `Authorization: Bearer` **somente via XMLHttpRequest** + corpo `ArrayBuffer` UTF-8.
+ * Evita `TypeError: ByteString` (ex.: U+2022 em cookies/referrer ou bugs do `fetch` no Electron/Chromium)
+ * ao salvar configurações no painel.
  */
 export async function postJsonComBearer(
   url: string,
@@ -12,20 +17,39 @@ export async function postJsonComBearer(
   const wired = deepSanitizeStringsForWire(payload);
   const raw = jsonStringifyLatin1Wire(wired);
   const u8 = new TextEncoder().encode(raw);
-  const body =
+  const bodyAb =
     u8.byteOffset === 0 && u8.byteLength === u8.buffer.byteLength
       ? u8.buffer
       : u8.slice().buffer;
 
-  return globalThis.fetch(url, {
-    method: "POST",
-    credentials: "include",
-    cache: "no-store",
-    referrerPolicy: "no-referrer",
-    headers: {
+  const tokenSafe = expandLatin1UserText(bearerToken.trim());
+
+  const { status, statusText, responseText } = await new Promise<{
+    status: number;
+    statusText: string;
+    responseText: string;
+  }>((resolve, reject) => {
+    const xhr = new XMLHttpRequest();
+    xhr.open("POST", url, true);
+    xhr.withCredentials = true;
+    xhr.setRequestHeader("Content-Type", "application/json; charset=utf-8");
+    xhr.setRequestHeader("Authorization", `Bearer ${tokenSafe}`);
+    xhr.onload = () => {
+      resolve({
+        status: xhr.status,
+        statusText: xhr.statusText,
+        responseText: xhr.responseText,
+      });
+    };
+    xhr.onerror = () => reject(new TypeError("Falha de rede ao salvar."));
+    xhr.send(bodyAb);
+  });
+
+  return new Response(responseText, {
+    status,
+    statusText,
+    headers: new Headers({
       "Content-Type": "application/json; charset=utf-8",
-      Authorization: `Bearer ${bearerToken}`,
-    },
-    body,
+    }),
   });
 }
