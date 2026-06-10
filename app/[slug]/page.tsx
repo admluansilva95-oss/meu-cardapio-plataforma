@@ -12,7 +12,10 @@ import {
 } from "@/lib/restaurante/pedido-whatsapp-formatado";
 import { formatarTelefoneWhatsappBR, digitosTelefoneBR } from "@/lib/restaurante/br-telefone-mascara";
 import { parsePrecoBrasileiro } from "@/lib/restaurante/preco-input";
-import { statusAberturaPorRelogio, textoHorarioVitrine } from "@/lib/restaurante/horario-vitrine";
+import {
+  statusAberturaPorRelogio,
+  vitrineHorarioExibicao,
+} from "@/lib/restaurante/horario-vitrine";
 import { parseFuncionamentoSemana } from "@/lib/restaurante/funcionamento-semana";
 import { parseTaxasEntregaZonas } from "@/lib/restaurante/taxas-entrega-zonas";
 import {
@@ -23,7 +26,7 @@ import {
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Clock, UtensilsCrossed } from "lucide-react";
+import { UtensilsCrossed } from "lucide-react";
 import { isValidSlug } from "@/lib/billing/slug";
 import { sanitizeFetchInit } from "@/lib/fetch-latin1-safe";
 import { isRetryableSupabaseError, withRetry } from "@/lib/with-retry";
@@ -857,17 +860,27 @@ export default function PublicCardapioPage() {
   const vitrineFechada = restaurante.vitrine_fechada === true;
   const mensagemFechadoCustom = restaurante.mensagem_fechado?.trim() ?? "";
 
-  const textoHor = textoHorarioVitrine(restaurante);
+  const horarioVitrine = vitrineHorarioExibicao(restaurante);
   const statusRelogio = statusAberturaPorRelogio(restaurante, relogio);
 
   const fechadoPorHorario = !vitrineFechada && statusRelogio === "fechado";
   const fechadoManual = vitrineFechada;
 
   const textoVitrineAbertoPadrao = "Faça seu pedido e receba em instantes.";
+  /** Mensagem longa na faixa superior quando a vitrine está pausada manualmente (sem duplicar o badge). */
   const textoVitrineFechadoPadrao = "No momento estamos fechados. Veja nosso cardápio!";
+  /** Faixa padrão quando fora do horário da agenda (sem dizer “fechados” no sentido de pausa manual). */
+  const textoForaHorarioFaixaPadrao =
+    "Estamos fora do horário de atendimento. O cardápio continua disponível para consulta.";
+  /** Linha curta ao lado de “Fechado” no badge quando não há texto customizado em texto_vitrine_fechado. */
+  const textoVitrineFechadoBadgePadraoManual = "Pedidos pausados pelo estabelecimento.";
+  const textoVitrineFechadoBadgePadraoHorario = "Fora do horário de atendimento.";
+
+  const pillVitrineFechadoCustom = restaurante.texto_vitrine_fechado?.trim() ?? "";
 
   const badgeLinhaStatus = pedidosBloqueados
-    ? (restaurante.texto_vitrine_fechado?.trim() || textoVitrineFechadoPadrao)
+    ? pillVitrineFechadoCustom ||
+      (fechadoManual ? textoVitrineFechadoBadgePadraoManual : textoVitrineFechadoBadgePadraoHorario)
     : (restaurante.texto_vitrine_aberto?.trim() || textoVitrineAbertoPadrao);
 
   const rotuloStatusPrincipal = fechadoManual
@@ -888,10 +901,12 @@ export default function PublicCardapioPage() {
     restaurante.mensagem_boas_vindas?.trim() ||
     `Bem-vindo ao cardápio de ${restaurante.nome}.`;
 
+  /** Faixa âmbar: mensagem operacional custom ou texto longo padrão (uma vez), sem duplicar o badge. */
   const faixaAlertaTexto = pedidosBloqueados
     ? vitrineFechada
-      ? mensagemFechadoCustom || badgeLinhaStatus
-      : restaurante.mensagem_fora_horario?.trim() || badgeLinhaStatus
+      ? mensagemFechadoCustom || (!pillVitrineFechadoCustom ? textoVitrineFechadoPadrao : "")
+      : restaurante.mensagem_fora_horario?.trim() ||
+        (!pillVitrineFechadoCustom ? textoForaHorarioFaixaPadrao : "")
     : "";
 
   const zonasTx = restaurante.taxas_entrega_zonas ?? [];
@@ -1013,10 +1028,29 @@ export default function PublicCardapioPage() {
             </div>
           ) : null}
 
-          {textoHor ? (
-            <div className="mx-auto mt-6 flex max-w-lg items-start justify-center gap-2.5 text-left sm:mt-7">
-              <Clock className="mt-0.5 h-4 w-4 shrink-0 text-zinc-400" strokeWidth={2} aria-hidden />
-              <p className="text-sm leading-relaxed text-zinc-500">{textoHor}</p>
+          {horarioVitrine ? (
+            <div className="mx-auto mt-5 max-w-md sm:mt-6">
+              {horarioVitrine.modo === "blocos" ? (
+                <div className="rounded-2xl border border-zinc-200/50 bg-white/60 px-4 py-3.5 shadow-[0_1px_0_rgba(0,0,0,0.04)] backdrop-blur-sm sm:px-5">
+                  <ul className="space-y-2">
+                    {horarioVitrine.blocos.map((b, i) => (
+                      <li
+                        key={`${b.labelDias}-${i}`}
+                        className="flex items-baseline justify-between gap-4 text-[13px] leading-snug"
+                      >
+                        <span className="min-w-0 shrink text-zinc-500">{b.labelDias}</span>
+                        <span className="shrink-0 text-right font-medium tabular-nums text-zinc-800">
+                          {b.detalhe}
+                        </span>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              ) : (
+                <div className="rounded-2xl border border-zinc-200/50 bg-white/60 px-4 py-3.5 text-center shadow-[0_1px_0_rgba(0,0,0,0.04)] backdrop-blur-sm sm:px-5">
+                  <p className="text-[13px] leading-relaxed text-zinc-500">{horarioVitrine.texto}</p>
+                </div>
+              )}
             </div>
           ) : null}
         </div>

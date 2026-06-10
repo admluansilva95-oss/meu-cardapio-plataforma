@@ -52,11 +52,25 @@ export async function provisionRestauranteAfterPayment(
     return { ok: false, error: slugErr.message };
   }
 
-  if (slugTaken && slugTaken.owner_id !== input.user_id) {
+  if (slugTaken && slugTaken.owner_id != null && slugTaken.owner_id !== input.user_id) {
     return { ok: false, error: `O slug "${slug}" já está em uso.` };
   }
 
   if (slugTaken) {
+    if (slugTaken.owner_id == null) {
+      const { error: claimErr } = await admin
+        .from("restaurantes")
+        .update({
+          owner_id: input.user_id,
+          nome,
+          whatsapp,
+        })
+        .eq("id", slugTaken.id);
+      if (claimErr) {
+        console.error("[billing/restaurantes] claim orphan slug:", claimErr.message);
+        return { ok: false, error: claimErr.message };
+      }
+    }
     return { ok: true, restaurante_id: slugTaken.id, slug };
   }
 
@@ -101,6 +115,8 @@ export async function isSlugAvailable(
 
   if (!data) return true;
   if (excludeUserId && data.owner_id === excludeUserId) return true;
+  /* Slug sem dono (seed / legado): não bloqueia o checkout — o webhook atribui o owner. */
+  if (data.owner_id == null) return true;
   return false;
 }
 

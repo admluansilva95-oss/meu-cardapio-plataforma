@@ -20,9 +20,18 @@ function sanitizeJsonBodyString(raw: string): string {
   return latin1SafeString(raw);
 }
 
-/** UTF-8: evita `ByteString` em runtimes que forçam Latin-1 quando `body` é string (ex.: `•` U+2022). */
-function utf8EncodedBodyFromString(s: string): Uint8Array {
-  return new TextEncoder().encode(s);
+/**
+ * JSON como `Blob` UTF-8: evita `ByteString` em runtimes (ex.: Electron) que exigem Latin-1
+ * quando `body` é `string` (caracteres como `•` U+2022 no índice 0).
+ */
+function jsonBodyBlobUtf8(json: string): Blob {
+  return new Blob([json], { type: "application/json; charset=utf-8" });
+}
+
+function sanitizeReferrer(ref: RequestInit["referrer"]): RequestInit["referrer"] {
+  if (typeof ref !== "string" || ref.length === 0) return ref;
+  const t = expandLatin1UserText(ref);
+  return t.length > 0 ? t : undefined;
 }
 
 /**
@@ -34,22 +43,15 @@ export function sanitizeFetchInit(init: RequestInit): RequestInit {
   const out: RequestInit = { ...init };
 
   if (typeof out.body === "string") {
-    const sanitized = sanitizeJsonBodyString(out.body);
-    out.body = utf8EncodedBodyFromString(sanitized) as BodyInit;
+    out.body = jsonBodyBlobUtf8(sanitizeJsonBodyString(out.body));
   }
+
+  out.referrer = sanitizeReferrer(out.referrer);
 
   const headersSource = out.headers != null ? (out.headers as HeadersInit) : undefined;
   const h = new Headers(headersSource);
 
-  if (out.body instanceof Uint8Array) {
-    const rawCt = h.get("Content-Type") ?? "";
-    if (/application\/json/i.test(rawCt) && !/charset=/i.test(rawCt)) {
-      const base = rawCt.split(";")[0].trim() || "application/json";
-      h.set("Content-Type", `${base}; charset=utf-8`);
-    }
-  }
-
-  if (out.headers != null || (out.body instanceof Uint8Array && h.has("Content-Type"))) {
+  if (out.headers != null || out.body instanceof Blob) {
     out.headers = cloneHeadersLatin1Safe(h);
   } else {
     out.headers = undefined;
@@ -66,17 +68,17 @@ export const latin1SafeFetch = createLatin1SafeFetch();
  * Use com `latin1SafeFetch(url, initJsonPost(payload, token))`.
  */
 export function initJsonPost(payload: unknown, bearerToken: string): RequestInit {
+  const json = jsonStringifyLatin1Wire(payload);
   return {
     method: "POST",
     headers: cloneHeadersLatin1Safe(
       new Headers({
-        "Content-Type": "application/json",
         Authorization: `Bearer ${bearerToken}`,
       }),
     ),
     credentials: "include",
     cache: "no-store",
-    body: jsonStringifyLatin1Wire(payload),
+    body: jsonBodyBlobUtf8(json),
   };
 }
 
@@ -92,7 +94,7 @@ async function fetchWithSanitizedRequest(input: Request, baseFetch: typeof fetch
       credentials: input.credentials,
       cache: input.cache,
       redirect: input.redirect,
-      referrer: input.referrer,
+      referrer: sanitizeReferrer(input.referrer),
       referrerPolicy: input.referrerPolicy,
       integrity: input.integrity,
       keepalive: input.keepalive,
@@ -111,7 +113,7 @@ async function fetchWithSanitizedRequest(input: Request, baseFetch: typeof fetch
       credentials: input.credentials,
       cache: input.cache,
       redirect: input.redirect,
-      referrer: input.referrer,
+      referrer: sanitizeReferrer(input.referrer),
       referrerPolicy: input.referrerPolicy,
       integrity: input.integrity,
       keepalive: input.keepalive,
@@ -123,22 +125,16 @@ async function fetchWithSanitizedRequest(input: Request, baseFetch: typeof fetch
   try {
     const text = await input.clone().text();
     const bodyOut = sanitizeJsonBodyString(text);
-    const bodyBytes = utf8EncodedBodyFromString(bodyOut);
     const h = cloneHeadersLatin1Safe(input.headers);
-    const rawCt = h.get("Content-Type") ?? "";
-    if (/application\/json/i.test(rawCt) && !/charset=/i.test(rawCt)) {
-      const base = rawCt.split(";")[0].trim() || "application/json";
-      h.set("Content-Type", `${base}; charset=utf-8`);
-    }
     const req = new Request(input.url, {
       method,
       headers: h,
-      body: bodyBytes as BodyInit,
+      body: jsonBodyBlobUtf8(bodyOut),
       mode: input.mode,
       credentials: input.credentials,
       cache: input.cache,
       redirect: input.redirect,
-      referrer: input.referrer,
+      referrer: sanitizeReferrer(input.referrer),
       referrerPolicy: input.referrerPolicy,
       integrity: input.integrity,
       keepalive: input.keepalive,

@@ -29,7 +29,7 @@ export interface Restaurante {
   taxa_entrega?: number | null;
   /** Se true, a vitrine pública mostra aviso de fechado e não aceita novos itens no carrinho. */
   vitrine_fechada?: boolean;
-  /** Texto opcional no aviso de fechado; se vazio, a vitrine usa mensagem padrão. */
+  /** Texto opcional na faixa âmbar quando a vitrine está pausada; se vazio, usa o texto longo padrão (só na faixa). */
   mensagem_fechado?: string | null;
   /** Agenda semanal (substitui gradualmente o texto livre de horário). */
   funcionamento_semana?: FuncionamentoSemana | null;
@@ -45,9 +45,9 @@ export interface Restaurante {
   mensagem_boas_vindas?: string | null;
   /** Linha ao lado de “Aberto” quando aceita pedidos (opcional). */
   texto_vitrine_aberto?: string | null;
-  /** Linha ao lado de “Fechado” quando pedidos indisponíveis (opcional). */
+  /** Linha ao lado de “Fechado” no badge (opcional). Se vazio, o badge usa uma frase curta padrão; o texto longo fica na faixa âmbar. */
   texto_vitrine_fechado?: string | null;
-  /** Aviso quando fora do horário (pedidos bloqueados por agenda, não pausa manual). */
+  /** Faixa âmbar quando fora do horário da agenda; se vazio, usa texto padrão na faixa (não duplica o badge). */
   mensagem_fora_horario?: string | null;
 }
 
