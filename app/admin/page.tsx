@@ -17,6 +17,7 @@ import { mensagemErroSupabasePainel } from "@/lib/supabase/mensagem-erro";
 import { mensagemUploadStorageAmigavel } from "@/lib/restaurante/mensagem-upload-storage";
 import { sanitizarNomeArquivoStorageBase } from "@/lib/restaurante/sanitizar-nome-arquivo-storage";
 import { expandLatin1UserText } from "@/lib/restaurante/json-latin1-wire";
+import { openUrlNovaGuia } from "@/lib/restaurante/open-url-nova-guia";
 import { latin1SafeFetch, initJsonPost, sanitizeFetchInit } from "@/lib/fetch-latin1-safe";
 import {
   normalizarPrecoCampoAoSair,
@@ -1849,7 +1850,7 @@ function AdminPageInner() {
 
       const msg = mensagemParaColuna(atual, destino);
       const url = waMeUrl(atual.telefone, msg);
-      window.open(url, "_blank", "noopener,noreferrer");
+      openUrlNovaGuia(url);
     } finally {
       setPedidoBusyId(null);
       setPedidoBusyKind(null);
@@ -2342,6 +2343,13 @@ function AdminPageInner() {
             ) : (
               <>
                 <PedidosKpiBar kpis={kpisPedidos} />
+                <p className="mb-4 max-w-3xl text-[11px] leading-relaxed text-zinc-500">
+                  Pedidos fechados no cardápio público entram em <span className="font-medium text-zinc-700">Pendente</span>{" "}
+                  (API <code className="rounded bg-zinc-100 px-1 py-0.5 font-mono text-[10px]">/api/pedidos/vitrine</code> →
+                  tabela <code className="rounded bg-zinc-100 px-1 py-0.5 font-mono text-[10px]">pedidos</code>). Ao avançar
+                  na esteira, abrimos o WhatsApp do <span className="font-medium text-zinc-700">cliente</span> com o número
+                  que ele informou no fechamento (mensagem de status do pedido).
+                </p>
                 {pedidos.length === 0 ? (
                   <PedidosEmptyState />
                 ) : (

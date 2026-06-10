@@ -30,7 +30,9 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { UtensilsCrossed } from "lucide-react";
 import { isValidSlug } from "@/lib/billing/slug";
 import { latin1SafeFetch, sanitizeFetchInit } from "@/lib/fetch-latin1-safe";
-import { expandLatin1UserText, jsonStringifyLatin1Wire } from "@/lib/restaurante/json-latin1-wire";
+import { expandLatin1UserText } from "@/lib/restaurante/json-latin1-wire";
+import { postPedidoVitrineViaXhr } from "@/lib/restaurante/post-pedido-vitrine-xhr";
+import { openUrlNovaGuia } from "@/lib/restaurante/open-url-nova-guia";
 import { isRetryableSupabaseError, withRetry } from "@/lib/with-retry";
 
 /** Após esgotar retries ou falha de rede, evita mensagens técnicas cruas para o cliente final. */
@@ -761,34 +763,21 @@ export default function PublicCardapioPage() {
 
     setCheckoutSubmitting(true);
     try {
-      const res = await latin1SafeFetch(
-        "/api/pedidos/vitrine",
-        sanitizeFetchInit({
-          method: "POST",
-          headers: { "Content-Type": "application/json; charset=utf-8" },
-          cache: "no-store",
-          body: jsonStringifyLatin1Wire({
-            restauranteId: restaurante.id,
-            cliente: nomeOk,
-            telefone: formatarTelefoneWhatsappBR(clienteTelefoneDisplay),
-            total: totalGeral,
-            formaPagamento,
-            itens: itensPedido,
-            observacoes: observacoesApi,
-            tipoEntrega,
-          }),
-        }),
-      );
-      let json: { ok?: boolean; error?: string } = {};
-      try {
-        json = (await res.json()) as { ok?: boolean; error?: string };
-      } catch {
-        json = {};
-      }
-      if (!res.ok || !json.ok) {
+      /** `XMLHttpRequest` + corpo UTF-8: evita `ByteString` em alguns Chromium/Electron com `fetch`. */
+      const { status, json } = await postPedidoVitrineViaXhr("/api/pedidos/vitrine", {
+        restauranteId: restaurante.id,
+        cliente: nomeOk,
+        telefone: formatarTelefoneWhatsappBR(clienteTelefoneDisplay),
+        total: totalGeral,
+        formaPagamento,
+        itens: itensPedido,
+        observacoes: observacoesApi,
+        tipoEntrega,
+      });
+      if (!json.ok || status < 200 || status >= 300) {
         setCheckoutErro(
           json.error ??
-            (res.status === 503
+            (status === 503
               ? "Não foi possível registrar o pedido no servidor. Tente enviar pelo WhatsApp manualmente."
               : "Não foi possível registrar o pedido. Tente novamente."),
         );
@@ -796,7 +785,7 @@ export default function PublicCardapioPage() {
       }
       const textoWhatsAppComBullets = montarTextoPedidoWhatsAppFormatado(payloadPedido);
       const href = waMeUrl(restaurante.whatsapp, textoWhatsAppComBullets);
-      window.open(href, "_blank", "noopener,noreferrer");
+      openUrlNovaGuia(href);
     } catch (e) {
       console.error("[checkout] falha ao registrar pedido:", e);
       setCheckoutErro("Falha de rede ao registrar o pedido. Verifique sua conexão e tente de novo.");
