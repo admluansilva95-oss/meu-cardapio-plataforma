@@ -30,7 +30,6 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { UtensilsCrossed } from "lucide-react";
 import { isValidSlug } from "@/lib/billing/slug";
 import { normalizeCorTema } from "@/lib/restaurante/cor-tema";
-import { latin1SafeFetch, sanitizeFetchInit } from "@/lib/fetch-latin1-safe";
 import { expandLatin1UserText } from "@/lib/restaurante/json-latin1-wire";
 import { registrarPedidoVitrineNaApi } from "@/lib/restaurante/registrar-pedido-vitrine-client";
 import { buildWhatsappSendHref } from "@/lib/restaurante/whatsapp-href";
@@ -309,15 +308,15 @@ export default function PublicCardapioPage() {
       const result = await withRetry(
         async () => {
           try {
-            const res = await latin1SafeFetch(
+            const res = await globalThis.fetch(
               `/api/public/cardapio?slug=${encodeURIComponent(slug)}`,
-              sanitizeFetchInit({
+              {
                 method: "GET",
                 cache: "no-store",
                 credentials: "omit",
                 referrerPolicy: "no-referrer",
                 signal: ac.signal,
-              }),
+              },
             );
             let body: unknown = {};
             try {
