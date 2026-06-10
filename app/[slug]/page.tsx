@@ -1440,7 +1440,7 @@ export default function PublicCardapioPage() {
                                     placeholder="Ex.: Centro, Jardim…"
                                     className="w-full rounded-xl border border-zinc-200 bg-white px-4 py-3 text-sm text-zinc-900 outline-none transition focus:ring-2 focus:ring-zinc-950"
                                   />
-                                  <div className="max-h-40 space-y-1 overflow-y-auto rounded-xl border border-zinc-100 bg-zinc-50/50 p-1">
+                                  <div className="max-h-[min(52vh,22rem)] space-y-1 overflow-y-auto overscroll-contain rounded-xl border border-zinc-100 bg-zinc-50/50 p-1 [-webkit-overflow-scrolling:touch]">
                                     {zonasFiltradasPorBusca.length === 0 ? (
                                       <p className="px-3 py-2 text-xs leading-relaxed text-zinc-500">
                                         Nenhuma região encontrada com esse texto. Ajuste a busca ou use a aba
@@ -1477,23 +1477,37 @@ export default function PublicCardapioPage() {
                                   )}
                                 </div>
                               ) : (
-                                <div>
-                                  <label className="text-[11px] font-medium text-zinc-500" htmlFor="checkout-bairro-zona">
-                                    Bairro / região
-                                  </label>
-                                  <select
-                                    id="checkout-bairro-zona"
-                                    value={zonaEntregaId ?? ""}
-                                    onChange={(e) => setZonaEntregaId(e.target.value || null)}
-                                    className="mt-1 w-full rounded-xl border border-zinc-200 bg-white px-4 py-3 text-sm text-zinc-900 outline-none transition focus:ring-2 focus:ring-zinc-950"
+                                <div className="space-y-2">
+                                  <p className="text-[11px] font-medium text-zinc-500">Bairro / região</p>
+                                  <div
+                                    className="max-h-[min(52vh,22rem)] space-y-1 overflow-y-auto overscroll-contain rounded-xl border border-zinc-100 bg-zinc-50/50 p-1 [-webkit-overflow-scrolling:touch]"
+                                    role="listbox"
+                                    aria-label="Lista de bairros e taxas"
                                   >
-                                    <option value="">Selecione o bairro</option>
                                     {zonasEntrega.map((z) => (
-                                      <option key={z.id} value={z.id}>
-                                        {z.nome} — {formatBRL(z.valor)}
-                                      </option>
+                                      <button
+                                        key={z.id}
+                                        type="button"
+                                        role="option"
+                                        aria-selected={zonaEntregaId === z.id}
+                                        onClick={() => setZonaEntregaId(z.id)}
+                                        className={[
+                                          "flex w-full items-center justify-between rounded-lg px-3 py-2.5 text-left text-sm font-medium transition",
+                                          zonaEntregaId === z.id
+                                            ? "bg-zinc-900 text-white"
+                                            : "text-zinc-800 hover:bg-white",
+                                        ].join(" ")}
+                                      >
+                                        <span className="min-w-0 pr-2">{z.nome}</span>
+                                        <span className="shrink-0 tabular-nums text-xs opacity-90">
+                                          {formatBRL(z.valor)}
+                                        </span>
+                                      </button>
                                     ))}
-                                  </select>
+                                  </div>
+                                  {!zonaEntregaId ? (
+                                    <p className="text-[11px] text-zinc-500">Toque em uma região para definir a taxa.</p>
+                                  ) : null}
                                 </div>
                               )}
                             </div>

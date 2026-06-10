@@ -38,6 +38,34 @@ const PREFIXO_OBS_BALCAO =
   "NAO enviar para entrega: cliente retira no estabelecimento.\n" +
   "Acompanhe na esteira ate disponibilizar para retirada no balcao.\n\n";
 
+/** UUID v4 (e variantes comuns) enviado em `restaurantes.id`. */
+function isUuidRestauranteId(value: string): boolean {
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(value.trim());
+}
+
+function isSchemaOrUnknownColumnError(err: {
+  message?: string;
+  code?: string;
+  details?: string;
+  hint?: string;
+} | null): boolean {
+  if (!err) return false;
+  const blob = [err.message, err.details, err.hint, err.code].filter(Boolean).join(" ").toLowerCase();
+  if (blob.includes("42703")) return true;
+  if (blob.includes("schema cache")) return true;
+  if (blob.includes("does not exist")) return true;
+  if (blob.includes("could not find") && blob.includes("column")) return true;
+  if (blob.includes("pgrst204")) return true;
+  return false;
+}
+
+type RestaurantePedidoRow = {
+  id: string;
+  vitrine_fechada?: boolean | null;
+  funcionamento_semana?: unknown;
+  retirada_balcao?: boolean | null;
+};
+
 /**
  * Registra pedido originado na vitrine (antes do cliente abrir o WhatsApp).
  * Requer `SUPABASE_SERVICE_ROLE_KEY` no servidor (bypass RLS seguro).
@@ -76,6 +104,9 @@ export async function POST(request: Request) {
   if (!restauranteId || !cliente || cliente.length < 2) {
     return NextResponse.json({ error: "Dados do cliente inválidos." }, { status: 400 });
   }
+  if (!isUuidRestauranteId(restauranteId)) {
+    return NextResponse.json({ error: "Identificador do estabelecimento inválido." }, { status: 400 });
+  }
   if (!telefone || telefone.length < 8) {
     return NextResponse.json({ error: "Telefone inválido." }, { status: 400 });
   }
@@ -110,29 +141,81 @@ export async function POST(request: Request) {
   const tipoEntrega =
     body.tipoEntrega === "retirada" || body.tipoEntrega === "entrega" ? body.tipoEntrega : "entrega";
 
-  const { data: rest, error: restErr } = await admin
+  let rest: RestaurantePedidoRow | null = null;
+
+  const selectCompleto = await admin
     .from("restaurantes")
     .select("id, vitrine_fechada, funcionamento_semana, retirada_balcao")
     .eq("id", restauranteId)
     .maybeSingle();
 
-  if (restErr) {
-    console.error("[api/pedidos/vitrine] select restaurante:", restErr);
-    return NextResponse.json(
-      { error: "Erro interno ao consultar o estabelecimento." },
-      { status: 500 },
-    );
-  }
-  if (!rest) {
+  if (selectCompleto.error) {
+    if (isSchemaOrUnknownColumnError(selectCompleto.error)) {
+      console.warn(
+        "[api/pedidos/vitrine] select restaurante (completo) coluna ausente — tentando select mínimo:",
+        selectCompleto.error.message,
+      );
+      const selectMinimo = await admin
+        .from("restaurantes")
+        .select("id, vitrine_fechada")
+        .eq("id", restauranteId)
+        .maybeSingle();
+
+      if (selectMinimo.error) {
+        if (isSchemaOrUnknownColumnError(selectMinimo.error)) {
+          console.warn(
+            "[api/pedidos/vitrine] select mínimo falhou — tentando só id:",
+            selectMinimo.error.message,
+          );
+          const soId = await admin.from("restaurantes").select("id").eq("id", restauranteId).maybeSingle();
+          if (soId.error || !soId.data) {
+            console.error("[api/pedidos/vitrine] select id:", soId.error);
+            return NextResponse.json(
+              { error: "Erro interno ao consultar o estabelecimento." },
+              { status: 500 },
+            );
+          }
+          rest = {
+            id: soId.data.id,
+            vitrine_fechada: false,
+            funcionamento_semana: undefined,
+            retirada_balcao: false,
+          };
+        } else {
+          console.error("[api/pedidos/vitrine] select restaurante (mínimo):", selectMinimo.error);
+          return NextResponse.json(
+            { error: "Erro interno ao consultar o estabelecimento." },
+            { status: 500 },
+          );
+        }
+      } else if (!selectMinimo.data) {
+        return NextResponse.json({ error: "Restaurante não encontrado." }, { status: 404 });
+      } else {
+        rest = {
+          id: selectMinimo.data.id,
+          vitrine_fechada: selectMinimo.data.vitrine_fechada,
+          funcionamento_semana: undefined,
+          retirada_balcao: false,
+        };
+      }
+    } else {
+      const msg = (selectCompleto.error.message ?? "").toLowerCase();
+      if (msg.includes("invalid input syntax for type uuid") || msg.includes("22p02")) {
+        return NextResponse.json({ error: "Identificador do estabelecimento inválido." }, { status: 400 });
+      }
+      console.error("[api/pedidos/vitrine] select restaurante:", selectCompleto.error);
+      return NextResponse.json(
+        { error: "Erro interno ao consultar o estabelecimento." },
+        { status: 500 },
+      );
+    }
+  } else if (!selectCompleto.data) {
     return NextResponse.json({ error: "Restaurante não encontrado." }, { status: 404 });
+  } else {
+    rest = selectCompleto.data as RestaurantePedidoRow;
   }
 
-  const row = rest as {
-    id: string;
-    vitrine_fechada?: boolean | null;
-    funcionamento_semana?: unknown;
-    retirada_balcao?: boolean | null;
-  };
+  const row = rest;
   if (row.vitrine_fechada === true) {
     return NextResponse.json({ error: "Restaurante fechado para novos pedidos." }, { status: 409 });
   }
