@@ -376,7 +376,7 @@ export async function POST(request: NextRequest) {
         );
         return applyAuthCookies(res, authCookieWrites);
       } else {
-        logoGravar = t;
+        logoGravar = sanitizeDbPlainText(t, 2500);
       }
     }
   }

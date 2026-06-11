@@ -2,6 +2,7 @@ import { createServerClient, type CookieOptions } from "@supabase/ssr";
 import { cookies } from "next/headers";
 import { NextResponse, type NextRequest } from "next/server";
 import { createSubscriptionCheckoutSession } from "@/lib/billing/checkout";
+import { logStructured } from "@/lib/logging/structured-log";
 import { requireAdminSupabaseClient } from "@/lib/supabase/admin";
 
 type CookieToSet = { name: string; value: string; options: CookieOptions };
@@ -95,7 +96,6 @@ export async function POST(request: NextRequest) {
     );
 
     let user = null as Awaited<ReturnType<typeof supabase.auth.getUser>>["data"]["user"];
-    let authSource: "bearer" | "cookies" | null = null;
 
     if (hasBearer && bearerToken) {
       const {
@@ -105,14 +105,6 @@ export async function POST(request: NextRequest) {
 
       if (!bearerError && bearerUser) {
         user = bearerUser;
-        authSource = "bearer";
-      } else {
-        console.log(
-          "[checkout/create-session] getUser(Bearer) falhou:",
-          bearerError?.message ?? "erro desconhecido",
-          "| bearerLen:",
-          bearerToken.length
-        );
       }
     }
 
@@ -124,29 +116,14 @@ export async function POST(request: NextRequest) {
 
       if (!cookieError && cookieUser) {
         user = cookieUser;
-        authSource = "cookies";
-      } else {
-        console.log(
-          "[checkout/create-session] getUser(cookies) falhou:",
-          cookieError?.message ?? "erro desconhecido",
-          "| cookieCount:",
-          cookieStore.getAll().length,
-          "| supabaseAuthCookie:",
-          supabaseCookiePresent
-        );
       }
     }
 
     if (!user) {
-      console.log(
-        "[checkout/create-session] 401 — sem usuário após Bearer e cookies.",
-        "hadBearer:",
-        hasBearer,
-        "| authSource:",
-        authSource,
-        "| supabaseAuthCookie:",
-        supabaseCookiePresent
-      );
+      logStructured("warn", "api.checkout.create_session.unauthorized", {
+        hadBearer: hasBearer,
+        supabaseAuthCookie: supabaseCookiePresent,
+      });
       const res = NextResponse.json(
         { error: "Sessão inválida ou expirada." },
         { status: 401 }
@@ -155,7 +132,7 @@ export async function POST(request: NextRequest) {
     }
 
     if (user.id !== userId) {
-      console.error("[checkout/create-session] userId mismatch");
+      logStructured("warn", "api.checkout.create_session.user_id_mismatch", {});
       const res = NextResponse.json(
         { error: "Usuário não autorizado para esta operação." },
         { status: 403 }
@@ -167,7 +144,9 @@ export async function POST(request: NextRequest) {
     try {
       admin = requireAdminSupabaseClient();
     } catch (err) {
-      console.error("[checkout/create-session] admin:", err);
+      logStructured("error", "api.checkout.create_session.admin_client", {
+        message: err instanceof Error ? err.message : String(err),
+      });
       const res = NextResponse.json(
         { error: "Configuração do servidor incompleta." },
         { status: 500 }
@@ -192,7 +171,9 @@ export async function POST(request: NextRequest) {
     const res = NextResponse.json({ url: result.url });
     return applyAuthCookies(res, authCookieWrites);
   } catch (err) {
-    console.error("[checkout/create-session] unexpected:", err);
+    logStructured("error", "api.checkout.create_session.unexpected", {
+      message: err instanceof Error ? err.message : String(err),
+    });
     const res = NextResponse.json(
       { error: "Erro interno ao criar sessão de checkout." },
       { status: 500 }

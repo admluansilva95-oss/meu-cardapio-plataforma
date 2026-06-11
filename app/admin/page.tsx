@@ -1,6 +1,6 @@
 "use client";
 
-import { Suspense, useCallback, useEffect, useMemo, useState } from "react";
+import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import type { EntregaModo, Prato, PratoStatus, Restaurante } from "../../types";
 import { AdminOperacionalPainelLateral } from "@/components/admin/AdminOperacionalPainelLateral";
@@ -1234,6 +1234,10 @@ function AdminPageInner() {
   const [serviceRoleConfigured, setServiceRoleConfigured] = useState<boolean | null>(null);
   /** Atualização leve (ex.: botão “Atualizar pedidos”) sem esconder a esteira inteira. */
   const [silentRefreshing, setSilentRefreshing] = useState(false);
+  /** `false` quando o canal Realtime de pedidos falha (rede/timeout) — use “Atualizar pedidos”. */
+  const [pedidosRealtimeOk, setPedidosRealtimeOk] = useState(true);
+  /** Evita condição de corrida: só a última `loadData()` em voo aplica estado e limpa loading. */
+  const loadDataSeqRef = useRef(0);
 
   useEffect(() => {
     return () => {
@@ -1303,16 +1307,22 @@ function AdminPageInner() {
   }, [tenantSlug, supabase, router]);
 
   const loadData = useCallback(async (opts?: { soft?: boolean }) => {
+    const seq = ++loadDataSeqRef.current;
+    const isSoft = Boolean(opts?.soft);
+
     if (!tenantSlug) {
-      setLoading(false);
-      setFetchError(null);
-      setRestaurante(null);
-      setPratos([]);
-      setPedidos([]);
+      if (seq === loadDataSeqRef.current) {
+        setLoading(false);
+        setSilentRefreshing(false);
+        setFetchError(null);
+        setRestaurante(null);
+        setPratos([]);
+        setPedidos([]);
+      }
       return;
     }
 
-    if (!opts?.soft) {
+    if (!isSoft) {
       setLoading(true);
     } else {
       setSilentRefreshing(true);
@@ -1320,6 +1330,7 @@ function AdminPageInner() {
     setFetchError(null);
     try {
       if (!isValidSlug(tenantSlug)) {
+        if (seq !== loadDataSeqRef.current) return;
         setFetchError(
           "Slug inválido. Use apenas letras minúsculas, números e hífens (3 a 64 caracteres), no formato do seu cardápio público.",
         );
@@ -1334,6 +1345,8 @@ function AdminPageInner() {
           supabase.from("restaurantes").select("*").eq("slug", tenantSlug).maybeSingle(),
         { shouldRetry: (r) => isRetryableSupabaseError(r.error) },
       );
+
+      if (seq !== loadDataSeqRef.current) return;
 
       if (restErr) {
         setFetchError(restErr.message);
@@ -1355,6 +1368,8 @@ function AdminPageInner() {
       const {
         data: { user: sessionUser },
       } = await supabase.auth.getUser();
+
+      if (seq !== loadDataSeqRef.current) return;
 
       if (!sessionUser) {
         setFetchError("Sessão expirada. Faça login novamente.");
@@ -1405,6 +1420,8 @@ function AdminPageInner() {
           ),
         ]);
 
+      if (seq !== loadDataSeqRef.current) return;
+
       if (pratosErr) {
         setFetchError(pratosErr.message);
         setPratos([]);
@@ -1427,12 +1444,13 @@ function AdminPageInner() {
         setPedidos(mapped);
       }
     } catch (e) {
-      setFetchError(e instanceof Error ? e.message : "Erro ao carregar dados.");
+      if (seq === loadDataSeqRef.current) {
+        setFetchError(e instanceof Error ? e.message : "Erro ao carregar dados.");
+      }
     } finally {
-      if (opts?.soft) {
-        setSilentRefreshing(false);
-      } else {
-        setLoading(false);
+      if (seq === loadDataSeqRef.current) {
+        if (isSoft) setSilentRefreshing(false);
+        else setLoading(false);
       }
     }
   }, [supabase, tenantSlug]);
@@ -1668,6 +1686,8 @@ function AdminPageInner() {
         setCfgLogoFile(null);
         setCfgLogoDraftPreview(null);
       }
+    } catch (e) {
+      setCfgMsg(e instanceof Error ? e.message : "Erro ao salvar. Tente novamente.");
     } finally {
       setTenantSaving(false);
     }
@@ -1695,6 +1715,9 @@ function AdminPageInner() {
     const rid = restaurante?.id;
     if (!rid) return;
 
+    setPedidosRealtimeOk(true);
+    let cancelled = false;
+
     const filter = `restaurante_id=eq.${rid}`;
     const channel = supabase
       .channel(`pedidos-restaurante-${rid}`)
@@ -1716,7 +1739,6 @@ function AdminPageInner() {
               return [...prev, mapped];
             });
             if (rawColuna === "recebidos") {
-              console.info("[realtime/pedidos] INSERT — novo pedido em recebidos:", mapped.id);
               playNewOrderChime();
             }
             return;
@@ -1745,9 +1767,19 @@ function AdminPageInner() {
           }
         },
       )
-      .subscribe();
+      .subscribe((status) => {
+        if (cancelled) return;
+        if (status === "SUBSCRIBED") {
+          setPedidosRealtimeOk(true);
+          return;
+        }
+        if (status === "CHANNEL_ERROR" || status === "TIMED_OUT") {
+          setPedidosRealtimeOk(false);
+        }
+      });
 
     return () => {
+      cancelled = true;
       void supabase.removeChannel(channel);
     };
   }, [supabase, restaurante?.id]);
@@ -2230,6 +2262,15 @@ function AdminPageInner() {
       <AdminSidebar restaurante={restaurante} tab={tab} onTab={setTab} />
 
       <main className="flex min-h-0 flex-1 flex-col">
+        {tab === "pedidos" && !pedidosRealtimeOk ? (
+          <div
+            role="status"
+            className="border-b border-amber-200/80 bg-amber-50 px-5 py-2.5 text-center text-xs font-medium text-amber-950 sm:px-8"
+          >
+            Lista ao vivo indisponível (rede ou tempo esgotado). Use{" "}
+            <span className="whitespace-nowrap font-semibold">Atualizar pedidos</span> para sincronizar.
+          </div>
+        ) : null}
         <header className="border-b border-black/[0.06] bg-[#fbfbfd]/95 px-5 py-5 backdrop-blur-xl sm:px-8">
           <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
             <div className="min-w-0 flex-1">

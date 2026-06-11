@@ -82,12 +82,6 @@ export async function createSubscriptionCheckoutSession(
     const success_url = success.href;
     const cancel_url = cancel.href;
 
-    console.log("===[ STRIPE PAYLOAD URLs ]===", {
-      origin,
-      success_url,
-      cancel_url,
-    });
-
     const session = await stripe.checkout.sessions.create({
       mode: "subscription",
       locale: "pt-BR",
