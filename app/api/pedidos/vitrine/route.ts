@@ -13,6 +13,7 @@ import {
 } from "@/lib/restaurante/pedido-vitrine-calculo";
 import { createAdminSupabaseClient } from "@/lib/supabase/admin";
 import type { Restaurante } from "@/types";
+import { sanitizeDbPlainText } from "@/lib/db/sanitize-persist";
 
 /**
  * Pedidos da vitrine → `public.pedidos`.
@@ -210,8 +211,10 @@ export async function POST(request: Request) {
 
   const restauranteId = typeof body.restauranteId === "string" ? body.restauranteId.trim() : "";
   warnCamposPrecoIgnorados(rawBody, restauranteId);
-  const cliente = typeof body.cliente === "string" ? body.cliente.trim() : "";
-  const telefone = typeof body.telefone === "string" ? body.telefone.trim() : "";
+  const clienteRaw = typeof body.cliente === "string" ? body.cliente.trim() : "";
+  const telefoneRaw = typeof body.telefone === "string" ? body.telefone.trim() : "";
+  const cliente = sanitizeDbPlainText(clienteRaw, 200);
+  const telefone = sanitizeDbPlainText(telefoneRaw, 40);
   const forma = body.formaPagamento;
 
   if (!restauranteId || !cliente || cliente.length < 2) {
@@ -286,8 +289,11 @@ export async function POST(request: Request) {
     );
   }
 
-  const observacoesBase = sanitizeObservacoesVitrine(
-    (tipoEntrega === "retirada" ? PREFIXO_OBS_BALCAO : "") + obsSan,
+  const observacoesBase = sanitizeDbPlainText(
+    sanitizeObservacoesVitrine(
+      (tipoEntrega === "retirada" ? PREFIXO_OBS_BALCAO : "") + obsSan,
+      OBSERVACOES_VITRINE_MAX_TOTAL_CHARS,
+    ),
     OBSERVACOES_VITRINE_MAX_TOTAL_CHARS,
   );
 

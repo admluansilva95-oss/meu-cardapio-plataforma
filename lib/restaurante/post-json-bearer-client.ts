@@ -1,8 +1,8 @@
 import {
   deepSanitizeStringsForWire,
-  expandLatin1UserText,
   jsonStringifyLatin1Wire,
 } from "@/lib/restaurante/json-latin1-wire";
+import { sanitizeUserFreeText } from "@/lib/utils/sanitize-strings";
 
 /**
  * POST JSON com `Authorization: Bearer` **somente via XMLHttpRequest** + corpo `ArrayBuffer` UTF-8.
@@ -22,7 +22,7 @@ export async function postJsonComBearer(
       ? u8.buffer
       : u8.slice().buffer;
 
-  const tokenSafe = expandLatin1UserText(bearerToken.trim());
+  const tokenSafe = sanitizeUserFreeText(bearerToken.trim());
 
   const { status, statusText, responseText } = await new Promise<{
     status: number;

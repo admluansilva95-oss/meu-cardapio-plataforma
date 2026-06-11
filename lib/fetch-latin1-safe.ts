@@ -1,9 +1,10 @@
-import { jsonStringifyLatin1Wire, expandLatin1UserText, latin1SafeString } from "@/lib/restaurante/json-latin1-wire";
+import { jsonStringifyLatin1Wire, latin1SafeString } from "@/lib/restaurante/json-latin1-wire";
+import { sanitizeUserFreeText } from "@/lib/utils/sanitize-strings";
 
 export function cloneHeadersLatin1Safe(headers: Headers): Headers {
   const fixed = new Headers();
   headers.forEach((value, key) => {
-    fixed.set(latin1SafeString(key), expandLatin1UserText(value));
+    fixed.set(latin1SafeString(key), sanitizeUserFreeText(value));
   });
   return fixed;
 }
@@ -39,7 +40,7 @@ function isBufferSourceJsonBody(body: RequestInit["body"]): boolean {
 
 function sanitizeReferrer(ref: RequestInit["referrer"]): RequestInit["referrer"] {
   if (typeof ref !== "string" || ref.length === 0) return ref;
-  const t = expandLatin1UserText(ref);
+  const t = sanitizeUserFreeText(ref);
   return t.length > 0 ? t : undefined;
 }
 
@@ -82,7 +83,7 @@ export function initJsonPost(payload: unknown, bearerToken: string): RequestInit
     method: "POST",
     headers: cloneHeadersLatin1Safe(
       new Headers({
-        Authorization: `Bearer ${bearerToken}`,
+        Authorization: `Bearer ${sanitizeUserFreeText(bearerToken.trim())}`,
         "Content-Type": "application/json; charset=utf-8",
       }),
     ),

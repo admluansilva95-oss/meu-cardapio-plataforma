@@ -16,6 +16,7 @@ import {
   parseCardapioCategorias,
   validarCardapioCategorias,
 } from "@/lib/restaurante/cardapio-categorias";
+import { sanitizeDbJsonDeep, sanitizeDbPlainText, sanitizeDbPlainTextNullable } from "@/lib/db/sanitize-persist";
 
 export const dynamic = "force-dynamic";
 
@@ -247,13 +248,15 @@ export async function POST(request: NextRequest) {
   }
 
   const restauranteId = typeof body.restauranteId === "string" ? body.restauranteId.trim() : "";
-  const nome = typeof body.nome === "string" ? body.nome.trim() : "";
-  const whatsapp = typeof body.whatsapp === "string" ? body.whatsapp.trim() : "";
+  const nomeRaw = typeof body.nome === "string" ? body.nome.trim() : "";
+  const nome = sanitizeDbPlainText(nomeRaw, 200);
+  const whatsappRaw = typeof body.whatsapp === "string" ? body.whatsapp.trim() : "";
+  const whatsapp = sanitizeDbPlainText(whatsappRaw, 64);
   const corRaw = typeof body.cor_tema === "string" ? body.cor_tema : "#0d9488";
   const horario =
     body.horario_funcionamento === null || body.horario_funcionamento === undefined
       ? null
-      : String(body.horario_funcionamento).trim() || null;
+      : sanitizeDbPlainTextNullable(String(body.horario_funcionamento).trim(), 4000);
   const taxa =
     body.taxa_entrega === null || body.taxa_entrega === undefined || Number.isNaN(body.taxa_entrega)
       ? null
@@ -261,10 +264,10 @@ export async function POST(request: NextRequest) {
   const vitrineFechada = body.vitrine_fechada === true;
   const mensagemFechadoRaw =
     typeof body.mensagem_fechado === "string" ? body.mensagem_fechado.trim().slice(0, 400) : "";
-  const mensagem_fechado = vitrineFechada && mensagemFechadoRaw.length > 0 ? mensagemFechadoRaw : null;
+  const mensagem_fechado =
+    vitrineFechada && mensagemFechadoRaw.length > 0 ? sanitizeDbPlainText(mensagemFechadoRaw, 400) : null;
 
-  const normTxt = (v: unknown, max: number) =>
-    typeof v === "string" ? v.trim().slice(0, max) || null : null;
+  const normTxt = (v: unknown, max: number) => sanitizeDbPlainTextNullable(typeof v === "string" ? v : null, max);
   const mensagem_boas_vindas = normTxt(body.mensagem_boas_vindas, 500);
 
   const legacyVitrineOpcional: {
@@ -287,7 +290,7 @@ export async function POST(request: NextRequest) {
   const taxas_zonas = Array.isArray(taxasBody)
     ? (taxasBody as TaxaEntregaZona[]).map((z) => ({
         id: String(z.id ?? ""),
-        nome: String(z.nome ?? "").trim(),
+        nome: sanitizeDbPlainText(String(z.nome ?? "").trim(), 120),
         valor: Math.max(0, Math.round(Number(z.valor) * 100) / 100) || 0,
       }))
     : null;
@@ -318,7 +321,9 @@ export async function POST(request: NextRequest) {
     return applyAuthCookies(res, authCookieWrites);
   }
   const funcionamentoSemanaGravar: FuncionamentoSemana = funcionamento_semana;
-  const funcionamentoJsonGravar = serializarFuncionamentoSemanaParaJson(funcionamentoSemanaGravar);
+  const funcionamentoJsonGravar = serializarFuncionamentoSemanaParaJson(
+    sanitizeDbJsonDeep(funcionamentoSemanaGravar),
+  );
   const listaZonas = taxas_zonas ?? [];
   const errZ = validarTaxasZonas(listaZonas);
   if (errZ) {
@@ -327,8 +332,10 @@ export async function POST(request: NextRequest) {
   }
 
   const cardapio_categorias = Array.isArray(body.cardapio_categorias)
-    ? body.cardapio_categorias.map((x) => String(x ?? "").trim()).filter(Boolean)
-    : parseCardapioCategorias(body.cardapio_categorias);
+    ? body.cardapio_categorias
+        .map((x) => sanitizeDbPlainText(String(x ?? "").trim(), 48))
+        .filter(Boolean)
+    : parseCardapioCategorias(body.cardapio_categorias).map((x) => sanitizeDbPlainText(x, 48)).filter(Boolean);
   const errC = validarCardapioCategorias(cardapio_categorias);
   if (errC) {
     const res = NextResponse.json({ error: errC }, { status: 400 });

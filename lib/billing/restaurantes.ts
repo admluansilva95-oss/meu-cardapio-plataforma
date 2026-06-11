@@ -1,5 +1,6 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { isValidSlug, normalizeSlugInput } from "@/lib/billing/slug";
+import { sanitizeDbPlainText } from "@/lib/db/sanitize-persist";
 
 export type ProvisionRestauranteInput = {
   user_id: string;
@@ -21,8 +22,8 @@ export async function provisionRestauranteAfterPayment(
     return { ok: false, error: "Slug inválido nos metadados do checkout." };
   }
 
-  const nome = input.restaurant_name?.trim() || slug;
-  const whatsapp = input.whatsapp?.trim() || "+5500000000000";
+  const nome = sanitizeDbPlainText(input.restaurant_name?.trim() || slug, 200);
+  const whatsapp = sanitizeDbPlainText(input.whatsapp?.trim() || "+5500000000000", 64);
 
   const { data: existingByOwner, error: ownerErr } = await admin
     .from("restaurantes")

@@ -1,5 +1,5 @@
-import { expandLatin1UserText, latin1SafeString } from "@/lib/restaurante/json-latin1-wire";
 import { parseTaxasEntregaZonas, type TaxaEntregaZona } from "@/lib/restaurante/taxas-entrega-zonas";
+import { sanitizeUserFreeText } from "@/lib/utils/sanitize-strings";
 
 export type LinhaItemPedido = { pratoId: string; quantidade: number };
 
@@ -55,8 +55,8 @@ export function parseLinhasPedidoVitrine(body: { linhas?: unknown }): LinhaItemP
 }
 
 export function sanitizeObservacoesVitrine(raw: string, maxLen: number): string {
-  const t = expandLatin1UserText(raw.length > maxLen ? raw.slice(0, maxLen) : raw);
-  return latin1SafeString(t).slice(0, maxLen);
+  const clipped = raw.length > maxLen ? raw.slice(0, maxLen) : raw;
+  return sanitizeUserFreeText(clipped).slice(0, maxLen);
 }
 
 export function computeTaxaEntregaServidor(opts: {
@@ -128,7 +128,7 @@ export function computeTotaisPedidoVitrine(opts: {
     }
     const linhaSub = toMoney(unit * quantidade);
     subtotal += linhaSub;
-    const nome = expandLatin1UserText(p.nome.trim()) || "Item";
+    const nome = sanitizeUserFreeText(p.nome.trim()) || "Item";
     linhasItensTexto.push(`${quantidade}x ${nome} (${unit.toLocaleString("pt-BR", { style: "currency", currency: "BRL" })} cada)`);
   }
 
