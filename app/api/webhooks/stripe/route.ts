@@ -3,6 +3,7 @@ import { headers } from "next/headers";
 import type Stripe from "stripe";
 import { dispatchStripeEvent } from "@/lib/billing/stripe-webhook";
 import { logStructured } from "@/lib/logging/structured-log";
+import { isStripeIdempotencyTableUnavailable } from "@/lib/stripe/webhook-idempotency-errors";
 import { getStripe, getStripeWebhookSecret } from "@/lib/stripe/client";
 import { requireAdminSupabaseClient } from "@/lib/supabase/admin";
 
@@ -72,9 +73,11 @@ export async function POST(request: Request) {
         });
         return NextResponse.json({ received: true, duplicate: true });
       }
-      if (msg.includes("does not exist") || msg.includes("schema cache")) {
-        logStructured("warn", "webhook.stripe.idempotency_table_missing", {
+      if (isStripeIdempotencyTableUnavailable(idemErr)) {
+        logStructured("warn", "webhook.stripe.idempotency_table_unavailable", {
           eventId: event.id,
+          eventType: event.type,
+          code: idemErr.code,
           message: idemErr.message,
         });
       } else {
