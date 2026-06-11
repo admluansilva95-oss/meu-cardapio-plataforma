@@ -22,9 +22,10 @@ import {
   ordenarSecoesCardapio,
   parseCardapioCategorias,
   slugifySecaoCardapio,
-  categoriaOcultaObservacoesCliente,
 } from "@/lib/restaurante/cardapio-categorias";
+import { formatBRL } from "@/lib/restaurante/format-brl";
 import Link from "next/link";
+import dynamic from "next/dynamic";
 import { useParams } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { UtensilsCrossed } from "lucide-react";
@@ -36,6 +37,8 @@ import { registrarPedidoVitrineNaApi } from "@/lib/restaurante/registrar-pedido-
 import { buildWhatsappSendHref } from "@/lib/restaurante/whatsapp-href";
 import { openUrlNovaGuia } from "@/lib/restaurante/open-url-nova-guia";
 import { isRetryableSupabaseError, withRetry } from "@/lib/with-retry";
+
+const CartDrawer = dynamic(() => import("@/components/vitrine/CartDrawer"), { ssr: false });
 
 /** Após esgotar retries ou falha de rede, evita mensagens técnicas cruas para o cliente final. */
 function mensagemErroCardapioParaCliente(message: string): string {
@@ -62,10 +65,6 @@ function resolveRestauranteDisplayNome(nome: string | null | undefined, slug: st
   const t = nome?.trim();
   if (t) return t;
   return formatSlugToDisplayName(slug);
-}
-
-function formatBRL(value: number) {
-  return value.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
 }
 
 function toNumber(value: string | number | null | undefined): number {
@@ -183,6 +182,7 @@ function PratoCoverImage(props: { src: string | null; nome: string }) {
       alt=""
       width={640}
       height={480}
+      sizes="(max-width: 640px) 100vw, (max-width: 1280px) 50vw, 33vw"
       loading="lazy"
       decoding="async"
       className="h-full w-full object-cover transition duration-500 ease-out group-hover:scale-[1.03]"
@@ -925,7 +925,7 @@ export default function PublicCardapioPage() {
           aria-hidden
         />
         <div className="relative mx-auto max-w-2xl px-5 text-center sm:px-8">
-          <div className="mx-auto flex w-fit justify-center">
+          <div className="mx-auto flex h-24 w-24 shrink-0 justify-center">
             {restaurante.logo ? (
               // eslint-disable-next-line @next/next/no-img-element
               <img
@@ -935,11 +935,11 @@ export default function PublicCardapioPage() {
                 height={96}
                 loading="eager"
                 decoding="async"
-                className="h-[5.25rem] w-[5.25rem] rounded-2xl border border-zinc-200/90 bg-white object-cover shadow-sm ring-1 ring-black/[0.04] sm:h-24 sm:w-24"
+                className="h-full w-full rounded-2xl border border-zinc-200/90 bg-white object-cover shadow-sm ring-1 ring-black/[0.04]"
               />
             ) : (
               <div
-                className="flex h-[5.25rem] w-[5.25rem] items-center justify-center rounded-2xl border border-zinc-200/90 bg-white text-2xl font-semibold text-zinc-400 shadow-sm ring-1 ring-black/[0.04] sm:h-24 sm:w-24"
+                className="flex h-full w-full items-center justify-center rounded-2xl border border-zinc-200/90 bg-white text-2xl font-semibold text-zinc-400 shadow-sm ring-1 ring-black/[0.04]"
                 style={{
                   boxShadow: `0 0 0 1px color-mix(in srgb, ${accent} 14%, transparent), 0 10px 32px -20px rgba(0,0,0,0.14)`,
                 }}
@@ -1205,481 +1205,48 @@ export default function PublicCardapioPage() {
         </div>
       ) : null}
 
-      {cartOpen ? (
-        <div className="fixed inset-0 z-40 flex justify-end">
-          <button
-            type="button"
-            className="absolute inset-0 bg-black/30 backdrop-blur-md"
-            aria-label="Fechar carrinho"
-            onClick={() => setCartOpen(false)}
-          />
-          <aside
-            className="relative flex h-[100dvh] w-full max-w-lg flex-col overflow-hidden rounded-l-[1.25rem] border-l border-zinc-200/80 bg-white/95 shadow-[0_0_0_1px_rgba(0,0,0,0.03)] shadow-2xl ring-1 ring-black/[0.04] backdrop-blur-xl sm:max-w-md"
-            role="dialog"
-            aria-modal="true"
-            aria-labelledby="cart-title"
-          >
-            <div className="flex shrink-0 items-center justify-between border-b border-zinc-100/90 px-5 py-4 sm:px-6 sm:py-5">
-              <div>
-                <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-zinc-500">
-                  Checkout
-                </p>
-                <h2 id="cart-title" className="mt-1 text-xl font-semibold tracking-tight text-zinc-900">
-                  Seu pedido
-                </h2>
-              </div>
-              <button
-                type="button"
-                onClick={() => setCartOpen(false)}
-                className="flex h-10 w-10 items-center justify-center rounded-full text-zinc-500 transition hover:bg-zinc-100 hover:text-zinc-900"
-                aria-label="Fechar"
-              >
-                <span className="text-lg leading-none">×</span>
-              </button>
-            </div>
-
-            <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-5 py-4 sm:px-6 sm:py-5">
-              {cart.length === 0 ? (
-                <p className="rounded-2xl border border-dashed border-zinc-200 bg-zinc-50/60 px-4 py-14 text-center text-sm leading-relaxed text-zinc-500">
-                  Carrinho vazio. Toque em &quot;+&quot; nos pratos que desejar.
-                </p>
-              ) : (
-                <div className="space-y-8">
-                  <section aria-labelledby="cart-itens">
-                    <h3 id="cart-itens" className="text-[11px] font-semibold uppercase tracking-wider text-zinc-500">
-                      Itens
-                    </h3>
-                    <ul className="mt-3 space-y-3">
-                      {cart.map(({ prato, quantidade, observacoes }) => (
-                        <li
-                          key={prato.id}
-                          className="rounded-2xl border border-zinc-100 bg-zinc-50/50 p-4 shadow-sm"
-                        >
-                          <div className="flex gap-3">
-                            <div className="min-w-0 flex-1">
-                              <p className="font-semibold tracking-tight text-zinc-900">{prato.nome}</p>
-                              <p className="mt-1 text-xs text-zinc-500">
-                                {formatBRL(prato.preco)} cada ·{" "}
-                                <span className="font-medium text-zinc-800">
-                                  {formatBRL(prato.preco * quantidade)}
-                                </span>
-                              </p>
-                            </div>
-                            <div className="flex shrink-0 items-center gap-1">
-                              <button
-                                type="button"
-                                className="flex h-9 w-9 items-center justify-center rounded-full border border-zinc-200 bg-white text-zinc-800 transition hover:bg-zinc-50 active:scale-95"
-                                onClick={() => setQty(prato.id, quantidade - 1)}
-                                aria-label="Diminuir"
-                              >
-                                −
-                              </button>
-                              <span className="w-8 text-center text-sm font-semibold tabular-nums">{quantidade}</span>
-                              <button
-                                type="button"
-                                className="flex h-9 w-9 items-center justify-center rounded-full border border-zinc-200 bg-white text-zinc-800 transition hover:bg-zinc-50 active:scale-95"
-                                onClick={() => setQty(prato.id, quantidade + 1)}
-                                aria-label="Aumentar"
-                              >
-                                +
-                              </button>
-                            </div>
-                          </div>
-                          {categoriaOcultaObservacoesCliente(prato.categoria) ? null : (
-                            <>
-                              <label className="mt-3 block text-[11px] font-medium text-zinc-500" htmlFor={`obs-${prato.id}`}>
-                                Observações (opcional)
-                              </label>
-                              <textarea
-                                id={`obs-${prato.id}`}
-                                rows={2}
-                                value={observacoes ?? ""}
-                                onChange={(e) => setItemObservacoes(prato.id, e.target.value)}
-                                placeholder="Ex.: sem cebola, ponto da carne…"
-                                className="mt-1 w-full resize-none rounded-xl border border-zinc-200 bg-white px-3 py-2.5 text-xs text-zinc-900 outline-none transition placeholder:text-zinc-400 focus:ring-2 focus:ring-zinc-950"
-                              />
-                            </>
-                          )}
-                        </li>
-                      ))}
-                    </ul>
-                  </section>
-
-                  <section className="space-y-3" aria-labelledby="cart-cliente">
-                    <h3 id="cart-cliente" className="text-[11px] font-semibold uppercase tracking-wider text-zinc-500">
-                      Seus dados
-                    </h3>
-                    <div className="space-y-2.5">
-                      <input
-                        type="text"
-                        autoComplete="name"
-                        value={clienteNome}
-                        onChange={(e) => setClienteNome(e.target.value.slice(0, 120))}
-                        placeholder="Nome completo"
-                        className="w-full rounded-xl border border-zinc-200 bg-white px-4 py-3 text-sm text-zinc-900 outline-none transition placeholder:text-zinc-400 focus:ring-2 focus:ring-zinc-950"
-                      />
-                      <input
-                        type="tel"
-                        inputMode="numeric"
-                        autoComplete="tel-national"
-                        value={clienteTelefoneDisplay}
-                        onChange={(e) =>
-                          setClienteTelefoneDisplay(formatarTelefoneWhatsappBR(e.target.value))
-                        }
-                        placeholder="(00) 00000-0000"
-                        className="w-full rounded-xl border border-zinc-200 bg-white px-4 py-3 text-sm text-zinc-900 outline-none transition placeholder:text-zinc-400 focus:ring-2 focus:ring-zinc-950"
-                      />
-                    </div>
-                  </section>
-
-                  {cart.length > 0 ? (
-                    <section className="space-y-3" aria-labelledby="cart-entrega">
-                      <h3 id="cart-entrega" className="text-[11px] font-semibold uppercase tracking-wider text-zinc-500">
-                        Entrega ou retirada
-                      </h3>
-                      {restaurante.retirada_balcao ? (
-                        <div className="flex rounded-2xl border border-zinc-200 bg-zinc-100/80 p-1">
-                          <button
-                            type="button"
-                            onClick={() => setTipoEntrega("entrega")}
-                            className={[
-                              "flex-1 rounded-xl py-2.5 text-sm font-semibold transition-all",
-                              tipoEntrega === "entrega"
-                                ? "bg-white text-zinc-900 shadow-sm ring-1 ring-zinc-200/80"
-                                : "text-zinc-500 hover:text-zinc-800",
-                            ].join(" ")}
-                          >
-                            Entrega
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => setTipoEntrega("retirada")}
-                            className={[
-                              "flex-1 rounded-xl py-2.5 text-sm font-semibold transition-all",
-                              tipoEntrega === "retirada"
-                                ? "bg-white text-zinc-900 shadow-sm ring-1 ring-zinc-200/80"
-                                : "text-zinc-500 hover:text-zinc-800",
-                            ].join(" ")}
-                          >
-                            Retirada
-                          </button>
-                        </div>
-                      ) : (
-                        <p className="rounded-xl border border-zinc-100 bg-zinc-50/80 px-3 py-2 text-xs text-zinc-600">
-                          Entrega no endereço informado abaixo.
-                        </p>
-                      )}
-
-                      {tipoEntrega === "entrega" ? (
-                        <div className="space-y-3 rounded-2xl border border-zinc-100 bg-white p-4 shadow-sm">
-                          <div className="grid gap-3 sm:grid-cols-2">
-                            <div className="sm:col-span-2">
-                              <label className="text-[11px] font-medium text-zinc-500" htmlFor="checkout-rua">
-                                Rua
-                              </label>
-                              <input
-                                id="checkout-rua"
-                                type="text"
-                                value={checkoutRua}
-                                onChange={(e) => setCheckoutRua(e.target.value.slice(0, 120))}
-                                className="mt-1 w-full rounded-xl border border-zinc-200 bg-white px-4 py-3 text-sm text-zinc-900 outline-none transition focus:ring-2 focus:ring-zinc-950"
-                              />
-                            </div>
-                            <div className={zonasEntrega.length === 1 ? "" : "sm:col-span-2"}>
-                              <label className="text-[11px] font-medium text-zinc-500" htmlFor="checkout-numero">
-                                Número
-                              </label>
-                              <input
-                                id="checkout-numero"
-                                type="text"
-                                inputMode="numeric"
-                                value={checkoutNumero}
-                                onChange={(e) => setCheckoutNumero(e.target.value.slice(0, 12))}
-                                className="mt-1 w-full rounded-xl border border-zinc-200 bg-white px-4 py-3 text-sm text-zinc-900 outline-none transition focus:ring-2 focus:ring-zinc-950"
-                              />
-                            </div>
-                            {zonasEntrega.length === 1 ? (
-                              <div>
-                                <span className="text-[11px] font-medium text-zinc-500">Bairro (taxa)</span>
-                                <div className="mt-1 rounded-xl border border-zinc-100 bg-zinc-50/80 px-4 py-3 text-sm text-zinc-800">
-                                  {zonasEntrega[0].nome} — {formatBRL(zonasEntrega[0].valor)}
-                                </div>
-                              </div>
-                            ) : null}
-                          </div>
-
-                          {zonasEntrega.length > 1 ? (
-                            <div className="space-y-2">
-                              <div className="flex rounded-2xl border border-zinc-200 bg-zinc-100/80 p-1">
-                                <button
-                                  type="button"
-                                  onClick={() => setEntregaBairroModo("digitar")}
-                                  className={[
-                                    "flex-1 rounded-xl py-2.5 text-sm font-semibold transition-all",
-                                    entregaBairroModo === "digitar"
-                                      ? "bg-white text-zinc-900 shadow-sm ring-1 ring-zinc-200/80"
-                                      : "text-zinc-500 hover:text-zinc-800",
-                                  ].join(" ")}
-                                >
-                                  Digitar bairro
-                                </button>
-                                <button
-                                  type="button"
-                                  onClick={() => setEntregaBairroModo("lista")}
-                                  className={[
-                                    "flex-1 rounded-xl py-2.5 text-sm font-semibold transition-all",
-                                    entregaBairroModo === "lista"
-                                      ? "bg-white text-zinc-900 shadow-sm ring-1 ring-zinc-200/80"
-                                      : "text-zinc-500 hover:text-zinc-800",
-                                  ].join(" ")}
-                                >
-                                  Ver lista
-                                </button>
-                              </div>
-
-                              {entregaBairroModo === "digitar" ? (
-                                <div className="space-y-2">
-                                  <label className="text-[11px] font-medium text-zinc-500" htmlFor="checkout-bairro-busca">
-                                    Buscar nas regiões do restaurante
-                                  </label>
-                                  <input
-                                    id="checkout-bairro-busca"
-                                    type="text"
-                                    value={bairroBuscaTexto}
-                                    onChange={(e) => setBairroBuscaTexto(e.target.value.slice(0, 80))}
-                                    placeholder="Ex.: Centro, Jardim…"
-                                    className="w-full rounded-xl border border-zinc-200 bg-white px-4 py-3 text-sm text-zinc-900 outline-none transition focus:ring-2 focus:ring-zinc-950"
-                                  />
-                                  <div className="max-h-[min(52vh,22rem)] space-y-1 overflow-y-auto overscroll-contain rounded-xl border border-zinc-100 bg-zinc-50/50 p-1 [-webkit-overflow-scrolling:touch]">
-                                    {zonasFiltradasPorBusca.length === 0 ? (
-                                      <p className="px-3 py-2 text-xs leading-relaxed text-zinc-500">
-                                        Nenhuma região encontrada com esse texto. Ajuste a busca ou use a aba
-                                        &quot;Ver lista&quot;.
-                                      </p>
-                                    ) : (
-                                      zonasFiltradasPorBusca.map((z) => (
-                                        <button
-                                          key={z.id}
-                                          type="button"
-                                          onClick={() => setZonaEntregaId(z.id)}
-                                          className={[
-                                            "flex w-full items-center justify-between rounded-lg px-3 py-2.5 text-left text-sm font-medium transition",
-                                            zonaEntregaId === z.id
-                                              ? "bg-zinc-900 text-white"
-                                              : "text-zinc-800 hover:bg-white",
-                                          ].join(" ")}
-                                        >
-                                          <span>{z.nome}</span>
-                                          <span className="tabular-nums text-xs opacity-90">{formatBRL(z.valor)}</span>
-                                        </button>
-                                      ))
-                                    )}
-                                  </div>
-                                  {zonaEntregaId ? (
-                                    <p className="text-[11px] text-zinc-500">
-                                      Selecionado:{" "}
-                                      <span className="font-semibold text-zinc-800">
-                                        {zonasEntrega.find((z) => z.id === zonaEntregaId)?.nome}
-                                      </span>
-                                    </p>
-                                  ) : (
-                                    <p className="text-[11px] text-zinc-500">Toque em uma região para definir a taxa.</p>
-                                  )}
-                                </div>
-                              ) : (
-                                <div className="space-y-2">
-                                  <p className="text-[11px] font-medium text-zinc-500">Bairro / região</p>
-                                  <div
-                                    className="max-h-[min(52vh,22rem)] space-y-1 overflow-y-auto overscroll-contain rounded-xl border border-zinc-100 bg-zinc-50/50 p-1 [-webkit-overflow-scrolling:touch]"
-                                    role="listbox"
-                                    aria-label="Lista de bairros e taxas"
-                                  >
-                                    {zonasEntrega.map((z) => (
-                                      <button
-                                        key={z.id}
-                                        type="button"
-                                        role="option"
-                                        aria-selected={zonaEntregaId === z.id}
-                                        onClick={() => setZonaEntregaId(z.id)}
-                                        className={[
-                                          "flex w-full items-center justify-between rounded-lg px-3 py-2.5 text-left text-sm font-medium transition",
-                                          zonaEntregaId === z.id
-                                            ? "bg-zinc-900 text-white"
-                                            : "text-zinc-800 hover:bg-white",
-                                        ].join(" ")}
-                                      >
-                                        <span className="min-w-0 pr-2">{z.nome}</span>
-                                        <span className="shrink-0 tabular-nums text-xs opacity-90">
-                                          {formatBRL(z.valor)}
-                                        </span>
-                                      </button>
-                                    ))}
-                                  </div>
-                                  {!zonaEntregaId ? (
-                                    <p className="text-[11px] text-zinc-500">Toque em uma região para definir a taxa.</p>
-                                  ) : null}
-                                </div>
-                              )}
-                            </div>
-                          ) : null}
-
-                          {zonasEntrega.length === 0 ? (
-                            <div>
-                              <label className="text-[11px] font-medium text-zinc-500" htmlFor="checkout-bairro-livre">
-                                Bairro ou região
-                              </label>
-                              <input
-                                id="checkout-bairro-livre"
-                                type="text"
-                                value={bairroLivreTexto}
-                                onChange={(e) => setBairroLivreTexto(e.target.value.slice(0, 80))}
-                                placeholder="Informe o bairro da entrega"
-                                className="mt-1 w-full rounded-xl border border-zinc-200 bg-white px-4 py-3 text-sm text-zinc-900 outline-none transition placeholder:text-zinc-400 focus:ring-2 focus:ring-zinc-950"
-                              />
-                              <p className="mt-1 text-[11px] leading-relaxed text-zinc-400">
-                                Taxa de entrega conforme cadastro do restaurante (sem regiões listadas).
-                              </p>
-                            </div>
-                          ) : null}
-
-                          <div>
-                            <label className="text-[11px] font-medium text-zinc-500" htmlFor="checkout-comp">
-                              Complemento / referência
-                            </label>
-                            <input
-                              id="checkout-comp"
-                              type="text"
-                              value={checkoutComplemento}
-                              onChange={(e) => setCheckoutComplemento(e.target.value.slice(0, 160))}
-                              placeholder="Apto, bloco, ponto de referência…"
-                              className="mt-1 w-full rounded-xl border border-zinc-200 bg-white px-4 py-3 text-sm text-zinc-900 outline-none transition placeholder:text-zinc-400 focus:ring-2 focus:ring-zinc-950"
-                            />
-                          </div>
-                        </div>
-                      ) : (
-                        <p className="rounded-2xl border border-emerald-100 bg-emerald-50/60 px-4 py-3 text-sm leading-relaxed text-emerald-900">
-                          <span className="font-semibold">Retirada no balcão</span> — sem taxa de entrega. O pedido
-                          entra no painel do restaurante (esteira em &quot;Pendente&quot;) para preparo e acompanhamento.
-                          Quando estiver pronto, retire no balcão. O WhatsApp abre em seguida para você combinar
-                          detalhes com o local, se precisar.
-                        </p>
-                      )}
-                    </section>
-                  ) : null}
-
-                  <section className="space-y-3" aria-labelledby="cart-pagamento">
-                    <h3 id="cart-pagamento" className="text-[11px] font-semibold uppercase tracking-wider text-zinc-500">
-                      Pagamento
-                    </h3>
-                    <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
-                      {(
-                        [
-                          ["dinheiro", "Dinheiro"],
-                          ["cartao_debito", "Cartão de Débito"],
-                          ["cartao_credito", "Cartão de Crédito"],
-                          ["pix", "Pix"],
-                        ] as const
-                      ).map(([id, label]) => (
-                        <button
-                          key={id}
-                          type="button"
-                          onClick={() => setFormaPagamento(id)}
-                          aria-label={label}
-                          className={[
-                            "min-h-[2.75rem] rounded-xl border px-1.5 py-2 text-center text-[11px] font-semibold leading-tight transition active:scale-[0.98] sm:min-h-0 sm:px-2 sm:text-xs",
-                            formaPagamento === id
-                              ? "border-zinc-900 bg-zinc-900 text-white shadow-sm"
-                              : "border-zinc-200 bg-white text-zinc-700 hover:border-zinc-300",
-                          ].join(" ")}
-                        >
-                          {label}
-                        </button>
-                      ))}
-                    </div>
-                    {formaPagamento === "dinheiro" ? (
-                      <div className="rounded-2xl border border-zinc-100 bg-zinc-50/60 p-4">
-                        <label className="text-[11px] font-medium text-zinc-500" htmlFor="troco-para">
-                          Precisa de troco para quanto?
-                        </label>
-                        <input
-                          id="troco-para"
-                          type="text"
-                          inputMode="decimal"
-                          value={trocoParaInput}
-                          onChange={(e) => setTrocoParaInput(e.target.value.slice(0, 14))}
-                          placeholder="Ex.: 100,00"
-                          className="mt-1.5 w-full rounded-xl border border-zinc-200 bg-white px-4 py-3 text-sm text-zinc-900 outline-none transition focus:ring-2 focus:ring-zinc-950"
-                        />
-                        {trocoParaValor != null && trocoParaValor >= total ? (
-                          <p className="mt-2 text-xs text-zinc-600">
-                            Total {formatBRL(total)} · troco para {formatBRL(trocoParaValor)} ·{" "}
-                            <span className="font-semibold text-zinc-900">
-                              seu troco: {formatBRL(trocoParaValor - total)}
-                            </span>
-                          </p>
-                        ) : null}
-                      </div>
-                    ) : null}
-                  </section>
-                </div>
-              )}
-            </div>
-
-            <div className="shrink-0 space-y-3 border-t border-zinc-100 bg-white/95 px-5 py-4 backdrop-blur-md sm:px-6 sm:py-5">
-              {cart.length > 0 ? (
-                <>
-                  <div className="space-y-1.5 text-sm text-zinc-500">
-                    <div className="flex justify-between">
-                      <span>Subtotal</span>
-                      <span className="tabular-nums text-zinc-800">{formatBRL(subtotalCarrinho)}</span>
-                    </div>
-                    {tipoEntrega === "retirada" ? (
-                      <div className="flex justify-between">
-                        <span>Taxa de entrega</span>
-                        <span className="text-right text-xs font-medium text-zinc-700">Retirada — sem taxa</span>
-                      </div>
-                    ) : (
-                      <div className="flex justify-between">
-                        <span>Taxa de entrega</span>
-                        <span className="tabular-nums text-zinc-800">{formatBRL(taxaCarrinho)}</span>
-                      </div>
-                    )}
-                  </div>
-                  <div className="flex items-end justify-between border-t border-zinc-100 pt-3">
-                    <span className="text-xs font-semibold uppercase tracking-wider text-zinc-500">Total</span>
-                    <span className="text-2xl font-semibold tabular-nums tracking-tight text-zinc-900">
-                      {formatBRL(total)}
-                    </span>
-                  </div>
-                  {checkoutErro ? (
-                    <p className="rounded-xl bg-red-50 px-3 py-2 text-center text-xs font-medium text-red-700 ring-1 ring-red-100">
-                      {checkoutErro}
-                    </p>
-                  ) : null}
-                  {pedidosBloqueados ? (
-                    <button
-                      type="button"
-                      disabled
-                      className="flex w-full cursor-not-allowed items-center justify-center rounded-2xl border border-zinc-200 bg-zinc-100 py-3.5 text-sm font-semibold text-zinc-400"
-                    >
-                      Pedidos via WhatsApp desativados
-                    </button>
-                  ) : (
-                    <button
-                      type="button"
-                      disabled={checkoutSubmitting}
-                      onClick={() => void handleEnviarPedidoWhatsapp()}
-                      className="flex w-full items-center justify-center rounded-2xl bg-[#25D366] py-3.5 text-sm font-semibold text-white shadow-[0_12px_32px_-12px_rgba(37,211,102,0.55)] transition hover:bg-[#1ebe5a] enabled:active:scale-[0.99] disabled:cursor-wait disabled:opacity-80"
-                    >
-                      {checkoutSubmitting ? "Registrando pedido…" : "Enviar Pedido via WhatsApp"}
-                    </button>
-                  )}
-                </>
-              ) : null}
-            </div>
-          </aside>
-        </div>
-      ) : null}
+      <CartDrawer
+        open={cartOpen}
+        onClose={() => setCartOpen(false)}
+        restaurante={restaurante}
+        cart={cart}
+        pedidosBloqueados={pedidosBloqueados}
+        tipoEntrega={tipoEntrega}
+        onTipoEntregaChange={setTipoEntrega}
+        zonaEntregaId={zonaEntregaId}
+        onZonaEntregaIdChange={setZonaEntregaId}
+        zonasEntrega={zonasEntrega}
+        zonasFiltradasPorBusca={zonasFiltradasPorBusca}
+        entregaBairroModo={entregaBairroModo}
+        onEntregaBairroModoChange={setEntregaBairroModo}
+        bairroBuscaTexto={bairroBuscaTexto}
+        onBairroBuscaTextoChange={setBairroBuscaTexto}
+        bairroLivreTexto={bairroLivreTexto}
+        onBairroLivreTextoChange={setBairroLivreTexto}
+        clienteNome={clienteNome}
+        onClienteNomeChange={setClienteNome}
+        clienteTelefoneDisplay={clienteTelefoneDisplay}
+        onClienteTelefoneDisplayChange={setClienteTelefoneDisplay}
+        checkoutRua={checkoutRua}
+        onCheckoutRuaChange={setCheckoutRua}
+        checkoutNumero={checkoutNumero}
+        onCheckoutNumeroChange={setCheckoutNumero}
+        checkoutComplemento={checkoutComplemento}
+        onCheckoutComplementoChange={setCheckoutComplemento}
+        formaPagamento={formaPagamento}
+        onFormaPagamentoChange={setFormaPagamento}
+        trocoParaInput={trocoParaInput}
+        onTrocoParaInputChange={setTrocoParaInput}
+        trocoParaValor={trocoParaValor}
+        subtotalCarrinho={subtotalCarrinho}
+        taxaCarrinho={taxaCarrinho}
+        total={total}
+        checkoutErro={checkoutErro}
+        checkoutSubmitting={checkoutSubmitting}
+        onEnviarPedido={handleEnviarPedidoWhatsapp}
+        onSetQty={setQty}
+        onSetItemObservacoes={setItemObservacoes}
+      />
     </div>
   );
 }
