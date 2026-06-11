@@ -1,11 +1,56 @@
 import { jsonStringifyLatin1Wire, latin1SafeString } from "@/lib/restaurante/json-latin1-wire";
 import { sanitizeUserFreeText } from "@/lib/utils/sanitize-strings";
 
-export function cloneHeadersLatin1Safe(headers: Headers): Headers {
+/**
+ * Constrói `Headers` só com pares Latin-1 seguros.
+ *
+ * **Nunca** use `new Headers(init)` com `init` vindo de SDKs (PostgREST, etc.): se algum valor
+ * tiver `•` (U+2022) ou fora de Latin-1, o Chromium lança `TypeError: ByteString` **na construção**
+ * — antes de qualquer `forEach` poder sanitizar.
+ */
+export function cloneHeadersLatin1Safe(source?: HeadersInit | null): Headers {
   const fixed = new Headers();
-  headers.forEach((value, key) => {
-    fixed.set(latin1SafeString(key), sanitizeUserFreeText(value));
-  });
+  if (source == null) return fixed;
+
+  const apply = (nameRaw: string, valueRaw: string, append: boolean) => {
+    const name = latin1SafeString(nameRaw);
+    const value = sanitizeUserFreeText(valueRaw);
+    if (!name) return;
+    try {
+      if (append) fixed.append(name, value);
+      else fixed.set(name, value);
+    } catch {
+      /* par inválido mesmo após higienizar — ignorar */
+    }
+  };
+
+  if (typeof Headers !== "undefined" && source instanceof Headers) {
+    source.forEach((value, key) => {
+      apply(key, value, false);
+    });
+    return fixed;
+  }
+
+  if (Array.isArray(source)) {
+    for (const row of source) {
+      if (!row || row.length < 2) continue;
+      apply(String(row[0]), String(row[1]), false);
+    }
+    return fixed;
+  }
+
+  if (typeof source === "object") {
+    for (const [keyRaw, val] of Object.entries(source as Record<string, unknown>)) {
+      if (typeof val === "string") {
+        apply(keyRaw, val, false);
+      } else if (Array.isArray(val)) {
+        for (const item of val) {
+          if (typeof item === "string") apply(keyRaw, item, true);
+        }
+      }
+    }
+  }
+
   return fixed;
 }
 
@@ -63,7 +108,7 @@ export function sanitizeFetchInit(init: RequestInit): RequestInit {
   out.referrer = sanitizeReferrer(out.referrer);
 
   const headersSource = out.headers != null ? (out.headers as HeadersInit) : undefined;
-  const h = new Headers(headersSource);
+  const h = cloneHeadersLatin1Safe(headersSource);
 
   /*
    * Sempre clonar cabeçalhos quando há corpo não-string:
@@ -72,7 +117,7 @@ export function sanitizeFetchInit(init: RequestInit): RequestInit {
    *   usamos `Headers` vazio para não bloquear o `multipart boundary` automático do `fetch`.
    */
   if (out.headers != null || isBufferSourceJsonBody(out.body) || isFormDataBody(out.body)) {
-    out.headers = cloneHeadersLatin1Safe(h);
+    out.headers = h;
   } else {
     out.headers = undefined;
   }
@@ -91,12 +136,10 @@ export function initJsonPost(payload: unknown, bearerToken: string): RequestInit
   const json = jsonStringifyLatin1Wire(payload);
   return {
     method: "POST",
-    headers: cloneHeadersLatin1Safe(
-      new Headers({
-        Authorization: `Bearer ${sanitizeUserFreeText(bearerToken.trim())}`,
-        "Content-Type": "application/json; charset=utf-8",
-      }),
-    ),
+    headers: cloneHeadersLatin1Safe({
+      Authorization: `Bearer ${sanitizeUserFreeText(bearerToken.trim())}`,
+      "Content-Type": "application/json; charset=utf-8",
+    }),
     credentials: "include",
     cache: "no-store",
     body: jsonBodyUtf8Blob(json),
