@@ -5,6 +5,8 @@ import { statusAberturaPorRelogio } from "@/lib/restaurante/horario-vitrine";
 import {
   computeTotaisPedidoVitrine,
   isUuid,
+  OBSERVACOES_VITRINE_MAX_TOTAL_CHARS,
+  OBSERVACOES_VITRINE_MAX_USER_CHARS,
   parseLinhasPedidoVitrine,
   sanitizeObservacoesVitrine,
   type PratoPrecoRow,
@@ -27,21 +29,43 @@ function mapPagamentoPedidoDb(f: FormaCheckout): "Pix" | "Cartão" | "Dinheiro" 
   return "Cartão";
 }
 
-type Body = {
+/**
+ * Payload aceito: identificação, cliente, entrega e `linhas`.
+ * Qualquer `total` / `subtotal` / `preco` / `itens` (legado) no JSON é **ignorado** e pode gerar log WARN.
+ */
+type BodyVitrinePedido = {
   restauranteId?: string;
   cliente?: string;
   telefone?: string;
-  /** Ignorado: total vem do cálculo server-side. */
-  total?: number;
   formaPagamento?: FormaCheckout;
-  /** @deprecated painel antigo — use `linhas`. */
-  itens?: unknown;
-  /** Itens com quantidade; preço vem do banco. */
   linhas?: unknown;
   zonaEntregaId?: string | null;
   observacoes?: string;
   tipoEntrega?: string;
 };
+
+const CAMPOS_PRECO_IGNORADOS = [
+  "total",
+  "subtotal",
+  "preco",
+  "precos",
+  "valorTotal",
+  "taxaEntrega",
+  "taxa_entrega_cliente",
+  "desconto",
+  "itens",
+] as const;
+
+function warnCamposPrecoIgnorados(body: Record<string, unknown>, restauranteId: string | undefined): void {
+  for (const k of CAMPOS_PRECO_IGNORADOS) {
+    if (body[k] !== undefined) {
+      logStructured("warn", "api.pedidos.vitrine.ignored_client_field", {
+        restauranteId: restauranteId ?? null,
+        field: k,
+      });
+    }
+  }
+}
 
 const PREFIXO_OBS_BALCAO =
   "=== RETIRADA NO BALCAO ===\n" +
@@ -174,25 +198,32 @@ export async function POST(request: Request) {
     );
   }
 
-  let body: Body;
+  let body: BodyVitrinePedido;
+  let rawBody: Record<string, unknown>;
   try {
-    body = (await request.json()) as Body;
+    rawBody = (await request.json()) as Record<string, unknown>;
+    body = rawBody as BodyVitrinePedido;
   } catch {
+    logStructured("warn", "api.pedidos.vitrine.invalid_json", {});
     return NextResponse.json({ error: "JSON inválido." }, { status: 400 });
   }
 
   const restauranteId = typeof body.restauranteId === "string" ? body.restauranteId.trim() : "";
+  warnCamposPrecoIgnorados(rawBody, restauranteId);
   const cliente = typeof body.cliente === "string" ? body.cliente.trim() : "";
   const telefone = typeof body.telefone === "string" ? body.telefone.trim() : "";
   const forma = body.formaPagamento;
 
   if (!restauranteId || !cliente || cliente.length < 2) {
+    logStructured("warn", "api.pedidos.vitrine.validation_cliente", { restauranteId });
     return NextResponse.json({ error: "Dados do cliente inválidos." }, { status: 400 });
   }
   if (!isUuid(restauranteId)) {
+    logStructured("warn", "api.pedidos.vitrine.validation_restaurante_id", { restauranteId });
     return NextResponse.json({ error: "Identificador do estabelecimento inválido." }, { status: 400 });
   }
   if (!telefone || telefone.length < 8) {
+    logStructured("warn", "api.pedidos.vitrine.validation_telefone", { restauranteId });
     return NextResponse.json({ error: "Telefone inválido." }, { status: 400 });
   }
   if (
@@ -201,22 +232,27 @@ export async function POST(request: Request) {
     forma !== "cartao_debito" &&
     forma !== "cartao_credito"
   ) {
+    logStructured("warn", "api.pedidos.vitrine.validation_pagamento", { restauranteId });
     return NextResponse.json({ error: "Forma de pagamento inválida." }, { status: 400 });
   }
 
   const linhas = parseLinhasPedidoVitrine(body);
   if (!linhas) {
+    logStructured("warn", "api.pedidos.vitrine.validation_linhas", {
+      restauranteId,
+      reason: "linhas_invalidas_ou_ausentes",
+    });
     return NextResponse.json(
       {
         error:
-          "Lista de itens inválida. Atualize a página e tente novamente (formato antigo não suportado).",
+          "Lista de itens inválida. Envie `linhas: [{ pratoId, quantidade }]` e atualize a página se necessário.",
       },
       { status: 400 },
     );
   }
 
   const obsRaw = typeof body.observacoes === "string" ? body.observacoes : "";
-  const obsSan = sanitizeObservacoesVitrine(obsRaw, 12_000);
+  const obsSan = sanitizeObservacoesVitrine(obsRaw, OBSERVACOES_VITRINE_MAX_USER_CHARS);
 
   const tipoEntrega =
     body.tipoEntrega === "retirada" || body.tipoEntrega === "entrega" ? body.tipoEntrega : "entrega";
@@ -231,6 +267,10 @@ export async function POST(request: Request) {
 
   const restLoaded = await carregarRestaurantePedido(admin, restauranteId);
   if (!restLoaded.ok) {
+    logStructured(restLoaded.status >= 500 ? "error" : "warn", "api.pedidos.vitrine.restaurante_load_failed", {
+      restauranteId,
+      status: restLoaded.status,
+    });
     return NextResponse.json({ error: restLoaded.error }, { status: restLoaded.status });
   }
   const row = restLoaded.row;
@@ -248,7 +288,7 @@ export async function POST(request: Request) {
 
   const observacoesBase = sanitizeObservacoesVitrine(
     (tipoEntrega === "retirada" ? PREFIXO_OBS_BALCAO : "") + obsSan,
-    12_000,
+    OBSERVACOES_VITRINE_MAX_TOTAL_CHARS,
   );
 
   const funcionamento_semana = parseFuncionamentoSemana(row.funcionamento_semana) ?? undefined;
@@ -262,6 +302,7 @@ export async function POST(request: Request) {
     .from("pratos")
     .select("id, nome, preco, status, categoria")
     .eq("restaurante_id", restauranteId)
+    .eq("status", "ativo")
     .in("id", pratoIds);
 
   if (prErr) {
@@ -300,9 +341,10 @@ export async function POST(request: Request) {
   });
 
   if (!tot.ok) {
-    logStructured("warn", "api.pedidos.vitrine.calculo_invalido", {
+    logStructured("warn", "api.pedidos.vitrine.calculo_falhou", {
       restauranteId,
       error: tot.error,
+      linhas: linhas.length,
     });
     return NextResponse.json({ error: tot.error }, { status: 400 });
   }
@@ -340,7 +382,9 @@ export async function POST(request: Request) {
   logStructured("info", "api.pedidos.vitrine.ok", {
     restauranteId,
     pedidoId: inserted?.id ?? null,
-    total: tot.total,
+    subtotalCalculado: tot.subtotal,
+    taxaEntregaCalculada: tot.taxa,
+    totalCalculado: tot.total,
     linhas: linhas.length,
   });
 

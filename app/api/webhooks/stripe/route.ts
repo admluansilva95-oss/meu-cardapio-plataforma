@@ -71,7 +71,7 @@ export async function POST(request: Request) {
           eventId: event.id,
           eventType: event.type,
         });
-        return NextResponse.json({ received: true, duplicate: true });
+        return NextResponse.json({ duplicate: true }, { status: 200 });
       }
       if (isStripeIdempotencyTableUnavailable(idemErr)) {
         logStructured("warn", "webhook.stripe.idempotency_table_unavailable", {

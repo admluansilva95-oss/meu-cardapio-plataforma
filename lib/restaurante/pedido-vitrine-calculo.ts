@@ -11,6 +11,11 @@ export type PratoPrecoRow = {
   categoria: string | null;
 };
 
+/** Texto livre do cliente (observações) — truncado antes da sanitização. */
+export const OBSERVACOES_VITRINE_MAX_USER_CHARS = 4000;
+/** Teto final gravado em `pedidos.observacoes` (prefixo retirada + texto). */
+export const OBSERVACOES_VITRINE_MAX_TOTAL_CHARS = 12_000;
+
 const MAX_LINHAS = 60;
 const MAX_QTD = 99;
 
