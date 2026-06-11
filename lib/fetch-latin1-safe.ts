@@ -38,6 +38,10 @@ function isBufferSourceJsonBody(body: RequestInit["body"]): boolean {
   return false;
 }
 
+function isFormDataBody(body: RequestInit["body"]): boolean {
+  return typeof FormData !== "undefined" && body instanceof FormData;
+}
+
 function sanitizeReferrer(ref: RequestInit["referrer"]): RequestInit["referrer"] {
   if (typeof ref !== "string" || ref.length === 0) return ref;
   const t = sanitizeUserFreeText(ref);
@@ -61,7 +65,13 @@ export function sanitizeFetchInit(init: RequestInit): RequestInit {
   const headersSource = out.headers != null ? (out.headers as HeadersInit) : undefined;
   const h = new Headers(headersSource);
 
-  if (out.headers != null || isBufferSourceJsonBody(out.body)) {
+  /*
+   * Sempre clonar cabeçalhos quando há corpo não-string:
+   * - Blob/BufferSource: SDKs (ex.: Supabase Storage) podem fundir `headers` planos com valores não Latin-1.
+   * - FormData: `Content-Disposition` / metadados vêm dos cabeçalhos auxiliares; sem headers explícitos
+   *   usamos `Headers` vazio para não bloquear o `multipart boundary` automático do `fetch`.
+   */
+  if (out.headers != null || isBufferSourceJsonBody(out.body) || isFormDataBody(out.body)) {
     out.headers = cloneHeadersLatin1Safe(h);
   } else {
     out.headers = undefined;
@@ -116,6 +126,25 @@ async function fetchWithSanitizedRequest(input: Request, baseFetch: typeof fetch
 
   const ct = (input.headers.get("content-type") ?? "").toLowerCase();
   if (ct.includes("multipart/") || ct.includes("application/octet-stream")) {
+    const req = new Request(input.url, {
+      method,
+      headers: cloneHeadersLatin1Safe(input.headers),
+      body: input.body,
+      mode: input.mode,
+      credentials: input.credentials,
+      cache: input.cache,
+      redirect: input.redirect,
+      referrer: sanitizeReferrer(input.referrer),
+      referrerPolicy: input.referrerPolicy,
+      integrity: input.integrity,
+      keepalive: input.keepalive,
+      signal: input.signal,
+    });
+    return baseFetch(req);
+  }
+
+  /* `Request` com FormData: nunca ler como texto (quebra upload / ByteString). */
+  if (isFormDataBody(input.body)) {
     const req = new Request(input.url, {
       method,
       headers: cloneHeadersLatin1Safe(input.headers),
