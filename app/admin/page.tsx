@@ -20,7 +20,7 @@ import { mensagemUploadStorageAmigavel } from "@/lib/restaurante/mensagem-upload
 import { sanitizarNomeArquivoStorageBase } from "@/lib/restaurante/sanitizar-nome-arquivo-storage";
 import { normalizeLatin1StoragePath, sanitizeUserFreeText } from "@/lib/utils/sanitize-strings";
 import { sanitizeDbPlainText, sanitizeDbPlainTextNullable } from "@/lib/db/sanitize-persist";
-import { openUrlNovaGuia } from "@/lib/restaurante/open-url-nova-guia";
+import { navigatePreparedTabOrOpen, prepareNewTabForLaterNavigation } from "@/lib/restaurante/open-url-nova-guia";
 import { buildWhatsappSendHref } from "@/lib/restaurante/whatsapp-href";
 import { latin1SafeFetch, sanitizeFetchInit } from "@/lib/fetch-latin1-safe";
 import { postJsonComBearer } from "@/lib/restaurante/post-json-bearer-client";
@@ -1876,6 +1876,9 @@ function AdminPageInner() {
       lista.map((p) => (p.id === id ? { ...p, coluna: destino } : p)),
     );
 
+    /* Antes do primeiro `await`: mantém ativação do utilizador para o WhatsApp não ser bloqueado como pop-up. */
+    const waTab = prepareNewTabForLaterNavigation();
+
     try {
       const { error } = await supabase
         .from("pedidos")
@@ -1887,11 +1890,16 @@ function AdminPageInner() {
         setPedidos((lista) =>
           lista.map((p) => (p.id === id ? { ...p, coluna: prev } : p)),
         );
+        try {
+          waTab?.close();
+        } catch {
+          /* ignore */
+        }
         return;
       }
 
       const msg = mensagemParaColuna(atual, destino);
-      openUrlNovaGuia(buildWhatsappSendHref(atual.telefone, msg));
+      navigatePreparedTabOrOpen(waTab, buildWhatsappSendHref(atual.telefone, msg));
     } finally {
       setPedidoBusyId(null);
       setPedidoBusyKind(null);

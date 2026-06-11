@@ -35,7 +35,7 @@ import { expandLatin1UserText } from "@/lib/restaurante/json-latin1-wire";
 import { fetchPublicCardapioDeduped } from "@/lib/restaurante/cardapio-public-load";
 import { registrarPedidoVitrineNaApi } from "@/lib/restaurante/registrar-pedido-vitrine-client";
 import { buildWhatsappSendHref } from "@/lib/restaurante/whatsapp-href";
-import { openUrlNovaGuia } from "@/lib/restaurante/open-url-nova-guia";
+import { navigatePreparedTabOrOpen, prepareNewTabForLaterNavigation } from "@/lib/restaurante/open-url-nova-guia";
 import { isRetryableSupabaseError, withRetry } from "@/lib/with-retry";
 
 const CartDrawer = dynamic(() => import("@/components/vitrine/CartDrawer"), { ssr: false });
@@ -747,6 +747,7 @@ export default function PublicCardapioPage() {
             : null;
 
     setCheckoutSubmitting(true);
+    const waTab = prepareNewTabForLaterNavigation();
     try {
       /** Registro via XMLHttpRequest + corpo UTF-8 (evita ByteString do `fetch` em alguns runtimes). */
       const { status, json } = await registrarPedidoVitrineNaApi("/api/pedidos/vitrine", {
@@ -760,6 +761,11 @@ export default function PublicCardapioPage() {
         tipoEntrega,
       });
       if (!json.ok || status < 200 || status >= 300) {
+        try {
+          waTab?.close();
+        } catch {
+          /* ignore */
+        }
         setCheckoutErro(
           json.error ??
             (status === 503
@@ -769,8 +775,16 @@ export default function PublicCardapioPage() {
         return;
       }
       const textoWhatsAppComBullets = montarTextoPedidoWhatsAppFormatado(payloadPedido);
-      openUrlNovaGuia(buildWhatsappSendHref(restaurante.whatsapp, textoWhatsAppComBullets));
+      navigatePreparedTabOrOpen(
+        waTab,
+        buildWhatsappSendHref(restaurante.whatsapp, textoWhatsAppComBullets),
+      );
     } catch (e) {
+      try {
+        waTab?.close();
+      } catch {
+        /* ignore */
+      }
       console.error("[checkout] falha ao registrar pedido:", e);
       setCheckoutErro("Falha de rede ao registrar o pedido. Verifique sua conexão e tente de novo.");
     } finally {
