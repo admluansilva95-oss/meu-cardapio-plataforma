@@ -7,22 +7,16 @@ declare global {
   }
 }
 
-function safeHeaderPair(name: string, value: string): readonly [string, string] {
-  try {
-    return [latin1SafeString(name), sanitizeUserFreeText(String(value))] as const;
-  } catch {
-    return [latin1SafeString(name), latin1SafeString(String(value))] as const;
-  }
-}
-
 /**
- * Instala camadas defensivas contra `TypeError: ByteString` no cliente:
- * - `fetch` global → `createLatin1SafeFetch` (JSON/cabeçalhos/corpos já tratados).
- * - `XMLHttpRequest` (`open`, `setRequestHeader`, `send` com string).
- * - `Headers#set` / `#append` (SDKs que montam cabeçalhos diretamente).
- * - `document.cookie` (escrita via Latin-1 no wire).
+ * Instala defesas mínimas contra `TypeError: ByteString` no cliente.
  *
- * Deve correr o mais cedo possível — tipicamente via `instrumentation-client.ts`.
+ * Mantemos só o que é de baixo risco:
+ * - `fetch` global → `createLatin1SafeFetch` (corpo/cabeçalhos já tratados em `sanitizeFetchInit`).
+ * - `XMLHttpRequest` (`open` URL string, `setRequestHeader`, `send` com string → UTF-8 em `ArrayBuffer`).
+ *
+ * **Removido de propósito** (podia regressar ou partir integrações):
+ * - monkey-patch de `Headers#set` / `#append` (chamadas internas do motor / extensões / SW);
+ * - monkey-patch de `document.cookie` (sessão Supabase / chunks).
  */
 export function installClientByteStringGuard(): void {
   if (typeof window === "undefined" || window.__BYTE_STRING_GUARD__) return;
@@ -31,24 +25,6 @@ export function installClientByteStringGuard(): void {
   try {
     const nativeFetch = globalThis.fetch.bind(globalThis);
     globalThis.fetch = createLatin1SafeFetch(nativeFetch);
-  } catch {
-    /* ignore */
-  }
-
-  try {
-    if (typeof Headers !== "undefined") {
-      const P = Headers.prototype;
-      const origSet = P.set;
-      const origAppend = P.append;
-      P.set = function setPatched(name: string, value: string) {
-        const [n, v] = safeHeaderPair(name, value);
-        return origSet.call(this, n, v);
-      };
-      P.append = function appendPatched(name: string, value: string) {
-        const [n, v] = safeHeaderPair(name, value);
-        return origAppend.call(this, n, v);
-      };
-    }
   } catch {
     /* ignore */
   }
@@ -64,8 +40,9 @@ export function installClientByteStringGuard(): void {
 
       const origSetRequestHeader = XP.setRequestHeader;
       XP.setRequestHeader = function setRequestHeaderPatched(name: string, value: string) {
-        const [n, v] = safeHeaderPair(name, value);
-        return origSetRequestHeader.call(this, n, v);
+        const nameS = latin1SafeString(name);
+        const valueS = sanitizeUserFreeText(String(value));
+        return origSetRequestHeader.call(this, nameS, valueS);
       };
 
       const origSend = XP.send;
@@ -80,30 +57,6 @@ export function installClientByteStringGuard(): void {
         }
         return origSend.call(this, body ?? null);
       };
-    }
-  } catch {
-    /* ignore */
-  }
-
-  try {
-    const protos: object[] = [];
-    if (typeof HTMLDocument !== "undefined") {
-      protos.push(HTMLDocument.prototype);
-    }
-    protos.push(Document.prototype);
-    for (const proto of protos) {
-      const d = Object.getOwnPropertyDescriptor(proto, "cookie");
-      if (!d?.set) continue;
-      const origSet = d.set;
-      Object.defineProperty(proto, "cookie", {
-        configurable: true,
-        enumerable: d.enumerable,
-        get: d.get,
-        set(v: string) {
-          origSet.call(this, latin1SafeString(v));
-        },
-      });
-      break;
     }
   } catch {
     /* ignore */

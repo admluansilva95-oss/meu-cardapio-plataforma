@@ -2,6 +2,6 @@ import { installClientByteStringGuard } from "@/lib/wire/install-client-byte-str
 
 /**
  * Corre antes da hidratação (Next.js ≥ 15.3).
- * Garante que `fetch` / `Headers` / `XHR` / `document.cookie` nunca vejam texto fora de Latin-1 no wire.
+ * `fetch` global instrumentado + endurecimento leve de `XMLHttpRequest` (ver `installClientByteStringGuard`).
  */
 installClientByteStringGuard();
