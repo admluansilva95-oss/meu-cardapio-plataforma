@@ -2,6 +2,7 @@ import {
   deepSanitizeStringsForWire,
   jsonStringifyLatin1Wire,
 } from "@/lib/restaurante/json-latin1-wire";
+import { latin1SafeString } from "@/lib/utils/sanitize-strings";
 
 export type VitrinePedidoJson = {
   ok?: boolean;
@@ -27,7 +28,7 @@ export function registrarPedidoVitrineNaApi(
 
   return new Promise((resolve, reject) => {
     const xhr = new XMLHttpRequest();
-    xhr.open("POST", url, true);
+    xhr.open("POST", latin1SafeString(url), true);
     xhr.setRequestHeader("Content-Type", "application/json; charset=utf-8");
     xhr.onload = () => {
       let json: VitrinePedidoJson = {};

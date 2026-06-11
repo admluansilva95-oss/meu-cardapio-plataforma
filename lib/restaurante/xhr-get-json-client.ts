@@ -1,3 +1,5 @@
+import { latin1SafeString } from "@/lib/utils/sanitize-strings";
+
 /**
  * GET JSON **somente via XMLHttpRequest** (evita o pipeline `fetch` em runtimes que disparam `ByteString`).
  */
@@ -7,7 +9,7 @@ export function xhrGetJson(
 ): Promise<{ status: number; json: unknown }> {
   return new Promise((resolve, reject) => {
     const xhr = new XMLHttpRequest();
-    xhr.open("GET", url, true);
+    xhr.open("GET", latin1SafeString(url), true);
 
     const cleanup = () => {
       if (signal) signal.removeEventListener("abort", onAbort);

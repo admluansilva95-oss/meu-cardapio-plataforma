@@ -83,7 +83,7 @@ function isBufferSourceJsonBody(body: RequestInit["body"]): boolean {
   return false;
 }
 
-function isFormDataBody(body: RequestInit["body"]): boolean {
+function isFormDataBody(body: RequestInit["body"]): body is FormData {
   return typeof FormData !== "undefined" && body instanceof FormData;
 }
 
@@ -93,6 +93,62 @@ function sanitizeReferrer(ref: RequestInit["referrer"]): RequestInit["referrer"]
   return t.length > 0 ? t : undefined;
 }
 
+/** `File.name` / `Blob.type` fora de Latin-1 quebram multipart (`Content-Disposition`) no Chromium. */
+function sanitizeBlobLikeForFetch(body: Blob): Blob {
+  if (body instanceof File) {
+    const type = latin1SafeString(body.type) || "application/octet-stream";
+    let name = sanitizeUserFreeText(body.name).trim();
+    if (!name) name = "file.bin";
+    if (type === body.type && name === body.name) return body;
+    return new File([body], name, { type, lastModified: body.lastModified });
+  }
+  const type = latin1SafeString(body.type);
+  if (!type || type === body.type) return body;
+  return new Blob([body], { type });
+}
+
+/** Reconstrói `FormData` com chaves/valores Latin-1 e ficheiros com nome/`type` seguros no wire. */
+function sanitizeFormDataForWire(fd: FormData): FormData {
+  const next = new FormData();
+  for (const [key, val] of fd.entries()) {
+    const keyS = latin1SafeString(String(key));
+    if (typeof val === "string") {
+      next.append(keyS, sanitizeUserFreeText(val));
+    } else if (typeof Blob !== "undefined" && val instanceof File) {
+      const f = sanitizeBlobLikeForFetch(val);
+      if (f instanceof File) {
+        next.append(keyS, f, f.name);
+      } else {
+        next.append(keyS, f);
+      }
+    } else if (typeof Blob !== "undefined" && val instanceof Blob) {
+      next.append(keyS, sanitizeBlobLikeForFetch(val));
+    }
+  }
+  return next;
+}
+
+function sanitizeRequestInitByteStrings(out: RequestInit): void {
+  if (typeof out.method === "string") {
+    const m = latin1SafeString(out.method.trim().toUpperCase());
+    out.method = m && /^[A-Z-]+$/.test(m) ? m : "GET";
+  }
+  const stringKeys = ["cache", "mode", "referrerPolicy", "integrity", "redirect"] as const;
+  for (const k of stringKeys) {
+    const v = out[k];
+    if (typeof v === "string") {
+      const s = latin1SafeString(v);
+      (out as Record<string, unknown>)[k] = s.length > 0 ? s : undefined;
+    }
+  }
+  if (typeof (out as { duplex?: unknown }).duplex === "string") {
+    const raw = (out as { duplex?: string }).duplex;
+    const d = latin1SafeString(raw ?? "");
+    if (d.length > 0) (out as { duplex?: string }).duplex = d;
+    else delete (out as { duplex?: string }).duplex;
+  }
+}
+
 /**
  * Ajusta `RequestInit` para evitar `TypeError: ByteString` ao chamar `fetch`:
  * cabeçalhos só podem ser Latin-1 em alguns runtimes; corpo JSON com •, emojis, etc.
@@ -100,9 +156,20 @@ function sanitizeReferrer(ref: RequestInit["referrer"]): RequestInit["referrer"]
  */
 export function sanitizeFetchInit(init: RequestInit): RequestInit {
   const out: RequestInit = { ...init };
+  sanitizeRequestInitByteStrings(out);
 
   if (typeof out.body === "string") {
     out.body = jsonBodyUtf8Blob(sanitizeJsonBodyString(out.body));
+  }
+
+  if (out.body != null && typeof Blob !== "undefined") {
+    if (isFormDataBody(out.body)) {
+      const fd = out.body;
+      out.body = sanitizeFormDataForWire(fd);
+    } else if (out.body instanceof Blob) {
+      const b = sanitizeBlobLikeForFetch(out.body);
+      if (b !== out.body) out.body = b;
+    }
   }
 
   out.referrer = sanitizeReferrer(out.referrer);
@@ -167,12 +234,13 @@ async function fetchWithSanitizedRequest(input: Request, baseFetch: typeof fetch
     return baseFetch(req);
   }
 
-  const ct = (input.headers.get("content-type") ?? "").toLowerCase();
-  if (ct.includes("multipart/") || ct.includes("application/octet-stream")) {
+  /* FormData antes do ramo multipart: o `Content-Type` costuma ser multipart e o corpo precisa de nomes Latin-1. */
+  if (isFormDataBody(input.body)) {
+    const safeBody = sanitizeFormDataForWire(input.body);
     const req = new Request(input.url, {
       method,
       headers: cloneHeadersLatin1Safe(input.headers),
-      body: input.body,
+      body: safeBody,
       mode: input.mode,
       credentials: input.credentials,
       cache: input.cache,
@@ -186,12 +254,15 @@ async function fetchWithSanitizedRequest(input: Request, baseFetch: typeof fetch
     return baseFetch(req);
   }
 
-  /* `Request` com FormData: nunca ler como texto (quebra upload / ByteString). */
-  if (isFormDataBody(input.body)) {
+  const ct = (input.headers.get("content-type") ?? "").toLowerCase();
+  if (ct.includes("multipart/") || ct.includes("application/octet-stream")) {
+    const raw = input.body;
+    const safeBody =
+      typeof Blob !== "undefined" && raw != null && raw instanceof Blob ? sanitizeBlobLikeForFetch(raw) : raw;
     const req = new Request(input.url, {
       method,
       headers: cloneHeadersLatin1Safe(input.headers),
-      body: input.body,
+      body: safeBody,
       mode: input.mode,
       credentials: input.credentials,
       cache: input.cache,
