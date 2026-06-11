@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { headers } from "next/headers";
 import type Stripe from "stripe";
 import { dispatchStripeEvent } from "@/lib/billing/stripe-webhook";
+import { logStructured } from "@/lib/logging/structured-log";
 import { getStripe, getStripeWebhookSecret } from "@/lib/stripe/client";
 import { requireAdminSupabaseClient } from "@/lib/supabase/admin";
 
@@ -24,7 +25,7 @@ export async function POST(request: Request) {
   const signature = (await headers()).get("stripe-signature");
 
   if (!signature) {
-    console.error("[webhook/stripe] missing stripe-signature header");
+    logStructured("error", "webhook.stripe.no_signature", {});
     return NextResponse.json({ error: "Assinatura ausente." }, { status: 400 });
   }
 
@@ -32,20 +33,16 @@ export async function POST(request: Request) {
   try {
     rawBody = await request.text();
   } catch (err) {
-    console.error("[webhook/stripe] read body:", err);
+    logStructured("error", "webhook.stripe.read_body", { message: String(err) });
     return NextResponse.json({ error: "Corpo inválido." }, { status: 400 });
   }
 
   let event: Stripe.Event;
   try {
     const stripe = getStripe();
-    event = stripe.webhooks.constructEvent(
-      rawBody,
-      signature,
-      getStripeWebhookSecret()
-    );
+    event = stripe.webhooks.constructEvent(rawBody, signature, getStripeWebhookSecret());
   } catch (err) {
-    console.error("[webhook/stripe] constructEvent:", err);
+    logStructured("error", "webhook.stripe.construct_event", { message: String(err) });
     return NextResponse.json({ error: "Assinatura inválida." }, { status: 400 });
   }
 
@@ -53,23 +50,89 @@ export async function POST(request: Request) {
   try {
     admin = requireAdminSupabaseClient();
   } catch (err) {
-    console.error("[webhook/stripe] admin client:", err);
-    return NextResponse.json(
-      { error: "Configuração do servidor incompleta." },
-      { status: 500 }
-    );
+    logStructured("error", "webhook.stripe.admin_client", { message: String(err) });
+    return NextResponse.json({ error: "Configuração do servidor incompleta." }, { status: 500 });
   }
 
   const stripe = getStripe();
 
   try {
-    const result = await dispatchStripeEvent(stripe, admin, event);
-    if (!result.ok) {
-      return NextResponse.json({ error: result.error }, { status: 500 });
+    const { error: idemErr } = await admin.from("stripe_processed_events").insert({
+      event_id: event.id,
+      event_type: event.type,
+    });
+
+    let reservedIdem = false;
+    if (idemErr) {
+      const msg = (idemErr.message ?? "").toLowerCase();
+      if (idemErr.code === "23505" || msg.includes("duplicate")) {
+        logStructured("warn", "webhook.stripe.duplicate_event", {
+          eventId: event.id,
+          eventType: event.type,
+        });
+        return NextResponse.json({ received: true, duplicate: true });
+      }
+      if (msg.includes("does not exist") || msg.includes("schema cache")) {
+        logStructured("warn", "webhook.stripe.idempotency_table_missing", {
+          eventId: event.id,
+          message: idemErr.message,
+        });
+      } else {
+        logStructured("error", "webhook.stripe.idempotency_insert", {
+          eventId: event.id,
+          code: idemErr.code,
+          message: idemErr.message,
+        });
+        return NextResponse.json({ error: "Falha ao registrar idempotência do evento." }, { status: 500 });
+      }
+    } else {
+      reservedIdem = true;
     }
-    return NextResponse.json({ received: true });
+
+    try {
+      const result = await dispatchStripeEvent(stripe, admin, event);
+      if (!result.ok) {
+        if (reservedIdem) {
+          const { error: delErr } = await admin
+            .from("stripe_processed_events")
+            .delete()
+            .eq("event_id", event.id);
+          if (delErr) {
+            logStructured("error", "webhook.stripe.idempotency_rollback_failed", {
+              eventId: event.id,
+              message: delErr.message,
+            });
+          }
+        }
+        logStructured("error", "webhook.stripe.dispatch_failed", {
+          eventId: event.id,
+          eventType: event.type,
+          error: result.error,
+        });
+        return NextResponse.json({ error: result.error }, { status: 500 });
+      }
+      return NextResponse.json({ received: true });
+    } catch (dispatchErr) {
+      if (reservedIdem) {
+        const { error: delErr } = await admin
+          .from("stripe_processed_events")
+          .delete()
+          .eq("event_id", event.id);
+        if (delErr) {
+          logStructured("error", "webhook.stripe.idempotency_rollback_failed", {
+            eventId: event.id,
+            message: delErr.message,
+          });
+        }
+      }
+      throw dispatchErr;
+    }
   } catch (err) {
-    console.error("[webhook/stripe] handler:", err);
+    logStructured("error", "webhook.stripe.handler", {
+      eventId: event.id,
+      eventType: event.type,
+      message: String(err),
+    });
     return NextResponse.json({ error: "Erro ao processar evento." }, { status: 500 });
   }
 }

@@ -31,8 +31,8 @@ import { UtensilsCrossed } from "lucide-react";
 import { isValidSlug } from "@/lib/billing/slug";
 import { normalizeCorTema } from "@/lib/restaurante/cor-tema";
 import { expandLatin1UserText } from "@/lib/restaurante/json-latin1-wire";
+import { fetchPublicCardapioDeduped } from "@/lib/restaurante/cardapio-public-load";
 import { registrarPedidoVitrineNaApi } from "@/lib/restaurante/registrar-pedido-vitrine-client";
-import { xhrGetJson } from "@/lib/restaurante/xhr-get-json-client";
 import { buildWhatsappSendHref } from "@/lib/restaurante/whatsapp-href";
 import { openUrlNovaGuia } from "@/lib/restaurante/open-url-nova-guia";
 import { isRetryableSupabaseError, withRetry } from "@/lib/with-retry";
@@ -181,6 +181,10 @@ function PratoCoverImage(props: { src: string | null; nome: string }) {
     <img
       src={props.src}
       alt=""
+      width={640}
+      height={480}
+      loading="lazy"
+      decoding="async"
       className="h-full w-full object-cover transition duration-500 ease-out group-hover:scale-[1.03]"
       onError={() => setFailed(true)}
     />
@@ -309,25 +313,21 @@ export default function PublicCardapioPage() {
       const result = await withRetry(
         async () => {
           try {
-            const { status, json: bodyRaw } = await xhrGetJson(
-              `/api/public/cardapio?slug=${encodeURIComponent(slug)}`,
-              ac.signal,
-            );
-            const b = bodyRaw as { error?: string; restaurante?: unknown; pratos?: unknown };
-            if (status < 200 || status >= 300) {
-              return {
-                data: null as { restaurante: RestauranteRow | null; pratos: unknown[] } | null,
-                error: { message: b.error ?? `Erro ${status}` },
-              };
-            }
+            const bodyRaw = await fetchPublicCardapioDeduped(slug, ac.signal);
             return {
               data: {
-                restaurante: (b.restaurante ?? null) as RestauranteRow | null,
-                pratos: Array.isArray(b.pratos) ? b.pratos : [],
+                restaurante: (bodyRaw.restaurante ?? null) as RestauranteRow | null,
+                pratos: Array.isArray(bodyRaw.pratos) ? bodyRaw.pratos : [],
               },
               error: null as { message: string } | null,
             };
           } catch (e) {
+            if (e instanceof DOMException && e.name === "AbortError") {
+              return {
+                data: null,
+                error: { message: "aborted" },
+              };
+            }
             return {
               data: null,
               error: { message: e instanceof Error ? e.message : "Falha de rede." },
@@ -338,6 +338,8 @@ export default function PublicCardapioPage() {
       );
 
       if (ac.signal.aborted) return;
+
+      if (result.error?.message === "aborted") return;
 
       if (result.error) {
         setError(mensagemErroCardapioParaCliente(result.error.message ?? "Erro ao carregar."));
@@ -731,14 +733,18 @@ export default function PublicCardapioPage() {
     /** Só Latin-1: nunca enviar o modelo com `•` no JSON da API. */
     const observacoesApi = montarTextoPedidoResumoParaApi(payloadPedido);
 
-    const itensPedido = cart.map(({ prato, quantidade, observacoes }) => {
-      const linha = `${quantidade}x ${prato.nome} (${formatBRL(prato.preco)} cada)`;
-      const o =
-        observacoes?.trim() && !categoriaOcultaObservacoesCliente(prato.categoria)
-          ? observacoes.trim()
-          : "";
-      return o ? `${linha} | Obs: ${o}` : linha;
-    });
+    const linhasApi = cart.map(({ prato, quantidade }) => ({
+      pratoId: prato.id,
+      quantidade,
+    }));
+    const zonaApi =
+      tipoEntrega === "retirada"
+        ? null
+        : zonas.length > 1
+          ? zonaEntregaId
+          : zonas.length === 1
+            ? zonas[0].id
+            : null;
 
     setCheckoutSubmitting(true);
     try {
@@ -747,9 +753,9 @@ export default function PublicCardapioPage() {
         restauranteId: restaurante.id,
         cliente: nomeOk,
         telefone: formatarTelefoneWhatsappBR(clienteTelefoneDisplay),
-        total: totalGeral,
         formaPagamento,
-        itens: itensPedido,
+        linhas: linhasApi,
+        zonaEntregaId: zonaApi,
         observacoes: observacoesApi,
         tipoEntrega,
       });
@@ -925,6 +931,10 @@ export default function PublicCardapioPage() {
               <img
                 src={restaurante.logo}
                 alt=""
+                width={96}
+                height={96}
+                loading="eager"
+                decoding="async"
                 className="h-[5.25rem] w-[5.25rem] rounded-2xl border border-zinc-200/90 bg-white object-cover shadow-sm ring-1 ring-black/[0.04] sm:h-24 sm:w-24"
               />
             ) : (

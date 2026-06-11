@@ -1,5 +1,6 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type Stripe from "stripe";
+import { logStructured } from "@/lib/logging/structured-log";
 import {
   buildPayloadFromSubscription,
   extractSubscriptionIdFromInvoice,
@@ -25,10 +26,10 @@ export async function handleCheckoutSessionCompleted(
 ): Promise<DispatchResult> {
   const userId = resolveSupabaseUserId(session.metadata);
   if (!userId) {
-    console.error(
-      "[webhook/stripe] checkout.session.completed: metadata.supabase_user_id ausente",
-      { sessionId: session.id }
-    );
+    logStructured("error", "webhook.stripe.checkout_no_user", {
+      sessionId: session.id,
+      eventType: "checkout.session.completed",
+    });
     return { ok: true };
   }
 
@@ -262,8 +263,13 @@ export async function handleSubscriptionDeleted(
 export async function dispatchStripeEvent(
   stripe: Stripe,
   admin: SupabaseClient,
-  event: Stripe.Event
+  event: Stripe.Event,
 ): Promise<DispatchResult> {
+  logStructured("info", "webhook.stripe.event", {
+    eventId: event.id,
+    eventType: event.type,
+  });
+
   switch (event.type) {
     case "checkout.session.completed":
       return handleCheckoutSessionCompleted(

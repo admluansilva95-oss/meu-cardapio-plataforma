@@ -1,13 +1,20 @@
 import { NextResponse } from "next/server";
+import { logStructured } from "@/lib/logging/structured-log";
 import { parseFuncionamentoSemana } from "@/lib/restaurante/funcionamento-semana";
 import { statusAberturaPorRelogio } from "@/lib/restaurante/horario-vitrine";
-import { latin1SafeString } from "@/lib/restaurante/json-latin1-wire";
+import {
+  computeTotaisPedidoVitrine,
+  isUuid,
+  parseLinhasPedidoVitrine,
+  sanitizeObservacoesVitrine,
+  type PratoPrecoRow,
+} from "@/lib/restaurante/pedido-vitrine-calculo";
 import { createAdminSupabaseClient } from "@/lib/supabase/admin";
 import type { Restaurante } from "@/types";
 
 /**
- * Pedidos da vitrine → tabela PostgreSQL `public.pedidos` (não existe tabela `orders` neste projeto).
- * Estado inicial da esteira: `coluna = 'recebidos'` (fila de novos pedidos).
+ * Pedidos da vitrine → `public.pedidos`.
+ * Preços e total são **sempre** recalculados no servidor a partir dos IDs dos pratos.
  */
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -24,12 +31,15 @@ type Body = {
   restauranteId?: string;
   cliente?: string;
   telefone?: string;
+  /** Ignorado: total vem do cálculo server-side. */
   total?: number;
   formaPagamento?: FormaCheckout;
+  /** @deprecated painel antigo — use `linhas`. */
   itens?: unknown;
-  /** Texto resumo para o painel (sem bullets U+2022); o cliente monta o WhatsApp à parte. */
+  /** Itens com quantidade; preço vem do banco. */
+  linhas?: unknown;
+  zonaEntregaId?: string | null;
   observacoes?: string;
-  /** `retirada` = retirada no balcão (exige `restaurantes.retirada_balcao`). */
   tipoEntrega?: string;
 };
 
@@ -37,11 +47,6 @@ const PREFIXO_OBS_BALCAO =
   "=== RETIRADA NO BALCAO ===\n" +
   "NAO enviar para entrega: cliente retira no estabelecimento.\n" +
   "Acompanhe na esteira ate disponibilizar para retirada no balcao.\n\n";
-
-/** UUID v4 (e variantes comuns) enviado em `restaurantes.id`. */
-function isUuidRestauranteId(value: string): boolean {
-  return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(value.trim());
-}
 
 function isSchemaOrUnknownColumnError(err: {
   message?: string;
@@ -59,23 +64,107 @@ function isSchemaOrUnknownColumnError(err: {
   return false;
 }
 
-type RestaurantePedidoRow = {
+type RestRow = {
   id: string;
   vitrine_fechada?: boolean | null;
   funcionamento_semana?: unknown;
   retirada_balcao?: boolean | null;
+  taxa_entrega?: number | string | null;
+  taxas_entrega_zonas?: unknown;
+  entrega_modo?: string | null;
 };
 
-/**
- * Registra pedido originado na vitrine (antes do cliente abrir o WhatsApp).
- * Requer `SUPABASE_SERVICE_ROLE_KEY` no servidor (bypass RLS seguro).
- */
+async function carregarRestaurantePedido(
+  admin: NonNullable<ReturnType<typeof createAdminSupabaseClient>>,
+  restauranteId: string,
+): Promise<{ ok: true; row: RestRow } | { ok: false; status: number; error: string }> {
+  const selFull = await admin
+    .from("restaurantes")
+    .select(
+      "id, vitrine_fechada, funcionamento_semana, retirada_balcao, taxa_entrega, taxas_entrega_zonas, entrega_modo",
+    )
+    .eq("id", restauranteId)
+    .maybeSingle();
+
+  if (!selFull.error && selFull.data) {
+    return { ok: true, row: selFull.data as RestRow };
+  }
+
+  if (selFull.error && !isSchemaOrUnknownColumnError(selFull.error)) {
+    const msg = (selFull.error.message ?? "").toLowerCase();
+    if (msg.includes("invalid input syntax for type uuid") || msg.includes("22p02")) {
+      return { ok: false, status: 400, error: "Identificador do estabelecimento inválido." };
+    }
+    logStructured("error", "api.pedidos.vitrine.restaurante_select", {
+      restauranteId,
+      message: selFull.error.message,
+      code: selFull.error.code,
+    });
+    return { ok: false, status: 500, error: "Erro interno ao consultar o estabelecimento." };
+  }
+
+  const selMin = await admin
+    .from("restaurantes")
+    .select("id, vitrine_fechada, funcionamento_semana, retirada_balcao")
+    .eq("id", restauranteId)
+    .maybeSingle();
+
+  if (selMin.error) {
+    if (isSchemaOrUnknownColumnError(selMin.error)) {
+      const soId = await admin.from("restaurantes").select("id").eq("id", restauranteId).maybeSingle();
+      if (soId.error || !soId.data) {
+        return { ok: false, status: 500, error: "Erro interno ao consultar o estabelecimento." };
+      }
+      return {
+        ok: true,
+        row: {
+          id: soId.data.id,
+          vitrine_fechada: false,
+          funcionamento_semana: undefined,
+          retirada_balcao: false,
+          taxa_entrega: null,
+          taxas_entrega_zonas: null,
+          entrega_modo: "fixa",
+        },
+      };
+    }
+    return { ok: false, status: 500, error: "Erro interno ao consultar o estabelecimento." };
+  }
+
+  if (!selMin.data) {
+    return { ok: false, status: 404, error: "Restaurante não encontrado." };
+  }
+
+  const tax = await admin
+    .from("restaurantes")
+    .select("taxa_entrega, taxas_entrega_zonas, entrega_modo")
+    .eq("id", restauranteId)
+    .maybeSingle();
+
+  const trow = !tax.error && tax.data ? (tax.data as Pick<RestRow, "taxa_entrega" | "taxas_entrega_zonas" | "entrega_modo">) : {};
+
+  return {
+    ok: true,
+    row: {
+      ...(selMin.data as RestRow),
+      taxa_entrega: trow.taxa_entrega ?? null,
+      taxas_entrega_zonas: trow.taxas_entrega_zonas ?? null,
+      entrega_modo: trow.entrega_modo ?? "fixa",
+    },
+  };
+}
+
+function taxaFixaNum(v: number | string | null | undefined): number | null {
+  if (v == null || v === "") return null;
+  const n = typeof v === "number" ? v : Number(v);
+  if (!Number.isFinite(n) || n < 0) return null;
+  return Math.round(n * 100) / 100;
+}
+
 export async function POST(request: Request) {
   const admin = createAdminSupabaseClient();
   if (!admin) {
-    console.error(
-      "[api/pedidos/vitrine] SUPABASE_SERVICE_ROLE_KEY ausente — não é possível gravar o pedido.",
-    );
+    logStructured("error", "api.pedidos.vitrine.no_service_role", {});
     return NextResponse.json(
       {
         error:
@@ -95,23 +184,16 @@ export async function POST(request: Request) {
   const restauranteId = typeof body.restauranteId === "string" ? body.restauranteId.trim() : "";
   const cliente = typeof body.cliente === "string" ? body.cliente.trim() : "";
   const telefone = typeof body.telefone === "string" ? body.telefone.trim() : "";
-  const total =
-    typeof body.total === "number" && Number.isFinite(body.total)
-      ? Math.max(0, Math.round(body.total * 100) / 100)
-      : NaN;
   const forma = body.formaPagamento;
 
   if (!restauranteId || !cliente || cliente.length < 2) {
     return NextResponse.json({ error: "Dados do cliente inválidos." }, { status: 400 });
   }
-  if (!isUuidRestauranteId(restauranteId)) {
+  if (!isUuid(restauranteId)) {
     return NextResponse.json({ error: "Identificador do estabelecimento inválido." }, { status: 400 });
   }
   if (!telefone || telefone.length < 8) {
     return NextResponse.json({ error: "Telefone inválido." }, { status: 400 });
-  }
-  if (!Number.isFinite(total)) {
-    return NextResponse.json({ error: "Total inválido." }, { status: 400 });
   }
   if (
     forma !== "dinheiro" &&
@@ -122,100 +204,37 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Forma de pagamento inválida." }, { status: 400 });
   }
 
-  let itensJson: string[] = [];
-  if (Array.isArray(body.itens)) {
-    itensJson = body.itens
-      .map((x) => (typeof x === "string" ? latin1SafeString(x.trim()) : ""))
-      .filter(Boolean)
-      .slice(0, 80);
-  }
-  if (itensJson.length === 0) {
-    return NextResponse.json({ error: "Lista de itens vazia." }, { status: 400 });
+  const linhas = parseLinhasPedidoVitrine(body);
+  if (!linhas) {
+    return NextResponse.json(
+      {
+        error:
+          "Lista de itens inválida. Atualize a página e tente novamente (formato antigo não suportado).",
+      },
+      { status: 400 },
+    );
   }
 
   const obsRaw = typeof body.observacoes === "string" ? body.observacoes : "";
-  const obsSan = latin1SafeString(
-    obsRaw.length > 12000 ? obsRaw.slice(0, 12000) : obsRaw,
-  ).slice(0, 12000);
+  const obsSan = sanitizeObservacoesVitrine(obsRaw, 12_000);
 
   const tipoEntrega =
     body.tipoEntrega === "retirada" || body.tipoEntrega === "entrega" ? body.tipoEntrega : "entrega";
 
-  let rest: RestaurantePedidoRow | null = null;
+  const zonaRaw = body.zonaEntregaId;
+  const zonaEntregaId =
+    zonaRaw === null || zonaRaw === undefined
+      ? null
+      : typeof zonaRaw === "string" && isUuid(zonaRaw.trim())
+        ? zonaRaw.trim()
+        : null;
 
-  const selectCompleto = await admin
-    .from("restaurantes")
-    .select("id, vitrine_fechada, funcionamento_semana, retirada_balcao")
-    .eq("id", restauranteId)
-    .maybeSingle();
-
-  if (selectCompleto.error) {
-    if (isSchemaOrUnknownColumnError(selectCompleto.error)) {
-      console.warn(
-        "[api/pedidos/vitrine] select restaurante (completo) coluna ausente — tentando select mínimo:",
-        selectCompleto.error.message,
-      );
-      const selectMinimo = await admin
-        .from("restaurantes")
-        .select("id, vitrine_fechada")
-        .eq("id", restauranteId)
-        .maybeSingle();
-
-      if (selectMinimo.error) {
-        if (isSchemaOrUnknownColumnError(selectMinimo.error)) {
-          console.warn(
-            "[api/pedidos/vitrine] select mínimo falhou — tentando só id:",
-            selectMinimo.error.message,
-          );
-          const soId = await admin.from("restaurantes").select("id").eq("id", restauranteId).maybeSingle();
-          if (soId.error || !soId.data) {
-            console.error("[api/pedidos/vitrine] select id:", soId.error);
-            return NextResponse.json(
-              { error: "Erro interno ao consultar o estabelecimento." },
-              { status: 500 },
-            );
-          }
-          rest = {
-            id: soId.data.id,
-            vitrine_fechada: false,
-            funcionamento_semana: undefined,
-            retirada_balcao: false,
-          };
-        } else {
-          console.error("[api/pedidos/vitrine] select restaurante (mínimo):", selectMinimo.error);
-          return NextResponse.json(
-            { error: "Erro interno ao consultar o estabelecimento." },
-            { status: 500 },
-          );
-        }
-      } else if (!selectMinimo.data) {
-        return NextResponse.json({ error: "Restaurante não encontrado." }, { status: 404 });
-      } else {
-        rest = {
-          id: selectMinimo.data.id,
-          vitrine_fechada: selectMinimo.data.vitrine_fechada,
-          funcionamento_semana: undefined,
-          retirada_balcao: false,
-        };
-      }
-    } else {
-      const msg = (selectCompleto.error.message ?? "").toLowerCase();
-      if (msg.includes("invalid input syntax for type uuid") || msg.includes("22p02")) {
-        return NextResponse.json({ error: "Identificador do estabelecimento inválido." }, { status: 400 });
-      }
-      console.error("[api/pedidos/vitrine] select restaurante:", selectCompleto.error);
-      return NextResponse.json(
-        { error: "Erro interno ao consultar o estabelecimento." },
-        { status: 500 },
-      );
-    }
-  } else if (!selectCompleto.data) {
-    return NextResponse.json({ error: "Restaurante não encontrado." }, { status: 404 });
-  } else {
-    rest = selectCompleto.data as RestaurantePedidoRow;
+  const restLoaded = await carregarRestaurantePedido(admin, restauranteId);
+  if (!restLoaded.ok) {
+    return NextResponse.json({ error: restLoaded.error }, { status: restLoaded.status });
   }
+  const row = restLoaded.row;
 
-  const row = rest;
   if (row.vitrine_fechada === true) {
     return NextResponse.json({ error: "Restaurante fechado para novos pedidos." }, { status: 409 });
   }
@@ -227,14 +246,65 @@ export async function POST(request: Request) {
     );
   }
 
-  const observacoes = latin1SafeString(
+  const observacoesBase = sanitizeObservacoesVitrine(
     (tipoEntrega === "retirada" ? PREFIXO_OBS_BALCAO : "") + obsSan,
-  ).slice(0, 12000);
+    12_000,
+  );
 
   const funcionamento_semana = parseFuncionamentoSemana(row.funcionamento_semana) ?? undefined;
   const horarioStub = { funcionamento_semana } as Restaurante;
   if (statusAberturaPorRelogio(horarioStub) === "fechado") {
     return NextResponse.json({ error: "Fora do horário de atendimento." }, { status: 409 });
+  }
+
+  const pratoIds = [...new Set(linhas.map((l) => l.pratoId))];
+  const { data: pratosRows, error: prErr } = await admin
+    .from("pratos")
+    .select("id, nome, preco, status, categoria")
+    .eq("restaurante_id", restauranteId)
+    .in("id", pratoIds);
+
+  if (prErr) {
+    logStructured("error", "api.pedidos.vitrine.pratos_select", {
+      restauranteId,
+      message: prErr.message,
+      code: prErr.code,
+    });
+    return NextResponse.json(
+      { error: "Não foi possível validar os itens do pedido." },
+      { status: 500 },
+    );
+  }
+
+  const pratosPorId = new Map<string, PratoPrecoRow>();
+  for (const r of pratosRows ?? []) {
+    const p = r as Record<string, unknown>;
+    const id = typeof p.id === "string" ? p.id : "";
+    if (!id) continue;
+    pratosPorId.set(id, {
+      id,
+      nome: typeof p.nome === "string" ? p.nome : "",
+      preco: typeof p.preco === "number" ? p.preco : Number(p.preco),
+      status: typeof p.status === "string" ? p.status : "",
+      categoria: typeof p.categoria === "string" ? p.categoria : null,
+    });
+  }
+
+  const tot = computeTotaisPedidoVitrine({
+    linhas,
+    pratosPorId,
+    tipoEntrega,
+    taxaFixa: taxaFixaNum(row.taxa_entrega),
+    zonasRaw: row.taxas_entrega_zonas,
+    zonaEntregaId,
+  });
+
+  if (!tot.ok) {
+    logStructured("warn", "api.pedidos.vitrine.calculo_invalido", {
+      restauranteId,
+      error: tot.error,
+    });
+    return NextResponse.json({ error: tot.error }, { status: 400 });
   }
 
   const pagamento = mapPagamentoPedidoDb(forma);
@@ -245,29 +315,34 @@ export async function POST(request: Request) {
       restaurante_id: restauranteId,
       cliente,
       telefone,
-      total,
+      total: tot.total,
       pagamento,
       coluna: "recebidos",
-      observacoes,
-      itens: itensJson,
+      observacoes: observacoesBase,
+      itens: tot.linhasItensTexto,
       motoboy: "",
     })
     .select("id")
     .maybeSingle();
 
   if (insErr) {
-    console.error("[api/pedidos/vitrine] insert pedidos falhou:", {
+    logStructured("error", "api.pedidos.vitrine.insert", {
+      restauranteId,
       code: insErr.code,
       message: insErr.message,
-      details: insErr.details,
-      hint: insErr.hint,
-      raw: insErr,
     });
     return NextResponse.json(
       { error: "Não foi possível registrar o pedido. Tente novamente em instantes." },
       { status: 500 },
     );
   }
+
+  logStructured("info", "api.pedidos.vitrine.ok", {
+    restauranteId,
+    pedidoId: inserted?.id ?? null,
+    total: tot.total,
+    linhas: linhas.length,
+  });
 
   return NextResponse.json(
     { ok: true, id: inserted?.id ?? null },
