@@ -1,6 +1,7 @@
 import { createServerClient, type CookieOptions } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
 import { isValidSlug } from "@/lib/billing/slug";
+import { latin1CookieWrite } from "@/lib/http/byte-string-http";
 
 type CookieToSet = { name: string; value: string; options: CookieOptions };
 
@@ -31,7 +32,8 @@ export async function proxy(request: NextRequest) {
           return request.cookies.getAll();
         },
         setAll(cookiesToSet: CookieToSet[]) {
-          cookiesToSet.forEach(({ name, value, options }) => {
+          cookiesToSet.forEach((raw) => {
+            const { name, value, options } = latin1CookieWrite(raw);
             // 1. Atualiza a requisição para que os Server Components adiante vejam o cookie novo imediatamente
             request.cookies.set(name, value);
 

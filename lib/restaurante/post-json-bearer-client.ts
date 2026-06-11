@@ -1,8 +1,8 @@
 import {
   deepSanitizeStringsForWire,
   jsonStringifyLatin1Wire,
-  latin1SafeString,
 } from "@/lib/restaurante/json-latin1-wire";
+import { httpReasonPhraseForStatus } from "@/lib/http/byte-string-http";
 import { sanitizeUserFreeText } from "@/lib/utils/sanitize-strings";
 
 /**
@@ -25,9 +25,8 @@ export async function postJsonComBearer(
 
   const tokenSafe = sanitizeUserFreeText(bearerToken.trim());
 
-  const { status, statusText, responseText } = await new Promise<{
+  const { status, responseText } = await new Promise<{
     status: number;
-    statusText: string;
     responseText: string;
   }>((resolve, reject) => {
     const xhr = new XMLHttpRequest();
@@ -38,7 +37,6 @@ export async function postJsonComBearer(
     xhr.onload = () => {
       resolve({
         status: xhr.status,
-        statusText: xhr.statusText,
         responseText: xhr.responseText,
       });
     };
@@ -46,12 +44,10 @@ export async function postJsonComBearer(
     xhr.send(bodyAb);
   });
 
-  /* `ResponseInit.statusText` é ByteString (Latin-1). `xhr.statusText` pode vir com texto não-Latin-1. */
-  const statusTextSafe = latin1SafeString(statusText) || "OK";
-
+  /* `ResponseInit.statusText` é ByteString: nunca repassar `xhr.statusText` (pode vir com `•` / Unicode). */
   return new Response(responseText, {
     status,
-    statusText: statusTextSafe,
+    statusText: httpReasonPhraseForStatus(status),
     headers: new Headers({
       "Content-Type": "application/json; charset=utf-8",
     }),

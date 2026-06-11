@@ -17,13 +17,15 @@ import {
   validarCardapioCategorias,
 } from "@/lib/restaurante/cardapio-categorias";
 import { sanitizeDbJsonDeep, sanitizeDbPlainText, sanitizeDbPlainTextNullable } from "@/lib/db/sanitize-persist";
+import { latin1CookieWrite } from "@/lib/http/byte-string-http";
 
 export const dynamic = "force-dynamic";
 
 type CookieToSet = { name: string; value: string; options: CookieOptions };
 
 function applyAuthCookies(target: NextResponse, writes: CookieToSet[]) {
-  writes.forEach(({ name, value, options }) => {
+  writes.forEach((raw) => {
+    const { name, value, options } = latin1CookieWrite(raw);
     target.cookies.set(name, value, options);
   });
   return target;
@@ -199,7 +201,8 @@ export async function POST(request: NextRequest) {
           return cookieStore.getAll();
         },
         setAll(cookiesToSet: CookieToSet[]) {
-          cookiesToSet.forEach(({ name, value, options }) => {
+          cookiesToSet.forEach((raw) => {
+            const { name, value, options } = latin1CookieWrite(raw);
             request.cookies.set(name, value);
             sessionResponse.cookies.set(name, value, options);
             try {

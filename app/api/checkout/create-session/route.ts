@@ -2,6 +2,7 @@ import { createServerClient, type CookieOptions } from "@supabase/ssr";
 import { cookies } from "next/headers";
 import { NextResponse, type NextRequest } from "next/server";
 import { createSubscriptionCheckoutSession } from "@/lib/billing/checkout";
+import { latin1CookieWrite } from "@/lib/http/byte-string-http";
 import { logStructured } from "@/lib/logging/structured-log";
 import { requireAdminSupabaseClient } from "@/lib/supabase/admin";
 
@@ -17,7 +18,8 @@ type CheckoutBody = {
 
 /** Replica Set-Cookie com opções completas (getAll do Next não devolve todas as opções). */
 function applyAuthCookies(target: NextResponse, writes: CookieToSet[]) {
-  writes.forEach(({ name, value, options }) => {
+  writes.forEach((raw) => {
+    const { name, value, options } = latin1CookieWrite(raw);
     target.cookies.set(name, value, options);
   });
   return target;
@@ -48,7 +50,8 @@ export async function POST(request: NextRequest) {
           return cookieStore.getAll();
         },
         setAll(cookiesToSet: CookieToSet[]) {
-          cookiesToSet.forEach(({ name, value, options }) => {
+          cookiesToSet.forEach((raw) => {
+            const { name, value, options } = latin1CookieWrite(raw);
             // 1. Atualiza a requisição para que os Server Components adiante vejam o cookie novo imediatamente
             request.cookies.set(name, value);
 

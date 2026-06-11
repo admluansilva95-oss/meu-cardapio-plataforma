@@ -1,5 +1,6 @@
 import { createServerClient, type CookieOptions } from "@supabase/ssr";
 import { cookies } from "next/headers";
+import { latin1CookieWrite } from "@/lib/http/byte-string-http";
 
 type CookieToSet = { name: string; value: string; options: CookieOptions };
 
@@ -19,9 +20,10 @@ export async function createServerSupabaseClient() {
         },
         setAll(cookiesToSet: CookieToSet[]) {
           try {
-            cookiesToSet.forEach(({ name, value, options }) =>
-              cookieStore.set(name, value, options),
-            );
+            cookiesToSet.forEach((raw) => {
+              const { name, value, options } = latin1CookieWrite(raw);
+              cookieStore.set(name, value, options);
+            });
           } catch {
             // setAll pode falhar em Server Components estáticos; ignorar.
           }

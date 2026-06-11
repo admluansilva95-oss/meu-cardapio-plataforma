@@ -1,6 +1,7 @@
 import { createServerClient, type CookieOptions } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
 import { getPublicAppUrl } from "@/lib/site-url";
+import { latin1CookieWrite } from "@/lib/http/byte-string-http";
 
 type CookieToSet = { name: string; value: string; options: CookieOptions };
 
@@ -83,7 +84,8 @@ export async function GET(request: NextRequest) {
           return request.cookies.getAll();
         },
         setAll(cookiesToSet: CookieToSet[]) {
-          cookiesToSet.forEach(({ name, value, options }) => {
+          cookiesToSet.forEach((raw) => {
+            const { name, value, options } = latin1CookieWrite(raw);
             response.cookies.set(name, value, options);
           });
         },
