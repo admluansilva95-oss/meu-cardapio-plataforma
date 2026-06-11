@@ -3,7 +3,7 @@ import {
   jsonStringifyLatin1Wire,
 } from "@/lib/restaurante/json-latin1-wire";
 import { httpReasonPhraseForStatus } from "@/lib/http/byte-string-http";
-import { sanitizeUserFreeText } from "@/lib/utils/sanitize-strings";
+import { latin1SafeString, sanitizeUserFreeText } from "@/lib/utils/sanitize-strings";
 
 /**
  * POST JSON com `Authorization: Bearer` **somente via XMLHttpRequest** + corpo `ArrayBuffer` UTF-8.
@@ -24,6 +24,9 @@ export async function postJsonComBearer(
       : u8.slice().buffer;
 
   const tokenSafe = sanitizeUserFreeText(bearerToken.trim());
+  /** Cabeçalhos XHR são ByteString — reforço extra além de `sanitizeUserFreeText`. */
+  const authorizationLatin1 =
+    latin1SafeString(`Bearer ${tokenSafe}`).trim() || "Bearer ";
 
   const { status, responseText } = await new Promise<{
     status: number;
@@ -33,7 +36,7 @@ export async function postJsonComBearer(
     xhr.open("POST", url, true);
     xhr.withCredentials = true;
     xhr.setRequestHeader("Content-Type", "application/json; charset=utf-8");
-    xhr.setRequestHeader("Authorization", `Bearer ${tokenSafe}`);
+    xhr.setRequestHeader("Authorization", authorizationLatin1);
     xhr.onload = () => {
       resolve({
         status: xhr.status,
@@ -44,8 +47,16 @@ export async function postJsonComBearer(
     xhr.send(bodyAb);
   });
 
-  /* `ResponseInit.statusText` é ByteString: nunca repassar `xhr.statusText` (pode vir com `•` / Unicode). */
-  return new Response(responseText, {
+  /*
+   * Corpo como bytes UTF-8 (Blob), não como string UTF-16: em alguns Chromium/Electron,
+   * `new Response(string)` dispara ByteString se o JSON tiver `•` (U+2022) vindo do servidor.
+   */
+  const bodyOut = new Blob([new TextEncoder().encode(responseText)], {
+    type: "application/json; charset=utf-8",
+  });
+
+  /* `ResponseInit.statusText` é ByteString: nunca repassar `xhr.statusText`. */
+  return new Response(bodyOut, {
     status,
     statusText: httpReasonPhraseForStatus(status),
     headers: new Headers({
