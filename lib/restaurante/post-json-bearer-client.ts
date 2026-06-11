@@ -1,6 +1,7 @@
 import {
   deepSanitizeStringsForWire,
   jsonStringifyLatin1Wire,
+  latin1SafeString,
 } from "@/lib/restaurante/json-latin1-wire";
 import { sanitizeUserFreeText } from "@/lib/utils/sanitize-strings";
 
@@ -45,9 +46,12 @@ export async function postJsonComBearer(
     xhr.send(bodyAb);
   });
 
+  /* `ResponseInit.statusText` é ByteString (Latin-1). `xhr.statusText` pode vir com texto não-Latin-1. */
+  const statusTextSafe = latin1SafeString(statusText) || "OK";
+
   return new Response(responseText, {
     status,
-    statusText,
+    statusText: statusTextSafe,
     headers: new Headers({
       "Content-Type": "application/json; charset=utf-8",
     }),
