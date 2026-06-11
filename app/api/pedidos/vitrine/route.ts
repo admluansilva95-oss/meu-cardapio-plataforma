@@ -89,6 +89,42 @@ function isSchemaOrUnknownColumnError(err: {
   return false;
 }
 
+/** Erros de rede / chave / JWT — mensagem mais útil que o genérico 500. */
+function mapSupabaseInfrastructureFailure(err: {
+  message?: string;
+  code?: string;
+} | null): { status: number; error: string } | null {
+  if (!err) return null;
+  const m = (err.message ?? "").toLowerCase();
+  const c = (err.code ?? "").toLowerCase();
+  if (
+    m.includes("invalid api key") ||
+    m.includes("jwt expired") ||
+    (m.includes("jwt") && m.includes("invalid")) ||
+    c === "pgrst301" ||
+    m.includes("no suitable key")
+  ) {
+    return {
+      status: 503,
+      error:
+        "Servidor não autenticou na base de dados. Confira SUPABASE_SERVICE_ROLE_KEY e NEXT_PUBLIC_SUPABASE_URL no ambiente (ex.: Vercel).",
+    };
+  }
+  if (m.includes("fetch failed") || m.includes("econnrefused") || m.includes("enotfound") || m.includes("etimedout")) {
+    return {
+      status: 503,
+      error: "Não foi possível contactar a base de dados. Tente novamente em instantes.",
+    };
+  }
+  if (m.includes("relation") && m.includes("does not exist")) {
+    return {
+      status: 503,
+      error: "Base de dados desatualizada ou inacessível. Verifique migrações e o projeto Supabase.",
+    };
+  }
+  return null;
+}
+
 type RestRow = {
   id: string;
   vitrine_fechada?: boolean | null;
@@ -120,10 +156,21 @@ async function carregarRestaurantePedido(
     if (msg.includes("invalid input syntax for type uuid") || msg.includes("22p02")) {
       return { ok: false, status: 400, error: "Identificador do estabelecimento inválido." };
     }
+    const infra = mapSupabaseInfrastructureFailure(selFull.error);
+    if (infra) {
+      logStructured("error", "api.pedidos.vitrine.restaurante_select_infra", {
+        restauranteId,
+        message: selFull.error.message,
+        code: selFull.error.code,
+      });
+      return { ok: false, status: infra.status, error: infra.error };
+    }
     logStructured("error", "api.pedidos.vitrine.restaurante_select", {
       restauranteId,
       message: selFull.error.message,
       code: selFull.error.code,
+      details: selFull.error.details ?? null,
+      hint: selFull.error.hint ?? null,
     });
     return { ok: false, status: 500, error: "Erro interno ao consultar o estabelecimento." };
   }
@@ -138,6 +185,13 @@ async function carregarRestaurantePedido(
     if (isSchemaOrUnknownColumnError(selMin.error)) {
       const soId = await admin.from("restaurantes").select("id").eq("id", restauranteId).maybeSingle();
       if (soId.error || !soId.data) {
+        const infra = mapSupabaseInfrastructureFailure(soId.error);
+        if (infra) return { ok: false, status: infra.status, error: infra.error };
+        logStructured("error", "api.pedidos.vitrine.restaurante_select_fallback_id", {
+          restauranteId,
+          message: soId.error?.message,
+          code: soId.error?.code,
+        });
         return { ok: false, status: 500, error: "Erro interno ao consultar o estabelecimento." };
       }
       return {
@@ -153,6 +207,21 @@ async function carregarRestaurantePedido(
         },
       };
     }
+    const infra = mapSupabaseInfrastructureFailure(selMin.error);
+    if (infra) {
+      logStructured("error", "api.pedidos.vitrine.restaurante_select_min_infra", {
+        restauranteId,
+        message: selMin.error.message,
+        code: selMin.error.code,
+      });
+      return { ok: false, status: infra.status, error: infra.error };
+    }
+    logStructured("error", "api.pedidos.vitrine.restaurante_select_min", {
+      restauranteId,
+      message: selMin.error.message,
+      code: selMin.error.code,
+      details: selMin.error.details ?? null,
+    });
     return { ok: false, status: 500, error: "Erro interno ao consultar o estabelecimento." };
   }
 
@@ -209,7 +278,13 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "JSON inválido." }, { status: 400 });
   }
 
-  const restauranteId = typeof body.restauranteId === "string" ? body.restauranteId.trim() : "";
+  const restauranteIdRaw = body.restauranteId;
+  const restauranteId =
+    typeof restauranteIdRaw === "string"
+      ? restauranteIdRaw.trim()
+      : typeof restauranteIdRaw === "number" && Number.isFinite(restauranteIdRaw)
+        ? String(Math.trunc(restauranteIdRaw))
+        : "";
   warnCamposPrecoIgnorados(rawBody, restauranteId);
   const clienteRaw = typeof body.cliente === "string" ? body.cliente.trim() : "";
   const telefoneRaw = typeof body.telefone === "string" ? body.telefone.trim() : "";

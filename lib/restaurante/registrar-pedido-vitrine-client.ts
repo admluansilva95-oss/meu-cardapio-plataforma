@@ -1,7 +1,5 @@
-import {
-  deepSanitizeStringsForWire,
-  jsonStringifyLatin1Wire,
-} from "@/lib/restaurante/json-latin1-wire";
+import { jsonStringifyLatin1Wire } from "@/lib/restaurante/json-latin1-wire";
+import { buildVitrinePedidoWirePayload } from "@/lib/restaurante/vitrine-pedido-wire";
 import { latin1SafeString } from "@/lib/utils/sanitize-strings";
 
 export type VitrinePedidoJson = {
@@ -13,12 +11,14 @@ export type VitrinePedidoJson = {
 /**
  * Registra pedido da vitrine **somente via XMLHttpRequest** + corpo `ArrayBuffer` UTF-8.
  * Evita por completo o pipeline `fetch` do Chromium/Electron (fonte comum de `ByteString`).
+ *
+ * Usa `buildVitrinePedidoWirePayload` para não corromper UUIDs com `deepSanitizeStringsForWire`/`NFKC`.
  */
 export function registrarPedidoVitrineNaApi(
   url: string,
   payload: unknown,
 ): Promise<{ status: number; json: VitrinePedidoJson }> {
-  const wired = deepSanitizeStringsForWire(payload);
+  const wired = buildVitrinePedidoWirePayload(payload);
   const raw = jsonStringifyLatin1Wire(wired);
   const u8 = new TextEncoder().encode(raw);
   const bodyAb =
