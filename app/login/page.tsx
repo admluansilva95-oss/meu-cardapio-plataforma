@@ -57,8 +57,7 @@ function LoginForm() {
     };
   }, [router, redirectAfterLogin]);
 
-  async function handleSubmit(e: React.FormEvent) {
-    e.preventDefault();
+  async function submitLogin() {
     setLoading(true);
     setErrorMessage(null);
 
@@ -130,7 +129,15 @@ function LoginForm() {
         ) : null}
 
         <div className="rounded-3xl border border-white/10 bg-white/[0.035] p-8 backdrop-blur-2xl">
-          <form onSubmit={handleSubmit} className="space-y-5">
+          <form
+            data-testid="login-form"
+            noValidate
+            onSubmit={(e) => {
+              e.preventDefault();
+              void submitLogin();
+            }}
+            className="space-y-5"
+          >
             <div className="space-y-2">
               <label htmlFor="email" className="text-xs font-medium text-zinc-300">
                 E-mail
@@ -160,19 +167,23 @@ function LoginForm() {
               />
             </div>
             <button
-              type="submit"
+              type="button"
+              data-testid="login-submit"
               disabled={loading}
+              onClick={() => void submitLogin()}
               className="w-full rounded-2xl bg-gradient-to-r from-teal-400 via-emerald-400 to-cyan-400 py-3.5 text-sm font-semibold text-zinc-950 disabled:opacity-60"
             >
               {loading ? "Entrando…" : priceId ? "Continuar para assinatura" : "Entrar"}
             </button>
           </form>
 
-          {errorMessage ? (
-            <p className="mt-4 text-center text-sm text-red-300" role="alert">
-              {errorMessage}
-            </p>
-          ) : null}
+          <p
+            className={`mt-4 min-h-[1.5rem] text-center text-sm ${errorMessage ? "text-red-300" : "text-transparent"}`}
+            role={errorMessage ? "alert" : undefined}
+            data-testid="login-error"
+          >
+            {errorMessage ?? ""}
+          </p>
 
           <p className="mt-6 text-center text-sm text-zinc-500">
             Não tem conta?{" "}

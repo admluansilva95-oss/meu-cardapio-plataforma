@@ -2382,6 +2382,20 @@ function AdminPageInner() {
                 )}
               </button>
             ) : null}
+              <button
+                type="button"
+                data-testid="admin-sign-out"
+                onClick={() => {
+                  void (async () => {
+                    await supabase.auth.signOut();
+                    router.push("/login");
+                    router.refresh();
+                  })();
+                }}
+                className="inline-flex items-center justify-center rounded-xl border border-black/[0.12] bg-white px-4 py-2.5 text-sm font-medium text-[#424245] shadow-sm transition hover:bg-[#f5f5f7]"
+              >
+                Sair
+              </button>
             </div>
           </div>
         </header>

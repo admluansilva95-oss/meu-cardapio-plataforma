@@ -35,10 +35,8 @@ export function CadastroForm() {
   const [loading, setLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
-  async function handleSubmit(e: React.FormEvent) {
-    e.preventDefault();
+  async function submitCadastro() {
     setLoading(true);
-    setErrorMessage(null);
 
     const normalizedSlug = normalizeSlugInput(slug);
     if (!isValidSlug(normalizedSlug)) {
@@ -61,6 +59,8 @@ export function CadastroForm() {
       setLoading(false);
       return;
     }
+
+    setErrorMessage(null);
 
     try {
       const supabase = createBrowserSupabaseClient();
@@ -139,7 +139,15 @@ export function CadastroForm() {
         ) : null}
 
         <div className="rounded-3xl border border-white/10 bg-white/[0.035] p-8 backdrop-blur-2xl">
-          <form onSubmit={handleSubmit} className="space-y-5">
+          <form
+            data-testid="cadastro-form"
+            noValidate
+            onSubmit={(e) => {
+              e.preventDefault();
+              void submitCadastro();
+            }}
+            className="space-y-5"
+          >
             <div className="space-y-2">
               <label htmlFor="slug" className="text-xs font-medium text-zinc-300">
                 Endereço público do cardápio
@@ -205,19 +213,23 @@ export function CadastroForm() {
               />
             </div>
             <button
-              type="submit"
+              type="button"
+              data-testid="cadastro-submit"
               disabled={loading}
+              onClick={() => void submitCadastro()}
               className="w-full rounded-2xl bg-gradient-to-r from-teal-400 via-emerald-400 to-cyan-400 py-3.5 text-sm font-semibold text-zinc-950 disabled:opacity-60"
             >
               {loading ? "Redirecionando ao pagamento…" : "Criar conta e pagar no Stripe"}
             </button>
           </form>
 
-          {errorMessage ? (
-            <p className="mt-4 text-center text-sm text-red-300" role="alert">
-              {errorMessage}
-            </p>
-          ) : null}
+          <p
+            className={`mt-4 min-h-[1.5rem] text-center text-sm ${errorMessage ? "text-red-300" : "text-transparent"}`}
+            role={errorMessage ? "alert" : undefined}
+            data-testid="cadastro-error"
+          >
+            {errorMessage ?? ""}
+          </p>
 
           <p className="mt-6 text-center text-sm text-zinc-500">
             Já tem conta?{" "}
