@@ -50,5 +50,8 @@ export function mensagemErroSupabaseAuthAmigavel(message: string, code?: string)
   if (m.includes("rate limit") || m.includes("too many requests")) {
     return "Muitas tentativas. Aguarde um minuto e tente novamente.";
   }
+  if (m.includes("no api key") || m.includes("api key found")) {
+    return "O site não está ligado ao servidor de autenticação. As credenciais públicas do Supabase precisam de ser configuradas no deploy (URL e chave anónima).";
+  }
   return message;
 }

@@ -12,6 +12,30 @@ import {
 } from "@/lib/auth/validacao-credenciais";
 import { devClientError } from "@/lib/logging/dev-client-log";
 
+function supabaseBrowserEnvOk(): boolean {
+  return Boolean(
+    process.env.NEXT_PUBLIC_SUPABASE_URL?.trim() &&
+      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY?.trim(),
+  );
+}
+
+function mensagemErroLoginCatch(err: unknown): string {
+  const raw = err instanceof Error ? err.message : String(err);
+  const lower = raw.toLowerCase();
+  if (lower.includes("no api key") || lower.includes("api key found")) {
+    return "O site não está ligado ao servidor de autenticação. Peça à equipa técnica para configurar NEXT_PUBLIC_SUPABASE_URL e NEXT_PUBLIC_SUPABASE_ANON_KEY no painel de deploy e voltar a publicar.";
+  }
+  if (
+    lower.includes("failed to fetch") ||
+    lower.includes("networkerror") ||
+    lower.includes("load failed") ||
+    lower.includes("network request failed")
+  ) {
+    return "Não foi possível contactar o servidor. Verifique a sua ligação à internet ou tente mais tarde.";
+  }
+  return "Erro inesperado ao entrar. Tente novamente em instantes.";
+}
+
 function LoginForm() {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -48,6 +72,7 @@ function LoginForm() {
       : "/admin";
 
   useEffect(() => {
+    if (!supabaseBrowserEnvOk()) return;
     let cancelled = false;
     (async () => {
       const supabase = createBrowserSupabaseClient();
@@ -79,6 +104,13 @@ function LoginForm() {
         return;
       }
 
+      if (!supabaseBrowserEnvOk()) {
+        setErrorMessage(
+          "Este ambiente não tem as credenciais públicas do Supabase. Configure NEXT_PUBLIC_SUPABASE_URL e NEXT_PUBLIC_SUPABASE_ANON_KEY e faça um novo deploy.",
+        );
+        return;
+      }
+
       const supabase = createBrowserSupabaseClient();
       const { data, error } = await supabase.auth.signInWithPassword({
         email: emailVal.email,
@@ -99,7 +131,7 @@ function LoginForm() {
       setErrorMessage("Não foi possível iniciar a sessão. Tente novamente.");
     } catch (err) {
       devClientError("[login] handleSubmit:", err);
-      setErrorMessage("Erro inesperado ao entrar.");
+      setErrorMessage(mensagemErroLoginCatch(err));
     } finally {
       setLoading(false);
     }
