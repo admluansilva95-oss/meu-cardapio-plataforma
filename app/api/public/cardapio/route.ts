@@ -1,7 +1,8 @@
 import { createClient } from "@supabase/supabase-js";
-import { NextResponse, type NextRequest } from "next/server";
+import { type NextRequest } from "next/server";
 import { isValidSlug } from "@/lib/billing/slug";
 import { serverLatin1SafeFetch } from "@/lib/http/server-latin1-fetch";
+import { jsonWithRequestId } from "@/lib/http/json-with-request-id";
 import { logStructured } from "@/lib/logging/structured-log";
 import {
   SUPABASE_PUBLIC_CARDAPIO_TIMEOUT_MS,
@@ -31,18 +32,20 @@ export async function GET(request: NextRequest) {
     request,
     "/api/public/cardapio",
     "api.public.cardapio.fatal",
-    async () => {
-      const slug = request.nextUrl.searchParams.get("slug")?.trim() ?? "";
+    async ({ request, requestId }) => {
+      const req = request as NextRequest;
+      const slug = req.nextUrl.searchParams.get("slug")?.trim() ?? "";
       if (!slug || !isValidSlug(slug)) {
-        return NextResponse.json({ error: "Slug inválido." }, { status: 400 });
+        return jsonWithRequestId(requestId, { error: "Slug inválido." }, 400);
       }
 
       const url = process.env.NEXT_PUBLIC_SUPABASE_URL?.trim();
       const anonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY?.trim();
       if (!url || !anonKey) {
-        return NextResponse.json(
+        return jsonWithRequestId(
+          requestId,
           { error: "Configuração do servidor incompleta (Supabase)." },
-          { status: 503 },
+          503,
         );
       }
 
@@ -71,12 +74,13 @@ export async function GET(request: NextRequest) {
           logStructured("error", "api.public.cardapio.restaurantes_timeout", {
             slug,
           });
-          return NextResponse.json(
+          return jsonWithRequestId(
+            requestId,
             {
               error:
                 "O servidor demorou a responder. Tente novamente em instantes.",
             },
-            { status: 504 },
+            504,
           );
         }
         logStructured("error", "api.public.cardapio.restaurantes", {
@@ -84,17 +88,18 @@ export async function GET(request: NextRequest) {
           message: restErr.message,
           code: restErr.code,
         });
-        return NextResponse.json(
+        return jsonWithRequestId(
+          requestId,
           {
             error:
               "Não foi possível carregar o cardápio. Tente novamente em instantes.",
           },
-          { status: 500 },
+          500,
         );
       }
 
       if (!restaurante) {
-        const res = NextResponse.json({ restaurante: null, pratos: [] });
+        const res = jsonWithRequestId(requestId, { restaurante: null, pratos: [] }, 200);
         res.headers.set("Cache-Control", "private, no-store, max-age=0");
         return res;
       }
@@ -119,12 +124,13 @@ export async function GET(request: NextRequest) {
             slug,
             restauranteId: rid,
           });
-          return NextResponse.json(
+          return jsonWithRequestId(
+            requestId,
             {
               error:
                 "O servidor demorou a responder. Tente novamente em instantes.",
             },
-            { status: 504 },
+            504,
           );
         }
         logStructured("error", "api.public.cardapio.pratos", {
@@ -133,19 +139,24 @@ export async function GET(request: NextRequest) {
           message: pratosErr.message,
           code: pratosErr.code,
         });
-        return NextResponse.json(
+        return jsonWithRequestId(
+          requestId,
           {
             error:
               "Não foi possível carregar o cardápio. Tente novamente em instantes.",
           },
-          { status: 500 },
+          500,
         );
       }
 
-      const res = NextResponse.json({
-        restaurante,
-        pratos: pratos ?? [],
-      });
+      const res = jsonWithRequestId(
+        requestId,
+        {
+          restaurante,
+          pratos: pratos ?? [],
+        },
+        200,
+      );
       res.headers.set("Cache-Control", "private, no-store, max-age=0");
       return res;
     },

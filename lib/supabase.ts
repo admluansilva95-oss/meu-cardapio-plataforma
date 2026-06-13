@@ -1,6 +1,10 @@
 import "@/lib/wire/bootstrap-byte-string-guard";
 import { createBrowserClient } from "@supabase/ssr";
 import { createLatin1SafeFetch } from "@/lib/fetch-latin1-safe";
+import {
+  getOwnerAuthStorageOptions,
+  getSupabaseBrowserCookieOptions,
+} from "@/lib/auth/supabase-session-cookies";
 
 const browserSafeFetch = createLatin1SafeFetch();
 
@@ -17,6 +21,10 @@ export function createBrowserSupabaseClient() {
   return createBrowserClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-    { global: { fetch: browserSafeFetch } },
+    {
+      global: { fetch: browserSafeFetch },
+      cookieOptions: getSupabaseBrowserCookieOptions(),
+      ...getOwnerAuthStorageOptions(),
+    },
   );
 }

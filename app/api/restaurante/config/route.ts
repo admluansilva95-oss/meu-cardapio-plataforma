@@ -21,6 +21,10 @@ import {
   sanitizeDbPlainText,
   sanitizeDbPlainTextNullable,
 } from "@/lib/db/sanitize-persist";
+import {
+  getOwnerAuthStorageOptions,
+  getSupabaseServerCookieOptions,
+} from "@/lib/auth/supabase-session-cookies";
 import { latin1CookieWrite } from "@/lib/http/byte-string-http";
 import { serverLatin1SafeFetch } from "@/lib/http/server-latin1-fetch";
 import { logStructured } from "@/lib/logging/structured-log";
@@ -58,6 +62,8 @@ type ConfigBody = {
   texto_vitrine_aberto?: string | null;
   texto_vitrine_fechado?: string | null;
   mensagem_fora_horario?: string | null;
+  /** Optimistic lock: deve coincidir com `restaurantes.config_version` atual. */
+  configVersion?: number;
 };
 
 const MIGRATION_HINT =
@@ -206,7 +212,7 @@ export async function POST(request: NextRequest) {
     request,
     "/api/restaurante/config",
     "api.restaurante.config.fatal",
-    async () => {
+    async ({ requestId }) => {
       const cookieStore = await cookies();
       const sessionResponse = NextResponse.next({
         request: { headers: request.headers },
@@ -217,11 +223,8 @@ export async function POST(request: NextRequest) {
         process.env.NEXT_PUBLIC_SUPABASE_URL!,
         process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
         {
-          cookieOptions: {
-            path: "/",
-            sameSite: "lax",
-            secure: process.env.NODE_ENV === "production",
-          },
+          cookieOptions: getSupabaseServerCookieOptions(),
+          ...getOwnerAuthStorageOptions(),
           cookies: {
             getAll() {
               return cookieStore.getAll();
@@ -487,18 +490,42 @@ export async function POST(request: NextRequest) {
 
         const jsonZonas = listaZonas.length > 0 ? listaZonas : null;
 
+        const lockVersion =
+          typeof body.configVersion === "number" &&
+          Number.isFinite(body.configVersion) &&
+          body.configVersion >= 0
+            ? Math.floor(body.configVersion)
+            : null;
+
         const admin = createAdminSupabaseClient();
 
         async function runAll(
           client: SupabaseClient,
           ownerFilter: string | null,
+          lockVersion: number | null,
         ) {
+          const payload: Record<string, unknown> = { ...base };
+          if (lockVersion != null) {
+            payload.config_version = lockVersion + 1;
+          }
           let q = client
             .from("restaurantes")
-            .update(base)
+            .update(payload)
             .eq("id", restauranteId);
           if (ownerFilter) q = q.eq("owner_id", ownerFilter);
+          if (lockVersion != null) {
+            q = q.eq("config_version", lockVersion);
+          }
           const baseRes = await q.select("id");
+          if (!baseRes.error && (!baseRes.data?.length)) {
+            if (lockVersion != null) {
+              return {
+                error:
+                  "Configurações alteradas em outra aba ou sessão. Recarregue o painel e tente novamente.",
+                code: "conflict" as const,
+              };
+            }
+          }
           const r0 = interpretUpdate(baseRes);
           if (!r0.ok) return { error: r0.message, code: r0.code } as const;
 
@@ -563,37 +590,45 @@ export async function POST(request: NextRequest) {
             return applyAuthCookies(res, authCookieWrites);
           }
 
-          const out = await runAll(admin, null);
+          const out = await runAll(admin, null, lockVersion);
           if ("error" in out) {
+            const errStatus =
+              out.code === "rls" ? 403 : out.code === "conflict" ? 409 : 500;
             const res = NextResponse.json(
-              { error: out.error },
-              { status: out.code === "rls" ? 403 : 500 },
+              { error: out.error, code: out.code, requestId },
+              { status: errStatus },
             );
             return applyAuthCookies(res, authCookieWrites);
           }
           const res = NextResponse.json({
             ok: true,
+            ...(lockVersion != null ? { configVersion: lockVersion + 1 } : {}),
             ...(out.partial ? { warning: MIGRATION_HINT } : {}),
+            requestId,
           });
           return applyAuthCookies(res, authCookieWrites);
         }
 
-        const out = await runAll(supabase, user.id);
+        const out = await runAll(supabase, user.id, lockVersion);
         if ("error" in out) {
           const hint =
             out.code === "rls"
               ? " Ative a política RLS de UPDATE para donos em `restaurantes` ou configure SUPABASE_SERVICE_ROLE_KEY no servidor (ex.: Vercel)."
               : "";
+          const errStatus =
+            out.code === "rls" ? 403 : out.code === "conflict" ? 409 : 500;
           const res = NextResponse.json(
-            { error: `${out.error}.${hint}` },
-            { status: out.code === "rls" ? 403 : 500 },
+            { error: `${out.error}${hint}`, code: out.code, requestId },
+            { status: errStatus },
           );
           return applyAuthCookies(res, authCookieWrites);
         }
 
         const res = NextResponse.json({
           ok: true,
+          ...(lockVersion != null ? { configVersion: lockVersion + 1 } : {}),
           ...(out.partial ? { warning: MIGRATION_HINT } : {}),
+          requestId,
         });
         return applyAuthCookies(res, authCookieWrites);
       } catch (unexpected: unknown) {

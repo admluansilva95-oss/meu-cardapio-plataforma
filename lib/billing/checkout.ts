@@ -15,6 +15,8 @@ export type CreateSubscriptionCheckoutInput = {
   /** Opcional; se vazio, o Stripe/metadata usam o slug (nome no painel depois). */
   restaurantName?: string;
   whatsapp?: string;
+  /** Idempotência Stripe (rede instável / duplo clique). */
+  idempotencyKey?: string;
 };
 
 export type CreateSubscriptionCheckoutResult =
@@ -85,21 +87,29 @@ export async function createSubscriptionCheckoutSession(
     const success_url = success.href;
     const cancel_url = cancel.href;
 
-    const session = await stripe.checkout.sessions.create({
-      mode: "subscription",
-      locale: "pt-BR",
-      customer_email: input.userEmail,
-      line_items: [{ price: input.priceId, quantity: 1 }],
-      success_url,
-      cancel_url,
-      metadata,
-      subscription_data: {
-        metadata: {
-          supabase_user_id: input.userId,
-          slug,
+    const idem =
+      typeof input.idempotencyKey === "string" && input.idempotencyKey.trim().length > 0
+        ? input.idempotencyKey.trim().slice(0, 255)
+        : undefined;
+
+    const session = await stripe.checkout.sessions.create(
+      {
+        mode: "subscription",
+        locale: "pt-BR",
+        customer_email: input.userEmail,
+        line_items: [{ price: input.priceId, quantity: 1 }],
+        success_url,
+        cancel_url,
+        metadata,
+        subscription_data: {
+          metadata: {
+            supabase_user_id: input.userId,
+            slug,
+          },
         },
       },
-    });
+      idem ? { idempotencyKey: idem } : undefined,
+    );
 
     if (!session.url) {
       return { ok: false, error: "Stripe não retornou URL de checkout.", status: 502 };

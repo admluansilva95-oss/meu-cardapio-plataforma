@@ -296,6 +296,8 @@ export default function PublicCardapioPage() {
   const fetchAbort = useRef<AbortController | null>(null);
   /** Evita duplo envio (duplo clique) antes e durante o registro do pedido. */
   const checkoutLockRef = useRef(false);
+  /** Mesma chave em retries de rede / confirmação — idempotência no servidor. */
+  const pedidoIdempotencyKeyRef = useRef<string | null>(null);
   const vitrineViewTrackedRef = useRef<string | null>(null);
 
   useEffect(() => {
@@ -803,16 +805,27 @@ export default function PublicCardapioPage() {
       const waTab = prepareNewTabForLaterNavigation();
       try {
         /** Registro via XMLHttpRequest + corpo UTF-8 (evita ByteString do `fetch` em alguns runtimes). */
-        const { status, json } = await registrarPedidoVitrineNaApi("/api/pedidos/vitrine", {
-          restauranteId: restaurante.id,
-          cliente: nomeOk,
-          telefone: formatarTelefoneWhatsappBR(clienteTelefoneDisplay),
-          formaPagamento,
-          linhas: linhasApi,
-          zonaEntregaId: zonaApi,
-          observacoes: observacoesApi,
-          tipoEntrega,
-        });
+        const { status, json } = await registrarPedidoVitrineNaApi(
+          "/api/pedidos/vitrine",
+          {
+            restauranteId: restaurante.id,
+            cliente: nomeOk,
+            telefone: formatarTelefoneWhatsappBR(clienteTelefoneDisplay),
+            formaPagamento,
+            linhas: linhasApi,
+            zonaEntregaId: zonaApi,
+            observacoes: observacoesApi,
+            tipoEntrega,
+          },
+          {
+            idempotencyKey:
+              pedidoIdempotencyKeyRef.current ??
+              (pedidoIdempotencyKeyRef.current =
+                typeof crypto !== "undefined" && "randomUUID" in crypto
+                  ? crypto.randomUUID()
+                  : `ped-${Date.now()}-${Math.random().toString(36).slice(2, 11)}`),
+          },
+        );
         if (!json.ok || status < 200 || status >= 300) {
           try {
             waTab?.close();
@@ -827,6 +840,7 @@ export default function PublicCardapioPage() {
           );
           return;
         }
+        pedidoIdempotencyKeyRef.current = null;
         void trackPedidoConcluido(slug, json.id ?? null);
         const textoWhatsAppComBullets = montarTextoPedidoWhatsAppFormatado(payloadPedido);
         navigatePreparedTabOrOpen(

@@ -1,8 +1,13 @@
 import { createServerClient, type CookieOptions } from "@supabase/ssr";
 import { cookies } from "next/headers";
 import { NextResponse, type NextRequest } from "next/server";
+import {
+  getOwnerAuthStorageOptions,
+  getSupabaseServerCookieOptions,
+} from "@/lib/auth/supabase-session-cookies";
 import { createSubscriptionCheckoutSession } from "@/lib/billing/checkout";
 import { latin1CookieWrite } from "@/lib/http/byte-string-http";
+import { jsonWithRequestId } from "@/lib/http/json-with-request-id";
 import { logStructured } from "@/lib/logging/structured-log";
 import { requireAdminSupabaseClient } from "@/lib/supabase/admin";
 import { serverLatin1SafeFetch } from "@/lib/http/server-latin1-fetch";
@@ -32,7 +37,7 @@ export async function POST(request: NextRequest) {
     request,
     "/api/checkout/create-session",
     "api.checkout.create_session.fatal",
-    async () => {
+    async ({ requestId }) => {
       const cookieStore = await cookies();
 
       // Instância única para acumular cookies de sessão/refresh (mesma ideia do proxy em `proxy.ts`).
@@ -47,11 +52,8 @@ export async function POST(request: NextRequest) {
         process.env.NEXT_PUBLIC_SUPABASE_URL!,
         process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
         {
-          cookieOptions: {
-            path: "/",
-            sameSite: "lax",
-            secure: process.env.NODE_ENV === "production",
-          },
+          cookieOptions: getSupabaseServerCookieOptions(),
+          ...getOwnerAuthStorageOptions(),
           cookies: {
             getAll() {
               return cookieStore.getAll();
@@ -84,24 +86,30 @@ export async function POST(request: NextRequest) {
         const { priceId, userId, slug, restaurantName, whatsapp } = body;
 
         if (!priceId || typeof priceId !== "string") {
-          return NextResponse.json(
+          const res = jsonWithRequestId(
+            requestId,
             { error: "priceId é obrigatório." },
-            { status: 400 },
+            400,
           );
+          return applyAuthCookies(res, authCookieWrites);
         }
 
         if (!userId || typeof userId !== "string") {
-          return NextResponse.json(
+          const res = jsonWithRequestId(
+            requestId,
             { error: "userId é obrigatório." },
-            { status: 400 },
+            400,
           );
+          return applyAuthCookies(res, authCookieWrites);
         }
 
         if (!slug || typeof slug !== "string") {
-          return NextResponse.json(
+          const res = jsonWithRequestId(
+            requestId,
             { error: "slug é obrigatório." },
-            { status: 400 },
+            400,
           );
+          return applyAuthCookies(res, authCookieWrites);
         }
 
         const restaurantNameResolved =
@@ -147,10 +155,12 @@ export async function POST(request: NextRequest) {
           logStructured("warn", "api.checkout.create_session.unauthorized", {
             hadBearer: hasBearer,
             supabaseAuthCookie: supabaseCookiePresent,
+            requestId,
           });
-          const res = NextResponse.json(
+          const res = jsonWithRequestId(
+            requestId,
             { error: "Sessão inválida ou expirada." },
-            { status: 401 },
+            401,
           );
           return applyAuthCookies(res, authCookieWrites);
         }
@@ -161,9 +171,10 @@ export async function POST(request: NextRequest) {
             "api.checkout.create_session.user_id_mismatch",
             {},
           );
-          const res = NextResponse.json(
+          const res = jsonWithRequestId(
+            requestId,
             { error: "Usuário não autorizado para esta operação." },
-            { status: 403 },
+            403,
           );
           return applyAuthCookies(res, authCookieWrites);
         }
@@ -175,12 +186,19 @@ export async function POST(request: NextRequest) {
           logStructured("error", "api.checkout.create_session.admin_client", {
             errName: err instanceof Error ? err.name : "unknown",
           });
-          const res = NextResponse.json(
+          const res = jsonWithRequestId(
+            requestId,
             { error: "Configuração do servidor incompleta." },
-            { status: 500 },
+            500,
           );
           return applyAuthCookies(res, authCookieWrites);
         }
+
+        const idempotencyHeader = request.headers.get("Idempotency-Key")?.trim();
+        const idempotencyKey =
+          idempotencyHeader && idempotencyHeader.length <= 255
+            ? idempotencyHeader
+            : undefined;
 
         const result = await createSubscriptionCheckoutSession(admin, {
           userId: user.id,
@@ -189,25 +207,28 @@ export async function POST(request: NextRequest) {
           slug,
           restaurantName: restaurantNameResolved,
           whatsapp: typeof whatsapp === "string" ? whatsapp : undefined,
+          idempotencyKey,
         });
 
         if (!result.ok) {
-          const res = NextResponse.json(
+          const res = jsonWithRequestId(
+            requestId,
             { error: result.error },
-            { status: result.status },
+            result.status,
           );
           return applyAuthCookies(res, authCookieWrites);
         }
 
-        const res = NextResponse.json({ url: result.url });
+        const res = jsonWithRequestId(requestId, { url: result.url }, 200);
         return applyAuthCookies(res, authCookieWrites);
       } catch (err) {
         logStructured("error", "api.checkout.create_session.unexpected", {
           errName: err instanceof Error ? err.name : "unknown",
         });
-        const res = NextResponse.json(
+        const res = jsonWithRequestId(
+          requestId,
           { error: "Erro interno ao criar sessão de checkout." },
-          { status: 500 },
+          500,
         );
         return applyAuthCookies(res, authCookieWrites);
       }

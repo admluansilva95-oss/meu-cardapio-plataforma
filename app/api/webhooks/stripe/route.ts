@@ -1,7 +1,7 @@
-import { NextResponse } from "next/server";
 import { headers } from "next/headers";
 import type Stripe from "stripe";
 import { dispatchStripeEvent } from "@/lib/billing/stripe-webhook";
+import { jsonWithRequestId } from "@/lib/http/json-with-request-id";
 import { logStructured } from "@/lib/logging/structured-log";
 import { isStripeIdempotencyTableUnavailable } from "@/lib/stripe/webhook-idempotency-errors";
 import { getStripe, getStripeWebhookSecret } from "@/lib/stripe/client";
@@ -28,15 +28,12 @@ export async function POST(request: Request) {
     request,
     "/api/webhooks/stripe",
     "webhook.stripe.fatal",
-    async () => {
+    async ({ request, requestId }) => {
       const signature = (await headers()).get("stripe-signature");
 
       if (!signature) {
         logStructured("error", "webhook.stripe.no_signature", {});
-        return NextResponse.json(
-          { error: "Assinatura ausente." },
-          { status: 400 },
-        );
+        return jsonWithRequestId(requestId, { error: "Assinatura ausente." }, 400);
       }
 
       let rawBody: string;
@@ -46,7 +43,7 @@ export async function POST(request: Request) {
         logStructured("error", "webhook.stripe.read_body", {
           errName: err instanceof Error ? err.name : "unknown",
         });
-        return NextResponse.json({ error: "Corpo inválido." }, { status: 400 });
+        return jsonWithRequestId(requestId, { error: "Corpo inválido." }, 400);
       }
 
       let event: Stripe.Event;
@@ -61,10 +58,7 @@ export async function POST(request: Request) {
         logStructured("error", "webhook.stripe.construct_event", {
           errName: err instanceof Error ? err.name : "unknown",
         });
-        return NextResponse.json(
-          { error: "Assinatura inválida." },
-          { status: 400 },
-        );
+        return jsonWithRequestId(requestId, { error: "Assinatura inválida." }, 400);
       }
 
       let admin;
@@ -74,9 +68,10 @@ export async function POST(request: Request) {
         logStructured("error", "webhook.stripe.admin_client", {
           errName: err instanceof Error ? err.name : "unknown",
         });
-        return NextResponse.json(
+        return jsonWithRequestId(
+          requestId,
           { error: "Configuração do servidor incompleta." },
-          { status: 500 },
+          500,
         );
       }
 
@@ -98,7 +93,7 @@ export async function POST(request: Request) {
               eventId: event.id,
               eventType: event.type,
             });
-            return NextResponse.json({ duplicate: true }, { status: 200 });
+            return jsonWithRequestId(requestId, { duplicate: true }, 200);
           }
           if (isStripeIdempotencyTableUnavailable(idemErr)) {
             logStructured(
@@ -115,9 +110,10 @@ export async function POST(request: Request) {
               eventId: event.id,
               code: idemErr.code ?? null,
             });
-            return NextResponse.json(
+            return jsonWithRequestId(
+              requestId,
               { error: "Falha ao registrar idempotência do evento." },
-              { status: 500 },
+              500,
             );
           }
         } else {
@@ -147,12 +143,13 @@ export async function POST(request: Request) {
               eventId: event.id,
               eventType: event.type,
             });
-            return NextResponse.json(
+            return jsonWithRequestId(
+              requestId,
               { error: "Não foi possível processar o evento de faturamento." },
-              { status: 500 },
+              500,
             );
           }
-          return NextResponse.json({ received: true });
+          return jsonWithRequestId(requestId, { received: true }, 200);
         } catch (dispatchErr) {
           if (reservedIdem) {
             const { error: delErr } = await admin
@@ -178,9 +175,10 @@ export async function POST(request: Request) {
           eventType: event.type,
           errName: err instanceof Error ? err.name : "unknown",
         });
-        return NextResponse.json(
+        return jsonWithRequestId(
+          requestId,
           { error: "Erro ao processar evento." },
-          { status: 500 },
+          500,
         );
       }
     },

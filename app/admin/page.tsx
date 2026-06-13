@@ -13,6 +13,8 @@ import { playNewOrderChime } from "@/lib/admin/play-new-order-chime";
 import { computePedidoKpis } from "@/lib/admin/pedido-kpis";
 import { computePratoRankingFromPedidosLines } from "@/lib/admin/prato-ranking-from-pedidos";
 import { createBrowserSupabaseClient } from "@/lib/supabase";
+import { clearBrowserAuthArtifacts, performOwnerLogout } from "@/lib/auth/clear-client-auth-state";
+import { setGlobalUnauthorizedHandler } from "@/lib/auth/global-unauthorized";
 import { getPublicAppUrl } from "@/lib/site-url";
 import { isRetryableSupabaseError, withRetry } from "@/lib/with-retry";
 import { devClientError, devClientWarn } from "@/lib/logging/dev-client-log";
@@ -23,7 +25,8 @@ import { normalizeLatin1StoragePath, sanitizeUserFreeText } from "@/lib/utils/sa
 import { sanitizeDbPlainText, sanitizeDbPlainTextNullable } from "@/lib/db/sanitize-persist";
 import { navigatePreparedTabOrOpen, prepareNewTabForLaterNavigation } from "@/lib/restaurante/open-url-nova-guia";
 import { buildWhatsappSendHref } from "@/lib/restaurante/whatsapp-href";
-import { latin1SafeFetch, sanitizeFetchInit } from "@/lib/fetch-latin1-safe";
+import { fetchAppApiResilient } from "@/lib/http/fetch-app-api";
+import { sanitizeFetchInit } from "@/lib/fetch-latin1-safe";
 import { postJsonComBearer } from "@/lib/restaurante/post-json-bearer-client";
 import {
   normalizarPrecoCampoAoSair,
@@ -369,6 +372,7 @@ function mapRestauranteRow(row: {
   texto_vitrine_aberto?: string | null;
   texto_vitrine_fechado?: string | null;
   mensagem_fora_horario?: string | null;
+  config_version?: number | string | null;
 }): Restaurante {
   const rawNome = row.nome?.trim() ?? "";
   const taxaRaw = row.taxa_entrega;
@@ -385,6 +389,13 @@ function mapRestauranteRow(row: {
         ? "zonas"
         : "fixa";
   const cardapio_categorias = parseCardapioCategorias(row.cardapio_categorias);
+  const cvRaw = row.config_version;
+  const config_version =
+    typeof cvRaw === "number" && Number.isFinite(cvRaw)
+      ? Math.floor(cvRaw)
+      : typeof cvRaw === "string" && cvRaw.trim()
+        ? Math.floor(Number(cvRaw)) || 0
+        : 0;
   return {
     id: row.id,
     rawNome,
@@ -406,6 +417,7 @@ function mapRestauranteRow(row: {
     texto_vitrine_aberto: row.texto_vitrine_aberto?.trim() || null,
     texto_vitrine_fechado: row.texto_vitrine_fechado?.trim() || null,
     mensagem_fora_horario: row.mensagem_fora_horario?.trim() || null,
+    config_version,
   };
 }
 
@@ -1156,6 +1168,16 @@ const TOAST_ITEM_CARDAPIO_REMOVIDO = "Item removido do cardápio.";
 function AdminPageInner() {
   const router = useRouter();
   const supabase = useMemo(() => createBrowserSupabaseClient(), []);
+
+  useEffect(() => {
+    setGlobalUnauthorizedHandler(async () => {
+      clearBrowserAuthArtifacts();
+      await performOwnerLogout(supabase);
+      window.location.assign("/login?reason=session_expired");
+    });
+    return () => setGlobalUnauthorizedHandler(null);
+  }, [supabase]);
+
   const searchParams = useSearchParams();
 
   const tenantSlug = useMemo(() => {
@@ -1225,6 +1247,7 @@ function AdminPageInner() {
       mf: restaurante.mensagem_fechado,
       mb: restaurante.mensagem_boas_vindas,
       ccMerged: mergedCats,
+      cv: restaurante.config_version ?? 0,
     });
   }, [restaurante, pratos]);
 
@@ -1522,7 +1545,7 @@ function AdminPageInner() {
         } = await supabase.auth.getSession();
         const token = session?.access_token;
         if (!token) return;
-        const res = await latin1SafeFetch(
+        const res = await fetchAppApiResilient(
           "/api/admin/diagnostics",
           sanitizeFetchInit({
             headers: { Authorization: `Bearer ${sanitizeUserFreeText(token)}` },
@@ -1531,6 +1554,11 @@ function AdminPageInner() {
             referrerPolicy: "no-referrer",
           }),
         );
+        if (res.status === 401) {
+          await performOwnerLogout(supabase);
+          window.location.assign("/login?reason=session_expired");
+          return;
+        }
         const j = (await res.json()) as {
           ok?: boolean;
           supabaseServiceRoleConfigured?: boolean;
@@ -1649,6 +1677,7 @@ function AdminPageInner() {
         "/api/restaurante/config",
         {
           restauranteId: restaurante.id,
+          configVersion: Math.floor(Number(restaurante.config_version ?? 0)),
           nome: nomeLimpo,
           whatsapp: cfgWhatsapp.trim(),
           cor_tema: corOk,
@@ -1667,9 +1696,30 @@ function AdminPageInner() {
         token,
       );
 
-      const json = (await res.json()) as { error?: string; warning?: string };
+      if (res.status === 401) {
+        await performOwnerLogout(supabase);
+        window.location.assign("/login?reason=session_expired");
+        return;
+      }
+
+      const json = (await res.json()) as {
+        error?: string;
+        warning?: string;
+        code?: string;
+        requestId?: string;
+        configVersion?: number;
+      };
+      if (res.status === 409 || json.code === "conflict") {
+        setCfgMsg(
+          json.error ??
+            "Outra aba ou dispositivo salvou antes. Sincronizamos o painel com a versão mais recente.",
+        );
+        await loadData();
+        return;
+      }
       if (!res.ok) {
-        setCfgMsg(json.error ?? `Falha ao salvar (${res.status}).`);
+        const rid = json.requestId ? ` (ref: ${json.requestId})` : "";
+        setCfgMsg((json.error ?? `Falha ao salvar (${res.status}).`) + rid);
         return;
       }
       setAdminToast(TOAST_ALTERACOES_SALVAS);
@@ -2388,9 +2438,8 @@ function AdminPageInner() {
                 data-testid="admin-sign-out"
                 onClick={() => {
                   void (async () => {
-                    await supabase.auth.signOut();
-                    router.push("/login");
-                    router.refresh();
+                    await performOwnerLogout(supabase);
+                    window.location.assign("/login");
                   })();
                 }}
                 className="inline-flex items-center justify-center rounded-xl border border-black/[0.12] bg-white px-4 py-2.5 text-sm font-medium text-[#424245] shadow-sm transition hover:bg-[#f5f5f7]"

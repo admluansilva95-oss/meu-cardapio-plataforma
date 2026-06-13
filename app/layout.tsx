@@ -1,6 +1,7 @@
 import "@/lib/wire/bootstrap-byte-string-guard";
 import "./globals.css";
 import type { Metadata } from "next";
+import { AppBuildStaleGuard } from "@/components/AppBuildStaleGuard";
 
 export const metadata: Metadata = {
   title: "Cardápio digital",
@@ -19,7 +20,9 @@ export default function RootLayout({
 }) {
   return (
     <html lang="pt-BR">
-      <body>{children}</body>
+      <body>
+        <AppBuildStaleGuard>{children}</AppBuildStaleGuard>
+      </body>
     </html>
   );
 }

@@ -7,6 +7,7 @@ export function logProductionApiAccess(meta: {
   path: string;
   status: number;
   durationMs: number;
+  requestId?: string;
 }): void {
   if (process.env.NODE_ENV !== "production") return;
   console.log(
@@ -18,6 +19,7 @@ export function logProductionApiAccess(meta: {
       path: meta.path,
       status: meta.status,
       durationMs: meta.durationMs,
+      ...(meta.requestId ? { requestId: meta.requestId } : {}),
     }),
   );
 }

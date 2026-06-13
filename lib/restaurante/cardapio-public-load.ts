@@ -1,4 +1,4 @@
-import { xhrGetJson } from "@/lib/restaurante/xhr-get-json-client";
+import { fetchAppApiResilient } from "@/lib/http/fetch-app-api";
 
 type CardapioPayload = {
   restaurante: unknown;
@@ -26,13 +26,17 @@ export function fetchPublicCardapioDeduped(slug: string, signal?: AbortSignal): 
   if (existing) return existing;
 
   const p = (async () => {
-    const { status, json } = await xhrGetJson(
+    const res = await fetchAppApiResilient(
       `/api/public/cardapio?slug=${encodeURIComponent(key)}`,
-      signal,
+      { signal, cache: "no-store" },
     );
-    const body = json as { error?: string; restaurante?: unknown; pratos?: unknown };
-    if (status < 200 || status >= 300) {
-      throw new Error(body.error ?? `Erro ${status}`);
+    const body = (await res.json()) as {
+      error?: string;
+      restaurante?: unknown;
+      pratos?: unknown;
+    };
+    if (res.status < 200 || res.status >= 300) {
+      throw new Error(body.error ?? `Erro ${res.status}`);
     }
     const data: CardapioPayload = {
       restaurante: body.restaurante ?? null,

@@ -28,6 +28,7 @@ function LoginForm() {
   const authError = searchParams.get("error");
   const authErrorDetail =
     searchParams.get("error_description") ?? searchParams.get("message");
+  const sessionReason = searchParams.get("reason")?.trim() ?? "";
 
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -151,6 +152,12 @@ function LoginForm() {
           <p className="mb-4 rounded-2xl border border-teal-500/30 bg-teal-500/10 px-4 py-3 text-center text-sm text-teal-100">
             Conta criada. Confirme o e-mail se o Supabase pediu, faça login abaixo e conclua o
             pagamento.
+          </p>
+        ) : null}
+
+        {sessionReason === "session_expired" && !authError ? (
+          <p className="mb-4 rounded-2xl border border-amber-500/35 bg-amber-500/10 px-4 py-3 text-center text-sm text-amber-100">
+            Sua sessão expirou ou foi encerrada. Entre novamente com e-mail e senha.
           </p>
         ) : null}
 

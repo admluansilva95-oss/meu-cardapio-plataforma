@@ -1,5 +1,6 @@
 import { deepSanitizeStringsForWire } from "@/lib/restaurante/json-latin1-wire";
-import { initJsonPost, latin1SafeFetch } from "@/lib/fetch-latin1-safe";
+import { initJsonPost, sanitizeFetchInit } from "@/lib/fetch-latin1-safe";
+import { fetchAppApiResilient } from "@/lib/http/fetch-app-api";
 
 /**
  * POST JSON com `Authorization: Bearer` via `fetch` instrumentado (`latin1SafeFetch` + `initJsonPost`):
@@ -14,5 +15,5 @@ export async function postJsonComBearer(
   bearerToken: string,
 ): Promise<Response> {
   const wired = deepSanitizeStringsForWire(payload);
-  return latin1SafeFetch(url, initJsonPost(wired, bearerToken));
+  return fetchAppApiResilient(url, sanitizeFetchInit(initJsonPost(wired, bearerToken)));
 }

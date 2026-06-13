@@ -49,7 +49,9 @@ export interface Restaurante {
   texto_vitrine_fechado?: string | null;
   /** Faixa âmbar quando fora do horário da agenda; se vazio, usa texto padrão na faixa (não duplica o badge). */
   mensagem_fora_horario?: string | null;
-}
+  /** Versão de configuração (optimistic lock no servidor). */
+  config_version?: number;
+};
 
 export interface Prato {
   id: string;

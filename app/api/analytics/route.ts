@@ -26,8 +26,8 @@ export async function POST(request: NextRequest) {
     request,
     "/api/analytics",
     "api.analytics.fatal",
-    async () => {
-      const raw = await request.text();
+    async ({ request: req, requestId }) => {
+      const raw = await req.text();
       if (raw.length > MAX_BODY_BYTES) {
         return new NextResponse(null, { status: 413 });
       }
@@ -63,6 +63,7 @@ export async function POST(request: NextRequest) {
         slug: slug || null,
         hasPratoId: Boolean(pratoId),
         hasPedidoId: Boolean(pedidoId),
+        requestId,
       });
 
       const admin = createAdminSupabaseClient();

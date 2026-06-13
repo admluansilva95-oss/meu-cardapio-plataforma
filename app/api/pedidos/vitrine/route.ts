@@ -1,4 +1,3 @@
-import { NextResponse } from "next/server";
 import { logStructured } from "@/lib/logging/structured-log";
 import { parseFuncionamentoSemana } from "@/lib/restaurante/funcionamento-semana";
 import { statusAberturaPorRelogio } from "@/lib/restaurante/horario-vitrine";
@@ -14,6 +13,7 @@ import {
 import { createAdminSupabaseClient } from "@/lib/supabase/admin";
 import type { Restaurante } from "@/types";
 import { sanitizeDbPlainText } from "@/lib/db/sanitize-persist";
+import { jsonWithRequestId } from "@/lib/http/json-with-request-id";
 import { runApiWithAccessLog } from "@/lib/http/run-api-with-access-log";
 import {
   SUPABASE_SERVER_WRITE_TIMEOUT_MS,
@@ -27,6 +27,20 @@ import {
  */
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
+
+const SAFE_IDEMPOTENCY_KEY = /^[a-zA-Z0-9._-]{8,128}$/;
+
+function resolveIdempotencyKey(
+  request: Request,
+  rawBody: Record<string, unknown>,
+): string | null {
+  const header = request.headers.get("Idempotency-Key")?.trim() ?? "";
+  const bodyRaw = rawBody.idempotencyKey;
+  const fromBody = typeof bodyRaw === "string" ? bodyRaw.trim() : "";
+  const chosen = header || fromBody;
+  if (!chosen || !SAFE_IDEMPOTENCY_KEY.test(chosen)) return null;
+  return chosen;
+}
 
 function dbSignal(): AbortSignal {
   return supabaseQuerySignal(SUPABASE_SERVER_WRITE_TIMEOUT_MS);
@@ -331,16 +345,17 @@ export async function POST(request: Request) {
     request,
     "/api/pedidos/vitrine",
     "api.pedidos.vitrine.fatal",
-    async () => {
+    async ({ request, requestId }) => {
       const admin = createAdminSupabaseClient();
       if (!admin) {
-        logStructured("error", "api.pedidos.vitrine.no_service_role", {});
-        return NextResponse.json(
+        logStructured("error", "api.pedidos.vitrine.no_service_role", { requestId });
+        return jsonWithRequestId(
+          requestId,
           {
             error:
               "Servidor não configurado para registrar pedidos. Defina SUPABASE_SERVICE_ROLE_KEY no ambiente (ex.: Vercel).",
           },
-          { status: 503 },
+          503,
         );
       }
 
@@ -350,10 +365,11 @@ export async function POST(request: Request) {
         rawBody = (await request.json()) as Record<string, unknown>;
         body = rawBody as BodyVitrinePedido;
       } catch {
-        logStructured("warn", "api.pedidos.vitrine.invalid_json", {});
-        return NextResponse.json({ error: "JSON inválido." }, { status: 400 });
+        logStructured("warn", "api.pedidos.vitrine.invalid_json", { requestId });
+        return jsonWithRequestId(requestId, { error: "JSON inválido." }, 400);
       }
 
+      const idempotencyKey = resolveIdempotencyKey(request, rawBody);
       const restauranteIdRaw = body.restauranteId;
       const restauranteId =
         typeof restauranteIdRaw === "string"
@@ -374,29 +390,27 @@ export async function POST(request: Request) {
       if (!restauranteId || !cliente || cliente.length < 2) {
         logStructured("warn", "api.pedidos.vitrine.validation_cliente", {
           restauranteId,
+          requestId,
         });
-        return NextResponse.json(
-          { error: "Dados do cliente inválidos." },
-          { status: 400 },
-        );
+        return jsonWithRequestId(requestId, { error: "Dados do cliente inválidos." }, 400);
       }
       if (!isUuid(restauranteId)) {
         logStructured("warn", "api.pedidos.vitrine.validation_restaurante_id", {
           restauranteId,
+          requestId,
         });
-        return NextResponse.json(
+        return jsonWithRequestId(
+          requestId,
           { error: "Identificador do estabelecimento inválido." },
-          { status: 400 },
+          400,
         );
       }
       if (!telefone || telefone.length < 8) {
         logStructured("warn", "api.pedidos.vitrine.validation_telefone", {
           restauranteId,
+          requestId,
         });
-        return NextResponse.json(
-          { error: "Telefone inválido." },
-          { status: 400 },
-        );
+        return jsonWithRequestId(requestId, { error: "Telefone inválido." }, 400);
       }
       if (
         forma !== "dinheiro" &&
@@ -406,11 +420,9 @@ export async function POST(request: Request) {
       ) {
         logStructured("warn", "api.pedidos.vitrine.validation_pagamento", {
           restauranteId,
+          requestId,
         });
-        return NextResponse.json(
-          { error: "Forma de pagamento inválida." },
-          { status: 400 },
-        );
+        return jsonWithRequestId(requestId, { error: "Forma de pagamento inválida." }, 400);
       }
 
       const linhas = parseLinhasPedidoVitrine(body);
@@ -418,13 +430,15 @@ export async function POST(request: Request) {
         logStructured("warn", "api.pedidos.vitrine.validation_linhas", {
           restauranteId,
           reason: "linhas_invalidas_ou_ausentes",
+          requestId,
         });
-        return NextResponse.json(
+        return jsonWithRequestId(
+          requestId,
           {
             error:
               "Lista de itens inválida. Envie `linhas: [{ pratoId, quantidade }]` e atualize a página se necessário.",
           },
-          { status: 400 },
+          400,
         );
       }
 
@@ -456,26 +470,30 @@ export async function POST(request: Request) {
           {
             restauranteId,
             status: restLoaded.status,
+            requestId,
           },
         );
-        return NextResponse.json(
+        return jsonWithRequestId(
+          requestId,
           { error: restLoaded.error },
-          { status: restLoaded.status },
+          restLoaded.status,
         );
       }
       const row = restLoaded.row;
 
       if (row.vitrine_fechada === true) {
-        return NextResponse.json(
+        return jsonWithRequestId(
+          requestId,
           { error: "Restaurante fechado para novos pedidos." },
-          { status: 409 },
+          409,
         );
       }
 
       if (tipoEntrega === "retirada" && row.retirada_balcao !== true) {
-        return NextResponse.json(
+        return jsonWithRequestId(
+          requestId,
           { error: "Este restaurante não oferece retirada no balcão." },
-          { status: 400 },
+          400,
         );
       }
 
@@ -491,9 +509,10 @@ export async function POST(request: Request) {
         parseFuncionamentoSemana(row.funcionamento_semana) ?? undefined;
       const horarioStub = { funcionamento_semana } as Restaurante;
       if (statusAberturaPorRelogio(horarioStub) === "fechado") {
-        return NextResponse.json(
+        return jsonWithRequestId(
+          requestId,
           { error: "Fora do horário de atendimento." },
-          { status: 409 },
+          409,
         );
       }
 
@@ -510,22 +529,26 @@ export async function POST(request: Request) {
         if (isSupabaseQueryTimeoutLike(prErr)) {
           logStructured("error", "api.pedidos.vitrine.pratos_select_timeout", {
             restauranteId,
+            requestId,
           });
-          return NextResponse.json(
+          return jsonWithRequestId(
+            requestId,
             {
               error: "O servidor demorou a validar os itens. Tente novamente.",
             },
-            { status: 504 },
+            504,
           );
         }
         logStructured("error", "api.pedidos.vitrine.pratos_select", {
           restauranteId,
           message: prErr.message,
           code: prErr.code,
+          requestId,
         });
-        return NextResponse.json(
+        return jsonWithRequestId(
+          requestId,
           { error: "Não foi possível validar os itens do pedido." },
-          { status: 500 },
+          500,
         );
       }
 
@@ -557,53 +580,101 @@ export async function POST(request: Request) {
           restauranteId,
           error: tot.error,
           linhas: linhas.length,
+          requestId,
         });
-        return NextResponse.json({ error: tot.error }, { status: 400 });
+        return jsonWithRequestId(requestId, { error: tot.error }, 400);
       }
 
       const pagamento = mapPagamentoPedidoDb(forma);
 
+      if (idempotencyKey) {
+        const { data: existente } = await admin
+          .from("pedidos")
+          .select("id")
+          .eq("restaurante_id", restauranteId)
+          .eq("idempotency_key", idempotencyKey)
+          .abortSignal(dbSignal())
+          .maybeSingle();
+        if (existente?.id) {
+          logStructured("info", "api.pedidos.vitrine.idempotent_hit", {
+            restauranteId,
+            pedidoId: existente.id,
+            requestId,
+          });
+          return jsonWithRequestId(
+            requestId,
+            { ok: true, id: existente.id, duplicate: true },
+            200,
+          );
+        }
+      }
+
+      const insertRow: Record<string, unknown> = {
+        restaurante_id: restauranteId,
+        cliente,
+        telefone,
+        total: tot.total,
+        pagamento,
+        coluna: "recebidos",
+        observacoes: observacoesBase,
+        itens: tot.linhasItensTexto,
+        motoboy: "",
+      };
+      if (idempotencyKey) {
+        insertRow.idempotency_key = idempotencyKey;
+      }
+
       const { data: inserted, error: insErr } = await admin
         .from("pedidos")
-        .insert({
-          restaurante_id: restauranteId,
-          cliente,
-          telefone,
-          total: tot.total,
-          pagamento,
-          coluna: "recebidos",
-          observacoes: observacoesBase,
-          itens: tot.linhasItensTexto,
-          motoboy: "",
-        })
+        .insert(insertRow as never)
         .select("id")
         .abortSignal(dbSignal())
         .maybeSingle();
 
       if (insErr) {
+        if (insErr.code === "23505" && idempotencyKey) {
+          const { data: race } = await admin
+            .from("pedidos")
+            .select("id")
+            .eq("restaurante_id", restauranteId)
+            .eq("idempotency_key", idempotencyKey)
+            .abortSignal(dbSignal())
+            .maybeSingle();
+          if (race?.id) {
+            return jsonWithRequestId(
+              requestId,
+              { ok: true, id: race.id, duplicate: true },
+              200,
+            );
+          }
+        }
         if (isSupabaseQueryTimeoutLike(insErr)) {
           logStructured("error", "api.pedidos.vitrine.insert_timeout", {
             restauranteId,
+            requestId,
           });
-          return NextResponse.json(
+          return jsonWithRequestId(
+            requestId,
             {
               error:
                 "O servidor demorou a registrar o pedido. Tente novamente.",
             },
-            { status: 504 },
+            504,
           );
         }
         logStructured("error", "api.pedidos.vitrine.insert", {
           restauranteId,
           code: insErr.code,
           message: insErr.message,
+          requestId,
         });
-        return NextResponse.json(
+        return jsonWithRequestId(
+          requestId,
           {
             error:
               "Não foi possível registrar o pedido. Tente novamente em instantes.",
           },
-          { status: 500 },
+          500,
         );
       }
 
@@ -614,11 +685,13 @@ export async function POST(request: Request) {
         taxaEntregaCalculada: tot.taxa,
         totalCalculado: tot.total,
         linhas: linhas.length,
+        requestId,
       });
 
-      return NextResponse.json(
+      return jsonWithRequestId(
+        requestId,
         { ok: true, id: inserted?.id ?? null },
-        { headers: { "Content-Type": "application/json; charset=utf-8" } },
+        200,
       );
     },
   );

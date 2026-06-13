@@ -1,4 +1,7 @@
-import { initJsonPost, latin1SafeFetch, sanitizeFetchInit } from "@/lib/fetch-latin1-safe";
+import { initJsonPost, sanitizeFetchInit, cloneHeadersLatin1Safe } from "@/lib/fetch-latin1-safe";
+import { fetchAppApiResilient } from "@/lib/http/fetch-app-api";
+import { newClientRequestId } from "@/lib/http/client-request-id";
+import { latin1SafeString } from "@/lib/utils/sanitize-strings";
 
 export type StartCheckoutParams = {
   priceId: string;
@@ -7,6 +10,8 @@ export type StartCheckoutParams = {
   slug: string;
   restaurantName?: string;
   whatsapp?: string;
+  /** Opcional; por defeito gera-se uma chave por tentativa de checkout. */
+  idempotencyKey?: string;
 };
 
 export type StartCheckoutResult =
@@ -24,25 +29,32 @@ export async function startSubscriptionCheckout(
   // isso gerava "Plano inválido" falso-positivo. A rota `/api/checkout/create-session`
   // já valida o priceId no servidor.
 
+  const idempotencyKey = params.idempotencyKey?.trim() || newClientRequestId();
+
   const controller = new AbortController();
   const timeoutMs = 45_000;
   const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
 
+  const baseInit = initJsonPost(
+    {
+      priceId: params.priceId,
+      userId: params.userId,
+      slug: params.slug,
+      restaurantName: params.restaurantName,
+      whatsapp: params.whatsapp,
+    },
+    params.accessToken,
+  );
+  const headers = cloneHeadersLatin1Safe(baseInit.headers ?? undefined);
+  headers.set("Idempotency-Key", latin1SafeString(idempotencyKey).slice(0, 255));
+
   let response: Response;
   try {
-    response = await latin1SafeFetch(
+    response = await fetchAppApiResilient(
       "/api/checkout/create-session",
       sanitizeFetchInit({
-        ...initJsonPost(
-          {
-            priceId: params.priceId,
-            userId: params.userId,
-            slug: params.slug,
-            restaurantName: params.restaurantName,
-            whatsapp: params.whatsapp,
-          },
-          params.accessToken,
-        ),
+        ...baseInit,
+        headers,
         signal: controller.signal,
       }),
     );

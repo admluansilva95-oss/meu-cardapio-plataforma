@@ -1,0 +1,76 @@
+import { clearBrowserAuthArtifacts } from "@/lib/auth/clear-client-auth-state";
+import { notifyGlobalUnauthorized } from "@/lib/auth/global-unauthorized";
+import { newClientRequestId } from "@/lib/http/client-request-id";
+import { cloneHeadersLatin1Safe, latin1SafeFetch, sanitizeFetchInit } from "@/lib/fetch-latin1-safe";
+
+const RETRYABLE_STATUS = new Set([502, 503, 504]);
+const MAX_ATTEMPTS = 4;
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((r) => setTimeout(r, ms));
+}
+
+function backoffMs(attempt: number): number {
+  return Math.min(8000, 400 * 2 ** attempt);
+}
+
+function isAbortError(e: unknown): boolean {
+  return e instanceof DOMException && e.name === "AbortError";
+}
+
+function isRetryableNetworkFailure(e: unknown): boolean {
+  if (isAbortError(e)) return false;
+  if (e instanceof TypeError) return true;
+  const msg = e instanceof Error ? e.message.toLowerCase() : "";
+  return (
+    msg.includes("network") ||
+    msg.includes("failed to fetch") ||
+    msg.includes("load failed") ||
+    msg.includes("ecconn") ||
+    msg.includes("econnreset")
+  );
+}
+
+function mergeRequestIdHeader(init: RequestInit): RequestInit {
+  const merged = sanitizeFetchInit(init);
+  const h = cloneHeadersLatin1Safe(merged.headers ?? undefined);
+  if (!h.has("X-Request-ID")) {
+    h.set("X-Request-ID", newClientRequestId());
+  }
+  return { ...merged, headers: h };
+}
+
+/**
+ * `fetch` para APIs **do próprio app** (mesma origem): cabeçalho `X-Request-ID`,
+ * retry com backoff em 502/503/504 e falhas de rede transitórias, e cascata de auth em 401/403.
+ */
+export async function fetchAppApiResilient(
+  input: RequestInfo | URL,
+  init?: RequestInit,
+): Promise<Response> {
+  const wired = init == null ? undefined : mergeRequestIdHeader(init);
+  let lastErr: unknown = null;
+
+  for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt += 1) {
+    try {
+      const res = await latin1SafeFetch(input, wired);
+      if (RETRYABLE_STATUS.has(res.status) && attempt < MAX_ATTEMPTS - 1) {
+        await sleep(backoffMs(attempt));
+        continue;
+      }
+      if (res.status === 401 || res.status === 403) {
+        clearBrowserAuthArtifacts();
+        notifyGlobalUnauthorized(res.status === 401 ? 401 : 403);
+      }
+      return res;
+    } catch (e) {
+      lastErr = e;
+      if (attempt < MAX_ATTEMPTS - 1 && isRetryableNetworkFailure(e)) {
+        await sleep(backoffMs(attempt));
+        continue;
+      }
+      throw e;
+    }
+  }
+  throw lastErr instanceof Error ? lastErr : new Error("fetchAppApiResilient: falha desconhecida");
+}

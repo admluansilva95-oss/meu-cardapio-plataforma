@@ -1,43 +1,53 @@
 import { NextResponse } from "next/server";
+import { attachRequestIdToResponse, mergeRequestIdIntoJsonBody } from "@/lib/http/attach-request-id";
+import { getOrCreateRequestId } from "@/lib/http/request-id";
 import { logProductionApiAccess } from "@/lib/logging/http-access-log";
 import { logStructured } from "@/lib/logging/structured-log";
 
-type MinimalRequest = { method: string };
+export type ApiRequestContext = {
+  request: Request;
+  requestId: string;
+};
 
 /**
  * Executa um Route Handler com `finally` que grava uma linha `http.access` em produção
- * (método, rota lógica, status, duração). Captura exceções não tratadas e devolve JSON 500 genérico.
+ * (método, rota lógica, status, duração, requestId). Captura exceções não tratadas e devolve JSON 500 genérico.
  */
 export async function runApiWithAccessLog(
-  request: MinimalRequest,
+  request: Request,
   routePath: string,
   fatalErrorTag: string,
-  handler: () => Promise<Response>,
+  handler: (ctx: ApiRequestContext) => Promise<Response>,
 ): Promise<Response> {
+  const requestId = getOrCreateRequestId(request);
   const started = performance.now();
   let status = 500;
   try {
-    const res = await handler();
+    const res = await handler({ request, requestId });
     status = res.status;
-    return res;
+    return attachRequestIdToResponse(res, requestId);
   } catch (unexpected: unknown) {
     logStructured("error", fatalErrorTag, {
       errName: unexpected instanceof Error ? unexpected.name : "unknown",
+      requestId,
     });
     status = 500;
-    return NextResponse.json(
+    const body = mergeRequestIdIntoJsonBody(
       { error: "Erro interno. Tente novamente em instantes." },
-      {
-        status: 500,
-        headers: { "Content-Type": "application/json; charset=utf-8" },
-      },
+      requestId,
     );
+    const res = NextResponse.json(body, {
+      status: 500,
+      headers: { "Content-Type": "application/json; charset=utf-8" },
+    });
+    return attachRequestIdToResponse(res, requestId);
   } finally {
     logProductionApiAccess({
       method: request.method,
       path: routePath,
       status,
       durationMs: Math.round(performance.now() - started),
+      requestId,
     });
   }
 }

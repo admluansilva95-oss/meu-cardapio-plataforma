@@ -1,4 +1,5 @@
 import { isValidSlug } from "@/lib/billing/slug";
+import { fetchAppApiResilient } from "@/lib/http/fetch-app-api";
 
 const ANALYTICS_URL = "/api/analytics";
 
@@ -37,13 +38,19 @@ function dispatchAnalytics(payload: BeaconPayload): void {
     }
   }
   try {
-    void fetch(ANALYTICS_URL, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body,
-      keepalive: true,
-      mode: "same-origin",
-    });
+    void (async () => {
+      try {
+        await fetchAppApiResilient(ANALYTICS_URL, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body,
+          keepalive: true,
+          mode: "same-origin",
+        });
+      } catch {
+        /* ignore */
+      }
+    })();
   } catch {
     /* ignore */
   }

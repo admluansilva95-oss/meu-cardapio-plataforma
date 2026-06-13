@@ -1,5 +1,9 @@
 import { createServerClient, type CookieOptions } from "@supabase/ssr";
 import { cookies } from "next/headers";
+import {
+  getOwnerAuthStorageOptions,
+  getSupabaseServerCookieOptions,
+} from "@/lib/auth/supabase-session-cookies";
 import { latin1CookieWrite } from "@/lib/http/byte-string-http";
 import { serverLatin1SafeFetch } from "@/lib/http/server-latin1-fetch";
 
@@ -15,6 +19,8 @@ export async function createServerSupabaseClient() {
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
     {
+      cookieOptions: getSupabaseServerCookieOptions(),
+      ...getOwnerAuthStorageOptions(),
       cookies: {
         getAll() {
           return cookieStore.getAll();
