@@ -1,15 +1,28 @@
 import { jsonStringifyLatin1Wire, latin1SafeString } from "@/lib/restaurante/json-latin1-wire";
 import { sanitizeUserFreeText } from "@/lib/utils/sanitize-strings";
+import { getNativeHeaders, getNativeRequest } from "@/lib/http/native-http-constructors";
+
+function newEmptyWireHeaders(): Headers {
+  const H = getNativeHeaders();
+  return new H();
+}
+
+function isHeadersLike(source: unknown): source is Headers {
+  const H = getNativeHeaders();
+  return typeof H !== "undefined" && source instanceof H;
+}
+
+function isRequestLike(source: unknown): source is Request {
+  const R = getNativeRequest();
+  return typeof R !== "undefined" && source instanceof R;
+}
 
 /**
- * Constrói `Headers` só com pares Latin-1 seguros.
- *
- * **Nunca** use `new Headers(init)` com `init` vindo de SDKs (PostgREST, etc.): se algum valor
- * tiver U+2022 (bullet) ou fora de Latin-1, o Chromium lança `TypeError: ByteString` **na construção**
- * — antes de qualquer `forEach` poder sanitizar.
+ * Constrói `Headers` só com pares Latin-1 seguros (usa construtor **nativo** para não
+ * recursar se `globalThis.Headers` estiver instrumentado).
  */
 export function cloneHeadersLatin1Safe(source?: HeadersInit | null): Headers {
-  const fixed = new Headers();
+  const fixed = newEmptyWireHeaders();
   if (source == null) return fixed;
 
   const apply = (nameRaw: string, valueRaw: string, append: boolean) => {
@@ -24,7 +37,7 @@ export function cloneHeadersLatin1Safe(source?: HeadersInit | null): Headers {
     }
   };
 
-  if (typeof Headers !== "undefined" && source instanceof Headers) {
+  if (isHeadersLike(source)) {
     source.forEach((value, key) => {
       apply(key, value, false);
     });
@@ -100,7 +113,7 @@ function sanitizeReferrer(ref: RequestInit["referrer"]): RequestInit["referrer"]
 }
 
 /** `File.name` / `Blob.type` fora de Latin-1 quebram multipart (`Content-Disposition`) no Chromium. */
-function sanitizeBlobLikeForFetch(body: Blob): Blob {
+export function sanitizeBlobForWire(body: Blob): Blob {
   if (body instanceof File) {
     const type = latin1SafeString(body.type) || "application/octet-stream";
     let name = sanitizeUserFreeText(body.name).trim();
@@ -121,14 +134,14 @@ function sanitizeFormDataForWire(fd: FormData): FormData {
     if (typeof val === "string") {
       next.append(keyS, sanitizeUserFreeText(val));
     } else if (typeof Blob !== "undefined" && val instanceof File) {
-      const f = sanitizeBlobLikeForFetch(val);
+      const f = sanitizeBlobForWire(val);
       if (f instanceof File) {
         next.append(keyS, f, f.name);
       } else {
         next.append(keyS, f);
       }
     } else if (typeof Blob !== "undefined" && val instanceof Blob) {
-      next.append(keyS, sanitizeBlobLikeForFetch(val));
+      next.append(keyS, sanitizeBlobForWire(val));
     }
   }
   return next;
@@ -173,7 +186,7 @@ export function sanitizeFetchInit(init: RequestInit): RequestInit {
       const fd = out.body;
       out.body = sanitizeFormDataForWire(fd);
     } else if (out.body instanceof Blob) {
-      const b = sanitizeBlobLikeForFetch(out.body);
+      const b = sanitizeBlobForWire(out.body);
       if (b !== out.body) out.body = b;
     }
   }
@@ -198,8 +211,43 @@ export function sanitizeFetchInit(init: RequestInit): RequestInit {
   return out;
 }
 
-/** `fetch` global com sanitização de `Request` (recomendado para chamadas fora do cliente Supabase). */
-export const latin1SafeFetch = createLatin1SafeFetch();
+function requestToSanitizedInitFromExisting(req: Request): RequestInit {
+  return {
+    method: req.method,
+    headers: cloneHeadersLatin1Safe(req.headers),
+    mode: req.mode,
+    credentials: req.credentials,
+    cache: req.cache,
+    redirect: req.redirect,
+    referrer: sanitizeReferrer(req.referrer),
+    referrerPolicy: req.referrerPolicy,
+    integrity: req.integrity,
+    keepalive: req.keepalive,
+    signal: req.signal,
+    body: req.body,
+    duplex: (req as unknown as { duplex?: "half" }).duplex,
+  } as RequestInit;
+}
+
+/**
+ * Argumentos seguros para `new Request(...)` quando o primeiro parâmetro já é um `Request`
+ * (evita ByteString ao reutilizar cabeçalhos/corpo vindos de SDKs).
+ */
+export function sanitizeRequestConstructorArgs(
+  input: Request,
+  init?: RequestInit,
+): [string, RequestInit | undefined] {
+  const base = requestToSanitizedInitFromExisting(input);
+  if (init == null) {
+    return [input.url, sanitizeFetchInit(base)];
+  }
+  const merged: RequestInit = {
+    ...base,
+    ...init,
+    headers: init.headers !== undefined ? init.headers : base.headers,
+  };
+  return [input.url, sanitizeFetchInit(merged)];
+}
 
 /**
  * `RequestInit` para POST JSON já 100% compatível com ByteString (corpo + cabeçalhos).
@@ -220,11 +268,12 @@ export function initJsonPost(payload: unknown, bearerToken: string): RequestInit
 }
 
 async function fetchWithSanitizedRequest(input: Request, baseFetch: typeof fetch): Promise<Response> {
+  const NR = getNativeRequest();
   const method = input.method;
   const noBody = method === "GET" || method === "HEAD" || input.body == null;
 
   if (noBody) {
-    const req = new Request(input.url, {
+    const req = new NR(input.url, {
       method,
       headers: cloneHeadersLatin1Safe(input.headers),
       mode: input.mode,
@@ -243,7 +292,7 @@ async function fetchWithSanitizedRequest(input: Request, baseFetch: typeof fetch
   /* FormData antes do ramo multipart: o `Content-Type` costuma ser multipart e o corpo precisa de nomes Latin-1. */
   if (isFormDataBody(input.body)) {
     const safeBody = sanitizeFormDataForWire(input.body);
-    const req = new Request(input.url, {
+    const req = new NR(input.url, {
       method,
       headers: cloneHeadersLatin1Safe(input.headers),
       body: safeBody,
@@ -264,8 +313,8 @@ async function fetchWithSanitizedRequest(input: Request, baseFetch: typeof fetch
   if (ct.includes("multipart/") || ct.includes("application/octet-stream")) {
     const raw = input.body;
     const safeBody =
-      typeof Blob !== "undefined" && raw != null && raw instanceof Blob ? sanitizeBlobLikeForFetch(raw) : raw;
-    const req = new Request(input.url, {
+      typeof Blob !== "undefined" && raw != null && raw instanceof Blob ? sanitizeBlobForWire(raw) : raw;
+    const req = new NR(input.url, {
       method,
       headers: cloneHeadersLatin1Safe(input.headers),
       body: safeBody,
@@ -286,7 +335,7 @@ async function fetchWithSanitizedRequest(input: Request, baseFetch: typeof fetch
     const text = await input.clone().text();
     const bodyOut = sanitizeJsonBodyString(text);
     const h = cloneHeadersLatin1Safe(input.headers);
-    const req = new Request(input.url, {
+    const req = new NR(input.url, {
       method,
       headers: h,
       body: jsonBodyUtf8Blob(bodyOut),
@@ -311,9 +360,20 @@ export function createLatin1SafeFetch(
   baseFetch: typeof fetch = globalThis.fetch.bind(globalThis),
 ): typeof fetch {
   return (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
-    if (input instanceof Request && init === undefined) {
+    if (isRequestLike(input) && init === undefined) {
       return fetchWithSanitizedRequest(input, baseFetch);
+    }
+    if (isRequestLike(input) && init !== undefined) {
+      const NR = getNativeRequest();
+      const [url, merged] = sanitizeRequestConstructorArgs(input, init);
+      return baseFetch(new NR(url, merged));
+    }
+    if (typeof input === "string") {
+      return baseFetch(latin1SafeString(input), init == null ? init : sanitizeFetchInit(init));
     }
     return baseFetch(input, init == null ? init : sanitizeFetchInit(init));
   };
 }
+
+/** `fetch` global com sanitização de `Request` (recomendado para chamadas fora do cliente Supabase). */
+export const latin1SafeFetch = createLatin1SafeFetch();

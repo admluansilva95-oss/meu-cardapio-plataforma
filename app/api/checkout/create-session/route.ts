@@ -5,6 +5,7 @@ import { createSubscriptionCheckoutSession } from "@/lib/billing/checkout";
 import { latin1CookieWrite } from "@/lib/http/byte-string-http";
 import { logStructured } from "@/lib/logging/structured-log";
 import { requireAdminSupabaseClient } from "@/lib/supabase/admin";
+import { serverLatin1SafeFetch } from "@/lib/http/server-latin1-fetch";
 
 type CookieToSet = { name: string; value: string; options: CookieOptions };
 
@@ -68,7 +69,8 @@ export async function POST(request: NextRequest) {
           });
         },
       },
-    }
+      global: { fetch: serverLatin1SafeFetch },
+    },
   );
 
   try {

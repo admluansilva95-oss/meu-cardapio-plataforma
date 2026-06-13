@@ -2,6 +2,7 @@ import { createServerClient, type CookieOptions } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
 import { getPublicAppUrl } from "@/lib/site-url";
 import { latin1CookieWrite } from "@/lib/http/byte-string-http";
+import { serverLatin1SafeFetch } from "@/lib/http/server-latin1-fetch";
 
 type CookieToSet = { name: string; value: string; options: CookieOptions };
 
@@ -90,6 +91,7 @@ export async function GET(request: NextRequest) {
           });
         },
       },
+      global: { fetch: serverLatin1SafeFetch },
     }
   );
 

@@ -1,3 +1,4 @@
+import "@/lib/wire/bootstrap-byte-string-guard";
 import "./globals.css";
 import type { Metadata } from "next";
 

@@ -13,7 +13,10 @@ export function getStripe(): Stripe {
   }
 
   if (!stripeSingleton) {
-    stripeSingleton = new Stripe(secretKey);
+    stripeSingleton = new Stripe(secretKey, {
+      timeout: 25_000,
+      maxNetworkRetries: 2,
+    });
   }
 
   return stripeSingleton;

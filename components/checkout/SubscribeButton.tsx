@@ -7,6 +7,7 @@ import { isValidSlug, normalizeSlugInput } from "@/lib/billing/slug";
 import { parseCarryFromObParam } from "@/lib/auth/post-signup-carry";
 import { createBrowserSupabaseClient } from "@/lib/supabase";
 import type { Plan } from "@/lib/plans";
+import { devClientError } from "@/lib/logging/dev-client-log";
 
 type SubscribeButtonProps = {
   plan: Plan;
@@ -41,7 +42,7 @@ export function SubscribeButton({ plan, carryOb = null }: SubscribeButtonProps) 
       } = await supabase.auth.getSession();
 
       if (sessionError) {
-        console.error("[SubscribeButton] getSession:", sessionError.message);
+        devClientError("[SubscribeButton] getSession:", sessionError.message);
         setErrorMessage("Não foi possível verificar sua sessão. Tente novamente.");
         return;
       }
@@ -84,14 +85,14 @@ export function SubscribeButton({ plan, carryOb = null }: SubscribeButtonProps) 
       });
 
       if (!checkout.ok) {
-        console.error("[SubscribeButton] checkout:", checkout.error);
+        devClientError("[SubscribeButton] checkout:", checkout.error);
         setErrorMessage(checkout.error);
         return;
       }
 
       window.location.assign(checkout.url);
     } catch (err) {
-      console.error("[SubscribeButton] handleSubscribe:", err);
+      devClientError("[SubscribeButton] handleSubscribe:", err);
       setErrorMessage("Erro inesperado. Tente novamente em instantes.");
     } finally {
       setLoading(false);

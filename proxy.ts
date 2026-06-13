@@ -3,6 +3,8 @@ import { NextResponse, type NextRequest } from "next/server";
 import { isValidSlug } from "@/lib/billing/slug";
 import { latin1CookieWrite } from "@/lib/http/byte-string-http";
 import { nextResponseWithByteStringSafeWire } from "@/lib/http/next-response-wire-safe";
+import { serverLatin1SafeFetch } from "@/lib/http/server-latin1-fetch";
+import { logStructured } from "@/lib/logging/structured-log";
 
 type CookieToSet = { name: string; value: string; options: CookieOptions };
 
@@ -48,6 +50,7 @@ export async function proxy(request: NextRequest) {
           });
         },
       },
+      global: { fetch: serverLatin1SafeFetch },
     },
   );
 
@@ -71,7 +74,7 @@ export async function proxy(request: NextRequest) {
     .limit(1);
 
   if (assinaturasError) {
-    console.error("[proxy/admin] assinaturas:", assinaturasError.message);
+    logStructured("error", "proxy.admin.assinaturas", { code: assinaturasError.code ?? null });
     /** Falha fechada: não liberar o painel se não for possível verificar assinatura (evita bypass por erro transitório). */
     const fallback = request.nextUrl.clone();
     fallback.pathname = "/login";
@@ -112,7 +115,7 @@ export async function proxy(request: NextRequest) {
       .maybeSingle();
 
     if (alvoErr) {
-      console.error("[proxy/admin] slug tenant:", alvoErr.message);
+      logStructured("error", "proxy.admin.slug_tenant", { code: alvoErr.code ?? null });
       const url = request.nextUrl.clone();
       url.searchParams.delete("slug");
       return out(NextResponse.redirect(url));
@@ -133,7 +136,7 @@ export async function proxy(request: NextRequest) {
       .maybeSingle();
 
     if (meuErr) {
-      console.error("[proxy/admin] meu restaurante:", meuErr.message);
+      logStructured("error", "proxy.admin.meu_restaurante", { code: meuErr.code ?? null });
       return out(NextResponse.redirect(url));
     }
     if (meu?.slug) {
@@ -158,7 +161,7 @@ export async function proxy(request: NextRequest) {
     .maybeSingle();
 
   if (error) {
-    console.error("[proxy/admin] restaurantes:", error.message);
+    logStructured("error", "proxy.admin.restaurantes", { code: error.code ?? null });
     return out(response);
   }
 

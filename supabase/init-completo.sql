@@ -118,6 +118,7 @@ alter table public.pratos add column if not exists categoria text null;
 
 create index if not exists idx_pratos_restaurante on public.pratos (restaurante_id);
 create index if not exists idx_pratos_status on public.pratos (status);
+create index if not exists idx_pratos_restaurante_status_nome on public.pratos (restaurante_id, status, nome);
 
 -- -----------------------------------------------------------------------------
 -- 3. PEDIDOS (Kanban admin)

@@ -2,6 +2,7 @@ import { createServerClient, type CookieOptions } from "@supabase/ssr";
 import { cookies } from "next/headers";
 import { NextResponse, type NextRequest } from "next/server";
 import { latin1CookieWrite } from "@/lib/http/byte-string-http";
+import { serverLatin1SafeFetch } from "@/lib/http/server-latin1-fetch";
 
 export const dynamic = "force-dynamic";
 
@@ -39,6 +40,7 @@ export async function GET(request: NextRequest) {
           });
         },
       },
+      global: { fetch: serverLatin1SafeFetch },
     },
   );
 

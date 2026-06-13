@@ -37,6 +37,13 @@ import { registrarPedidoVitrineNaApi } from "@/lib/restaurante/registrar-pedido-
 import { buildWhatsappSendHref } from "@/lib/restaurante/whatsapp-href";
 import { navigatePreparedTabOrOpen, prepareNewTabForLaterNavigation } from "@/lib/restaurante/open-url-nova-guia";
 import { isRetryableSupabaseError, withRetry } from "@/lib/with-retry";
+import { devClientError } from "@/lib/logging/dev-client-log";
+import {
+  trackCheckoutIniciado,
+  trackItemAdicionado,
+  trackPedidoConcluido,
+  trackVitrineVisualizada,
+} from "@/lib/analytics/tracker";
 
 const CartDrawer = dynamic(() => import("@/components/vitrine/CartDrawer"), { ssr: false });
 
@@ -287,6 +294,9 @@ export default function PublicCardapioPage() {
   const [checkoutSubmitting, setCheckoutSubmitting] = useState(false);
 
   const fetchAbort = useRef<AbortController | null>(null);
+  /** Evita duplo envio (duplo clique) antes e durante o registro do pedido. */
+  const checkoutLockRef = useRef(false);
+  const vitrineViewTrackedRef = useRef<string | null>(null);
 
   useEffect(() => {
     const id = window.setInterval(() => setAgoraTick(Date.now()), 30_000);
@@ -379,6 +389,14 @@ export default function PublicCardapioPage() {
     void load();
     return () => fetchAbort.current?.abort();
   }, [load]);
+
+  useEffect(() => {
+    if (!slug || loading || !restaurante?.id) return;
+    const key = `${slug}:${restaurante.id}`;
+    if (vitrineViewTrackedRef.current === key) return;
+    vitrineViewTrackedRef.current = key;
+    void trackVitrineVisualizada(slug);
+  }, [slug, loading, restaurante?.id]);
 
   useEffect(() => {
     if (!slug) return;
@@ -611,6 +629,7 @@ export default function PublicCardapioPage() {
 
   const addToCart = (prato: Prato) => {
     if (restaurante && pedidosBloqueados) return;
+    void trackItemAdicionado(slug, prato.id);
     setCart((prev) => {
       const idx = prev.findIndex((x) => x.prato.id === prato.id);
       if (idx >= 0) {
@@ -644,156 +663,196 @@ export default function PublicCardapioPage() {
   };
 
   const handleEnviarPedidoWhatsapp = useCallback(async () => {
-    setCheckoutErro(null);
-    if (!restaurante || cart.length === 0 || pedidosBloqueados) return;
-    if (digitsOnly(restaurante.whatsapp).length < 10) {
-      setCheckoutErro("Este cardápio não possui um WhatsApp válido para receber pedidos.");
-      return;
-    }
-    const nomeOk = clienteNome.trim();
-    const telDig = digitosTelefoneBR(clienteTelefoneDisplay);
-    if (nomeOk.length < 3 || telDig.length < 10) {
-      setCheckoutErro("Informe nome completo e telefone com DDD (10 ou 11 dígitos).");
-      return;
-    }
-    const zonas = restaurante.taxas_entrega_zonas ?? [];
-    if (tipoEntrega === "entrega") {
-      if (!checkoutRua.trim() || !checkoutNumero.trim()) {
-        setCheckoutErro("Preencha rua e número para a entrega.");
-        return;
-      }
-      if (zonas.length > 1 && !zonaEntregaId) {
-        setCheckoutErro("Selecione o bairro (busca ou lista) conforme as regiões atendidas pelo restaurante.");
-        return;
-      }
-      if (zonas.length === 0 && bairroLivreTexto.trim().length < 2) {
-        setCheckoutErro("Informe o bairro ou região da entrega.");
-        return;
-      }
-    }
-    const taxaBase = taxaEntregaParaPedido(restaurante, zonaEntregaId, { tipo: tipoEntrega }).valor;
-    const taxaAplicada = cart.length > 0 ? taxaBase : 0;
-    const subtotal = cart.reduce((acc, { prato, quantidade }) => acc + prato.preco * quantidade, 0);
-    const totalGeral = subtotal + taxaAplicada;
-
-    if (formaPagamento === "dinheiro" && trocoParaInput.trim()) {
-      const p = parsePrecoBrasileiro(trocoParaInput);
-      if (p == null) {
-        setCheckoutErro("Valor de troco inválido. Use o formato brasileiro (ex.: 100,00).");
-        return;
-      }
-      if (p < totalGeral) {
-        setCheckoutErro("O valor para troco deve ser igual ou maior que o total do pedido.");
-        return;
-      }
-    }
-
-    const bairroNome =
-      tipoEntrega === "retirada"
-        ? "N/A"
-        : zonas.length > 0
-          ? zonas.find((z) => z.id === zonaEntregaId)?.nome?.trim() || "N/A"
-          : bairroLivreTexto.trim() || "N/A";
-
-    const enderecoLinha =
-      tipoEntrega === "retirada" ? "N/A" : `${checkoutRua.trim()}, ${checkoutNumero.trim()}`;
-
-    const refCompLinha =
-      tipoEntrega === "retirada" ? "N/A" : checkoutComplemento.trim() || "N/A";
-
-    const trocoParsed = trocoParaInput.trim() ? parsePrecoBrasileiro(trocoParaInput) : null;
-    const trocoParaTexto =
-      formaPagamento !== "dinheiro" || !trocoParaInput.trim()
-        ? "Não necessário"
-        : trocoParsed != null
-          ? formatBRL(trocoParsed)
-          : "Não necessário";
-
-    const valorTrocoReais =
-      formaPagamento === "dinheiro" && trocoParsed != null && trocoParsed >= totalGeral
-        ? Math.round((trocoParsed - totalGeral) * 100) / 100
-        : 0;
-
-    const payloadPedido = {
-      nomeCliente: nomeOk,
-      telefoneCliente: formatarTelefoneWhatsappBR(clienteTelefoneDisplay),
-      tipoEntrega,
-      enderecoLinha,
-      bairroLinha: bairroNome,
-      refCompLinha,
-      itens: cart,
-      formaPagamento,
-      trocoParaTexto,
-      valorTrocoReais,
-      subtotalItens: subtotal,
-      taxaEntrega: taxaAplicada,
-      totalGeral,
-    } as const;
-
-    /** Só Latin-1: nunca enviar o modelo com bullet U+2022 no JSON da API. */
-    const observacoesApi = montarTextoPedidoResumoParaApi(payloadPedido);
-
-    const linhasApi = cart.map(({ prato, quantidade }) => ({
-      pratoId: prato.id,
-      quantidade,
-    }));
-    const zonaApi =
-      tipoEntrega === "retirada"
-        ? null
-        : zonas.length > 1
-          ? zonaEntregaId
-          : zonas.length === 1
-            ? zonas[0].id
-            : null;
-
+    if (checkoutLockRef.current || checkoutSubmitting) return;
+    checkoutLockRef.current = true;
     setCheckoutSubmitting(true);
-    const waTab = prepareNewTabForLaterNavigation();
+    setCheckoutErro(null);
     try {
-      /** Registro via XMLHttpRequest + corpo UTF-8 (evita ByteString do `fetch` em alguns runtimes). */
-      const { status, json } = await registrarPedidoVitrineNaApi("/api/pedidos/vitrine", {
-        restauranteId: restaurante.id,
-        cliente: nomeOk,
-        telefone: formatarTelefoneWhatsappBR(clienteTelefoneDisplay),
-        formaPagamento,
-        linhas: linhasApi,
-        zonaEntregaId: zonaApi,
-        observacoes: observacoesApi,
+      if (!restaurante || cart.length === 0) {
+        if (cart.length === 0) setCheckoutErro("Adicione itens ao carrinho antes de enviar.");
+        return;
+      }
+      if (pedidosBloqueados) {
+        setCheckoutErro(
+          "O restaurante não está aceitando pedidos pelo cardápio neste momento (fechado ou fora do horário).",
+        );
+        return;
+      }
+      if (digitsOnly(restaurante.whatsapp).length < 10) {
+        setCheckoutErro("Este cardápio não possui um WhatsApp válido para receber pedidos.");
+        return;
+      }
+      const nomeOk = clienteNome.trim();
+      const telDig = digitosTelefoneBR(clienteTelefoneDisplay);
+      if (nomeOk.length < 3 || telDig.length < 10) {
+        setCheckoutErro("Informe nome completo e telefone com DDD (10 ou 11 dígitos).");
+        return;
+      }
+      const zonas = restaurante.taxas_entrega_zonas ?? [];
+      if (tipoEntrega === "entrega") {
+        if (!checkoutRua.trim() || !checkoutNumero.trim()) {
+          setCheckoutErro("Preencha rua e número para a entrega.");
+          return;
+        }
+        if (zonas.length > 1 && !zonaEntregaId) {
+          setCheckoutErro(
+            "Selecione o bairro (busca ou lista) conforme as regiões atendidas pelo restaurante.",
+          );
+          return;
+        }
+        if (zonas.length === 0 && bairroLivreTexto.trim().length < 2) {
+          setCheckoutErro("Informe o bairro ou região da entrega.");
+          return;
+        }
+      }
+
+      const liveById = new Map(pratos.map((p) => [p.id, p]));
+      const cartSynced: CarrinhoItem[] = [];
+      for (const line of cart) {
+        const live = liveById.get(line.prato.id);
+        if (!live) {
+          setCheckoutErro(
+            "Um item do carrinho deixou de estar disponível. Atualize a página e monte o pedido de novo.",
+          );
+          return;
+        }
+        if (Math.round(live.preco * 100) !== Math.round(line.prato.preco * 100)) {
+          setCheckoutErro(
+            "Os preços do cardápio foram atualizados. Atualize a página para sincronizar o carrinho e confirme o pedido.",
+          );
+          return;
+        }
+        cartSynced.push({ ...line, prato: live });
+      }
+
+      const taxaBase = taxaEntregaParaPedido(restaurante, zonaEntregaId, { tipo: tipoEntrega }).valor;
+      const taxaAplicada = cartSynced.length > 0 ? taxaBase : 0;
+      const subtotal = cartSynced.reduce((acc, { prato, quantidade }) => acc + prato.preco * quantidade, 0);
+      const totalGeral = subtotal + taxaAplicada;
+
+      if (formaPagamento === "dinheiro" && trocoParaInput.trim()) {
+        const p = parsePrecoBrasileiro(trocoParaInput);
+        if (p == null) {
+          setCheckoutErro("Valor de troco inválido. Use o formato brasileiro (ex.: 100,00).");
+          return;
+        }
+        if (p < totalGeral) {
+          setCheckoutErro("O valor para troco deve ser igual ou maior que o total do pedido.");
+          return;
+        }
+      }
+
+      const bairroNome =
+        tipoEntrega === "retirada"
+          ? "N/A"
+          : zonas.length > 0
+            ? zonas.find((z) => z.id === zonaEntregaId)?.nome?.trim() || "N/A"
+            : bairroLivreTexto.trim() || "N/A";
+
+      const enderecoLinha =
+        tipoEntrega === "retirada" ? "N/A" : `${checkoutRua.trim()}, ${checkoutNumero.trim()}`;
+
+      const refCompLinha =
+        tipoEntrega === "retirada" ? "N/A" : checkoutComplemento.trim() || "N/A";
+
+      const trocoParsed = trocoParaInput.trim() ? parsePrecoBrasileiro(trocoParaInput) : null;
+      const trocoParaTexto =
+        formaPagamento !== "dinheiro" || !trocoParaInput.trim()
+          ? "Não necessário"
+          : trocoParsed != null
+            ? formatBRL(trocoParsed)
+            : "Não necessário";
+
+      const valorTrocoReais =
+        formaPagamento === "dinheiro" && trocoParsed != null && trocoParsed >= totalGeral
+          ? Math.round((trocoParsed - totalGeral) * 100) / 100
+          : 0;
+
+      const payloadPedido = {
+        nomeCliente: nomeOk,
+        telefoneCliente: formatarTelefoneWhatsappBR(clienteTelefoneDisplay),
         tipoEntrega,
-      });
-      if (!json.ok || status < 200 || status >= 300) {
+        enderecoLinha,
+        bairroLinha: bairroNome,
+        refCompLinha,
+        itens: cartSynced,
+        formaPagamento,
+        trocoParaTexto,
+        valorTrocoReais,
+        subtotalItens: subtotal,
+        taxaEntrega: taxaAplicada,
+        totalGeral,
+      } as const;
+
+      /** Só Latin-1: nunca enviar o modelo com bullet U+2022 no JSON da API. */
+      const observacoesApi = montarTextoPedidoResumoParaApi(payloadPedido);
+
+      const linhasApi = cartSynced.map(({ prato, quantidade }) => ({
+        pratoId: prato.id,
+        quantidade,
+      }));
+      const zonaApi =
+        tipoEntrega === "retirada"
+          ? null
+          : zonas.length > 1
+            ? zonaEntregaId
+            : zonas.length === 1
+              ? zonas[0].id
+              : null;
+
+      const waTab = prepareNewTabForLaterNavigation();
+      try {
+        /** Registro via XMLHttpRequest + corpo UTF-8 (evita ByteString do `fetch` em alguns runtimes). */
+        const { status, json } = await registrarPedidoVitrineNaApi("/api/pedidos/vitrine", {
+          restauranteId: restaurante.id,
+          cliente: nomeOk,
+          telefone: formatarTelefoneWhatsappBR(clienteTelefoneDisplay),
+          formaPagamento,
+          linhas: linhasApi,
+          zonaEntregaId: zonaApi,
+          observacoes: observacoesApi,
+          tipoEntrega,
+        });
+        if (!json.ok || status < 200 || status >= 300) {
+          try {
+            waTab?.close();
+          } catch {
+            /* ignore */
+          }
+          setCheckoutErro(
+            json.error ??
+              (status === 503
+                ? "Não foi possível registrar o pedido no servidor. Tente enviar pelo WhatsApp manualmente."
+                : "Não foi possível registrar o pedido. Tente novamente."),
+          );
+          return;
+        }
+        void trackPedidoConcluido(slug, json.id ?? null);
+        const textoWhatsAppComBullets = montarTextoPedidoWhatsAppFormatado(payloadPedido);
+        navigatePreparedTabOrOpen(
+          waTab,
+          buildWhatsappSendHref(restaurante.whatsapp, textoWhatsAppComBullets),
+        );
+      } catch (e) {
         try {
           waTab?.close();
         } catch {
           /* ignore */
         }
-        setCheckoutErro(
-          json.error ??
-            (status === 503
-              ? "Não foi possível registrar o pedido no servidor. Tente enviar pelo WhatsApp manualmente."
-              : "Não foi possível registrar o pedido. Tente novamente."),
-        );
-        return;
+        devClientError("[checkout] falha ao registrar pedido:", e);
+        setCheckoutErro("Falha de rede ao registrar o pedido. Verifique sua conexão e tente de novo.");
       }
-      const textoWhatsAppComBullets = montarTextoPedidoWhatsAppFormatado(payloadPedido);
-      navigatePreparedTabOrOpen(
-        waTab,
-        buildWhatsappSendHref(restaurante.whatsapp, textoWhatsAppComBullets),
-      );
-    } catch (e) {
-      try {
-        waTab?.close();
-      } catch {
-        /* ignore */
-      }
-      console.error("[checkout] falha ao registrar pedido:", e);
-      setCheckoutErro("Falha de rede ao registrar o pedido. Verifique sua conexão e tente de novo.");
     } finally {
       setCheckoutSubmitting(false);
+      checkoutLockRef.current = false;
     }
   }, [
+    slug,
     restaurante,
     cart,
+    pratos,
     pedidosBloqueados,
+    checkoutSubmitting,
     clienteNome,
     clienteTelefoneDisplay,
     tipoEntrega,
@@ -804,8 +863,6 @@ export default function PublicCardapioPage() {
     zonaEntregaId,
     formaPagamento,
     trocoParaInput,
-    subtotalCarrinho,
-    taxaCarrinho,
   ]);
 
   if (!slug) {
@@ -1201,7 +1258,10 @@ export default function PublicCardapioPage() {
         <div className="pointer-events-none fixed inset-x-0 bottom-6 z-30 flex justify-center px-5 sm:bottom-6">
           <button
             type="button"
-            onClick={() => setCartOpen(true)}
+            onClick={() => {
+              void trackCheckoutIniciado(slug);
+              setCartOpen(true);
+            }}
             className="pointer-events-auto flex max-w-full items-center gap-4 rounded-full border border-white/12 bg-zinc-900/90 px-6 py-3.5 text-white shadow-[0_12px_48px_-8px_rgba(0,0,0,0.45)] backdrop-blur-md transition-transform duration-150 hover:bg-zinc-900 active:scale-[0.97] supports-[backdrop-filter]:bg-zinc-900/88"
             style={{
               boxShadow: `0 16px 48px -10px color-mix(in srgb, ${accent} 28%, rgba(0,0,0,0.5))`,

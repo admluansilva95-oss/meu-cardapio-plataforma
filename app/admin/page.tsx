@@ -15,6 +15,7 @@ import { computePratoRankingFromPedidosLines } from "@/lib/admin/prato-ranking-f
 import { createBrowserSupabaseClient } from "@/lib/supabase";
 import { getPublicAppUrl } from "@/lib/site-url";
 import { isRetryableSupabaseError, withRetry } from "@/lib/with-retry";
+import { devClientError, devClientWarn } from "@/lib/logging/dev-client-log";
 import { mensagemErroSupabasePainel } from "@/lib/supabase/mensagem-erro";
 import { mensagemUploadStorageAmigavel } from "@/lib/restaurante/mensagem-upload-storage";
 import { sanitizarNomeArquivoStorageBase } from "@/lib/restaurante/sanitizar-nome-arquivo-storage";
@@ -253,7 +254,7 @@ async function enviarImagemAoBucketImagensPratos(
     const err = new Error(
       `Arquivo muito grande (${(file.size / (1024 * 1024)).toFixed(1)} MB). Use até ~4,5 MB.`,
     );
-    console.error("Erro no Upload do Storage:", err);
+    devClientError("Erro no Upload do Storage:", err);
     throw err;
   }
   const fileToSend = await fileComNomeAsciiParaUpload(file, "prato");
@@ -265,7 +266,7 @@ async function enviarImagemAoBucketImagensPratos(
     .from(BUCKET_IMAGENS_PRATOS)
     .upload(objectPath, fileToSend, { contentType, cacheControl: "3600", upsert: false });
   if (error) {
-    console.error("Erro no Upload do Storage:", error);
+    devClientError("Erro no Upload do Storage:", error);
     throw error;
   }
   const { data } = supabase.storage.from(BUCKET_IMAGENS_PRATOS).getPublicUrl(objectPath);
@@ -274,7 +275,7 @@ async function enviarImagemAoBucketImagensPratos(
     const err = new Error(
       `URL pública ausente após upload (objectPath=${objectPath}).`,
     );
-    console.error("Erro no Upload do Storage:", err);
+    devClientError("Erro no Upload do Storage:", err);
     throw err;
   }
   return publicUrl;
@@ -297,7 +298,7 @@ async function enviarLogoRestaurante(
     const err = new Error(
       `Arquivo muito grande (${(file.size / (1024 * 1024)).toFixed(1)} MB). Use até ~4,5 MB.`,
     );
-    console.error("Erro no Upload do Storage:", err);
+    devClientError("Erro no Upload do Storage:", err);
     throw err;
   }
   const fileToSend = await fileComNomeAsciiParaUpload(file, "logo");
@@ -312,14 +313,14 @@ async function enviarLogoRestaurante(
     .from(BUCKET_RESTAURANT_LOGOS)
     .upload(objectPath, fileToSend, { contentType, cacheControl: "3600", upsert: false });
   if (error) {
-    console.error("Erro no Upload do Storage:", error);
+    devClientError("Erro no Upload do Storage:", error);
     throw error;
   }
   const { data } = supabase.storage.from(BUCKET_RESTAURANT_LOGOS).getPublicUrl(objectPath);
   const publicUrl = data?.publicUrl?.trim();
   if (!publicUrl) {
     const err = new Error(`URL pública ausente após upload do logo (objectPath=${objectPath}).`);
-    console.error("Erro no Upload do Storage:", err);
+    devClientError("Erro no Upload do Storage:", err);
     throw err;
   }
   return publicUrl;
@@ -1606,7 +1607,7 @@ function AdminPageInner() {
           }
         }
       } catch (err) {
-        console.error("Erro no Upload do Storage:", err);
+        devClientError("Erro no Upload do Storage:", err);
         const friendly = mensagemUploadStorageAmigavel(err);
         logoUploadWarning = `Logo não foi atualizado (${friendly}). As demais configurações serão salvas. Verifique o bucket "restaurant-logos" e permissões.`;
         setAdminToast(friendly);
@@ -2022,7 +2023,7 @@ function AdminPageInner() {
             "O upload concluiu, mas a URL da imagem é inválida. Nada foi salvo no cardápio.";
           setFetchError(msg);
           setAdminToast(msg);
-          console.error("Erro no Upload do Storage:", new Error(msg));
+          devClientError("Erro no Upload do Storage:", new Error(msg));
           throw new Error(msg);
         }
         const antiga = payload.imagemAtual?.trim() ?? "";
@@ -2032,7 +2033,7 @@ function AdminPageInner() {
         imagemFinal = urlPersistivel;
         novaUrlUploadedPersistivel = urlPersistivel;
       } catch (err) {
-        console.error("Erro no Upload do Storage:", err);
+        devClientError("Erro no Upload do Storage:", err);
         const friendly = mensagemUploadStorageAmigavel(err);
         setFetchError(friendly);
         setAdminToast(friendly);
@@ -2062,7 +2063,7 @@ function AdminPageInner() {
           .eq("restaurante_id", payload.restaurante_id);
 
         if (error) {
-          console.error("[pratos DB] Falha no UPDATE:", {
+          devClientError("[pratos DB] Falha no UPDATE:", {
             code: error.code,
             message: error.message,
             pratoId: payload.id,
@@ -2121,7 +2122,7 @@ function AdminPageInner() {
           .single();
 
         if (error) {
-          console.error("[pratos DB] Falha no INSERT:", {
+          devClientError("[pratos DB] Falha no INSERT:", {
             code: error.code,
             message: error.message,
             restaurante_id: payload.restaurante_id,
@@ -2145,7 +2146,7 @@ function AdminPageInner() {
             .from(BUCKET_IMAGENS_PRATOS)
             .remove([pathNovo]);
           if (rollErr) {
-            console.warn("[pratos] rollback storage após falha no DB:", rollErr.message);
+            devClientWarn("[pratos] rollback storage após falha no DB:", rollErr.message);
           }
         }
       }

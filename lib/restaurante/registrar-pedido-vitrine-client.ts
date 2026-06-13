@@ -1,3 +1,4 @@
+import "@/lib/wire/bootstrap-byte-string-guard";
 import { jsonStringifyLatin1Wire } from "@/lib/restaurante/json-latin1-wire";
 import { buildVitrinePedidoWirePayload } from "@/lib/restaurante/vitrine-pedido-wire";
 import { latin1SafeString } from "@/lib/utils/sanitize-strings";

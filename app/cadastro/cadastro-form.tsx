@@ -10,6 +10,12 @@ import { PhoneInput } from "@/components/PhoneInput";
 import { buildAssinarPathWithCarry } from "@/lib/auth/post-signup-carry";
 import { getPublicAppUrl } from "@/lib/site-url";
 import { createBrowserSupabaseClient } from "@/lib/supabase";
+import {
+  mensagemErroSupabaseAuthAmigavel,
+  validarEmailCliente,
+  validarSenhaCliente,
+} from "@/lib/auth/validacao-credenciais";
+import { devClientError } from "@/lib/logging/dev-client-log";
 
 export function CadastroForm() {
   const router = useRouter();
@@ -33,34 +39,36 @@ export function CadastroForm() {
   const [slug, setSlug] = useState("");
   const [whatsapp, setWhatsapp] = useState("");
   const [loading, setLoading] = useState(false);
+  const [submitPhase, setSubmitPhase] = useState<"signup" | "checkout">("signup");
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
   async function submitCadastro() {
     setLoading(true);
+    setSubmitPhase("signup");
+    setErrorMessage(null);
 
     const normalizedSlug = normalizeSlugInput(slug);
     if (!isValidSlug(normalizedSlug)) {
       setErrorMessage(
-        "Endereço do cardápio inválido. Use letras, números e hífens (mínimo 3 caracteres)."
+        "Endereço do cardápio inválido. Use letras, números e hífens (mínimo 3 caracteres).",
       );
       setLoading(false);
       return;
     }
 
-    const emailNorm = email.trim().toLowerCase();
-    if (!emailNorm || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(emailNorm)) {
-      setErrorMessage("Informe um e-mail válido.");
+    const emailVal = validarEmailCliente(email);
+    if (!emailVal.ok) {
+      setErrorMessage(emailVal.mensagem);
       setLoading(false);
       return;
     }
 
-    if (password.length < 6) {
-      setErrorMessage("A senha deve ter pelo menos 6 caracteres.");
+    const senhaVal = validarSenhaCliente(password);
+    if (!senhaVal.ok) {
+      setErrorMessage(senhaVal.mensagem);
       setLoading(false);
       return;
     }
-
-    setErrorMessage(null);
 
     try {
       const supabase = createBrowserSupabaseClient();
@@ -70,7 +78,7 @@ export function CadastroForm() {
         whatsapp: whatsapp.trim() || undefined,
       });
       const { data, error } = await supabase.auth.signUp({
-        email: emailNorm,
+        email: emailVal.email,
         password,
         options: {
           emailRedirectTo: `${getPublicAppUrl()}/auth/callback?next=${encodeURIComponent(afterConfirmPath)}`,
@@ -78,8 +86,8 @@ export function CadastroForm() {
       });
 
       if (error) {
-        console.error("[cadastro] signUp:", error.message);
-        setErrorMessage(error.message);
+        devClientError("[cadastro] signUp:", error.message);
+        setErrorMessage(mensagemErroSupabaseAuthAmigavel(error.message, error.code));
         return;
       }
 
@@ -90,6 +98,7 @@ export function CadastroForm() {
         return;
       }
 
+      setSubmitPhase("checkout");
       const checkout = await startSubscriptionCheckout({
         priceId: plan.priceId,
         userId: session.user.id,
@@ -105,7 +114,7 @@ export function CadastroForm() {
 
       window.location.href = checkout.url;
     } catch (err) {
-      console.error("[cadastro] handleSubmit:", err);
+      devClientError("[cadastro] handleSubmit:", err);
       setErrorMessage("Erro inesperado ao criar conta.");
     } finally {
       setLoading(false);
@@ -213,13 +222,16 @@ export function CadastroForm() {
               />
             </div>
             <button
-              type="button"
+              type="submit"
               data-testid="cadastro-submit"
               disabled={loading}
-              onClick={() => void submitCadastro()}
               className="w-full rounded-2xl bg-gradient-to-r from-teal-400 via-emerald-400 to-cyan-400 py-3.5 text-sm font-semibold text-zinc-950 disabled:opacity-60"
             >
-              {loading ? "Redirecionando ao pagamento…" : "Criar conta e pagar no Stripe"}
+              {loading
+                ? submitPhase === "checkout"
+                  ? "Redirecionando ao pagamento…"
+                  : "Criando conta…"
+                : "Criar conta e pagar no Stripe"}
             </button>
           </form>
 

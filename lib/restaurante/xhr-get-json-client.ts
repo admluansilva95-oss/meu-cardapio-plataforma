@@ -1,3 +1,4 @@
+import "@/lib/wire/bootstrap-byte-string-guard";
 import { latin1SafeString } from "@/lib/utils/sanitize-strings";
 
 /**

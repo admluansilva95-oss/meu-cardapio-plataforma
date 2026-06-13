@@ -60,6 +60,7 @@ create table if not exists public.pratos (
 
 create index if not exists idx_pratos_restaurante on public.pratos (restaurante_id);
 create index if not exists idx_pratos_status on public.pratos (status);
+create index if not exists idx_pratos_restaurante_status_nome on public.pratos (restaurante_id, status, nome);
 
 comment on table public.pratos is 'Itens do cardápio vinculados a um restaurante.';
 

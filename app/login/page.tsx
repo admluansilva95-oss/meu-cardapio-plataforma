@@ -5,6 +5,12 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { Suspense, useEffect, useState } from "react";
 import { createBrowserSupabaseClient } from "@/lib/supabase";
 import { getPublicAppUrl } from "@/lib/site-url";
+import {
+  mensagemErroSupabaseAuthAmigavel,
+  validarEmailCliente,
+  validarSenhaCliente,
+} from "@/lib/auth/validacao-credenciais";
+import { devClientError } from "@/lib/logging/dev-client-log";
 
 function LoginForm() {
   const router = useRouter();
@@ -62,16 +68,26 @@ function LoginForm() {
     setErrorMessage(null);
 
     try {
+      const emailVal = validarEmailCliente(email);
+      if (!emailVal.ok) {
+        setErrorMessage(emailVal.mensagem);
+        return;
+      }
+      const senhaVal = validarSenhaCliente(password);
+      if (!senhaVal.ok) {
+        setErrorMessage(senhaVal.mensagem);
+        return;
+      }
+
       const supabase = createBrowserSupabaseClient();
-      const emailNorm = email.trim().toLowerCase();
       const { data, error } = await supabase.auth.signInWithPassword({
-        email: emailNorm,
+        email: emailVal.email,
         password,
       });
 
       if (error) {
-        console.error("[login] signInWithPassword:", error.message);
-        setErrorMessage(error.message);
+        devClientError("[login] signInWithPassword:", error.message);
+        setErrorMessage(mensagemErroSupabaseAuthAmigavel(error.message, error.code));
         return;
       }
 
@@ -82,7 +98,7 @@ function LoginForm() {
 
       setErrorMessage("Não foi possível iniciar a sessão. Tente novamente.");
     } catch (err) {
-      console.error("[login] handleSubmit:", err);
+      devClientError("[login] handleSubmit:", err);
       setErrorMessage("Erro inesperado ao entrar.");
     } finally {
       setLoading(false);
@@ -167,10 +183,9 @@ function LoginForm() {
               />
             </div>
             <button
-              type="button"
+              type="submit"
               data-testid="login-submit"
               disabled={loading}
-              onClick={() => void submitLogin()}
               className="w-full rounded-2xl bg-gradient-to-r from-teal-400 via-emerald-400 to-cyan-400 py-3.5 text-sm font-semibold text-zinc-950 disabled:opacity-60"
             >
               {loading ? "Entrando…" : priceId ? "Continuar para assinatura" : "Entrar"}

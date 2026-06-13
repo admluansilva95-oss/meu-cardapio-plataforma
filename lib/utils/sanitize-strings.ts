@@ -15,30 +15,35 @@ export function latin1SafeString(s: string): string {
 
 /**
  * Remove artefatos invisíveis comuns de rich-text / colagem (Word, iOS, Google Docs):
- * zero-width, marcas de direção, joiners, BOM após NFKC.
+ * zero-width, marcas de direção, joiners, BOM após NFKC, soft hyphen, grapheme joiner, etc.
  */
 export function stripInvisibleFormatting(s: string): string {
   return s
     .normalize("NFKC")
     .replace(/\uFEFF/g, "")
     .replace(/[\u200B-\u200F\u202A-\u202E\u2060-\u2064]/g, "")
-    .replace(/[\u2066-\u2069]/g, ""); /* isolates bidi supplement */
+    .replace(/[\u2066-\u2069]/g, "") /* isolates bidi supplement */
+    .replace(/\u180E/g, "") /* Mongolian vowel separator (legado) */
+    .replace(/\u00AD/g, "") /* soft hyphen */
+    .replace(/\u034F/g, ""); /* COMBINING GRAPHEME JOINER */
 }
 
 /**
  * Texto livre do usuário: bullets, travessões, aspas tipográficas, espaços especiais,
- * depois só Latin-1 (compatível com cabeçalhos / wire estrito).
+ * guillemets, vírgulas tipográficas, depois só Latin-1 (compatível com cabeçalhos / wire estrito).
  */
 export function sanitizeUserFreeText(s: string): string {
   const stripped = stripInvisibleFormatting(s);
   const t = stripped
     .replace(/[\u2000-\u200A\u202F\u205F]/g, " ")
     .replace(/[\u2022\u2023\u2024\u2025\u2043\u204C\u204D\u2219\u25CF\u25AA\u25E6\u29BB\u30FB]/g, "-")
-    .replace(/\u2013|\u2014|\u2010|\u2011|\u2212/g, "-")
+    .replace(/\u2013|\u2014|\u2012|\u2010|\u2011|\u2212/g, "-")
     .replace(/\u2026/g, "...")
     .replace(/\u00A0/g, " ")
-    .replace(/[\u2018\u2019]/g, "'")
-    .replace(/[\u201C\u201D]/g, '"');
+    .replace(/[\u2018\u2019\u201A\u201B]/g, "'")
+    .replace(/[\u201C\u201D\u201E\u201F\u2E42]/g, '"')
+    .replace(/[\u00AB\u00BB\u2039\u203A]/g, '"')
+    .replace(/\u2E41/g, ","); /* exclamation comma → ASCII */
   return latin1SafeString(t);
 }
 

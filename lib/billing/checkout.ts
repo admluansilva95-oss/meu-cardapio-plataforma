@@ -1,6 +1,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type Stripe from "stripe";
 import { getPlanByPriceId } from "@/lib/plans";
+import { logStructured } from "@/lib/logging/structured-log";
 import { getStripe } from "@/lib/stripe/client";
 import { isValidSlug, normalizeSlugInput } from "@/lib/billing/slug";
 import { isSlugAvailable } from "@/lib/billing/restaurantes";
@@ -56,7 +57,9 @@ export async function createSubscriptionCheckoutSession(
   try {
     stripe = getStripe();
   } catch (err) {
-    console.error("[billing/checkout] Stripe não configurado:", err);
+    logStructured("error", "billing.checkout.stripe_missing", {
+      message: err instanceof Error ? err.message : String(err),
+    });
     return {
       ok: false,
       error: "Pagamentos indisponíveis no momento. Configure STRIPE_SECRET_KEY.",
@@ -104,7 +107,9 @@ export async function createSubscriptionCheckoutSession(
 
     return { ok: true, url: session.url };
   } catch (err) {
-    console.error("[billing/checkout] sessions.create:", err);
+    logStructured("error", "billing.checkout.sessions_create", {
+      message: err instanceof Error ? err.message : String(err),
+    });
     return { ok: false, error: "Erro ao criar sessão de checkout no Stripe.", status: 500 };
   }
 }

@@ -1,14 +1,17 @@
+import "@/lib/wire/bootstrap-byte-string-guard";
 import { createBrowserClient } from "@supabase/ssr";
 import { createLatin1SafeFetch } from "@/lib/fetch-latin1-safe";
 
 const browserSafeFetch = createLatin1SafeFetch();
 
 /**
- * Cria e retorna o cliente do Supabase para o navegador (Client Components).
- * Utiliza as variáveis de ambiente públicas configuradas no .env.local.
+ * Cliente Supabase no navegador (Client Components).
  *
- * `fetch` envolvido evita `TypeError: ByteString` quando JSON/cabeçalhos trazem
- * caracteres fora de Latin-1 (ex.: bullet U+2022 em textos de pedido ou cardápio).
+ * **Zero trust na camada HTTP:** `global.fetch` + `Headers`/`Request`/`FormData.append`
+ * são instrumentados em `installClientByteStringGuard` (carregado antes deste módulo via
+ * `@/lib/wire/bootstrap-byte-string-guard` e `app/layout.tsx`). Aqui forçamos ainda
+ * `createBrowserClient` a usar `createLatin1SafeFetch`, duplicando a defesa para chamadas
+ * internas do SDK (PostgREST, Auth, Storage).
  */
 export function createBrowserSupabaseClient() {
   return createBrowserClient(

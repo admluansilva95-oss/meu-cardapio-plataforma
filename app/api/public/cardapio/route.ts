@@ -1,6 +1,13 @@
 import { createClient } from "@supabase/supabase-js";
 import { NextResponse, type NextRequest } from "next/server";
 import { isValidSlug } from "@/lib/billing/slug";
+import { serverLatin1SafeFetch } from "@/lib/http/server-latin1-fetch";
+import { logStructured } from "@/lib/logging/structured-log";
+import {
+  SUPABASE_PUBLIC_CARDAPIO_TIMEOUT_MS,
+  isSupabaseQueryTimeoutLike,
+  supabaseQuerySignal,
+} from "@/lib/supabase/query-timeouts";
 
 export const dynamic = "force-dynamic";
 
@@ -39,16 +46,31 @@ export async function GET(request: NextRequest) {
       autoRefreshToken: false,
       detectSessionInUrl: false,
     },
+    global: { fetch: serverLatin1SafeFetch },
   });
+
+  const signalCardapio = supabaseQuerySignal(SUPABASE_PUBLIC_CARDAPIO_TIMEOUT_MS);
 
   const { data: restaurante, error: restErr } = await supabase
     .from("restaurantes")
     .select(RESTAURANTE_COLUNAS)
     .eq("slug", slug)
+    .abortSignal(signalCardapio)
     .maybeSingle();
 
   if (restErr) {
-    console.error("[api/public/cardapio] restaurantes:", restErr.message);
+    if (isSupabaseQueryTimeoutLike(restErr)) {
+      logStructured("error", "api.public.cardapio.restaurantes_timeout", { slug });
+      return NextResponse.json(
+        { error: "O servidor demorou a responder. Tente novamente em instantes." },
+        { status: 504 },
+      );
+    }
+    logStructured("error", "api.public.cardapio.restaurantes", {
+      slug,
+      message: restErr.message,
+      code: restErr.code,
+    });
     return NextResponse.json(
       { error: "Não foi possível carregar o cardápio. Tente novamente em instantes." },
       { status: 500 },
@@ -63,15 +85,30 @@ export async function GET(request: NextRequest) {
 
   const rid = (restaurante as { id: string }).id;
 
+  const signalPratos = supabaseQuerySignal(SUPABASE_PUBLIC_CARDAPIO_TIMEOUT_MS);
+
   const { data: pratos, error: pratosErr } = await supabase
     .from("pratos")
     .select(PRATOS_COLUNAS)
     .eq("restaurante_id", rid)
     .eq("status", "ativo")
-    .order("nome", { ascending: true });
+    .order("nome", { ascending: true })
+    .abortSignal(signalPratos);
 
   if (pratosErr) {
-    console.error("[api/public/cardapio] pratos:", pratosErr.message);
+    if (isSupabaseQueryTimeoutLike(pratosErr)) {
+      logStructured("error", "api.public.cardapio.pratos_timeout", { slug, restauranteId: rid });
+      return NextResponse.json(
+        { error: "O servidor demorou a responder. Tente novamente em instantes." },
+        { status: 504 },
+      );
+    }
+    logStructured("error", "api.public.cardapio.pratos", {
+      slug,
+      restauranteId: rid,
+      message: pratosErr.message,
+      code: pratosErr.code,
+    });
     return NextResponse.json(
       { error: "Não foi possível carregar o cardápio. Tente novamente em instantes." },
       { status: 500 },

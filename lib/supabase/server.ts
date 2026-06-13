@@ -1,6 +1,7 @@
 import { createServerClient, type CookieOptions } from "@supabase/ssr";
 import { cookies } from "next/headers";
 import { latin1CookieWrite } from "@/lib/http/byte-string-http";
+import { serverLatin1SafeFetch } from "@/lib/http/server-latin1-fetch";
 
 type CookieToSet = { name: string; value: string; options: CookieOptions };
 
@@ -29,6 +30,7 @@ export async function createServerSupabaseClient() {
           }
         },
       },
+      global: { fetch: serverLatin1SafeFetch },
     },
   );
 }
