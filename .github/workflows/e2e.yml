@@ -30,6 +30,9 @@ jobs:
     - name: Run Playwright tests
       run: npm run test:e2e
       env:
+        # O `webServer` corre `next dev`; sem estas variáveis o cliente Supabase no browser fica vazio e os testes falham.
+        NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
+        NEXT_PUBLIC_SUPABASE_ANON_KEY: ${{ secrets.NEXT_PUBLIC_SUPABASE_ANON_KEY }}
         E2E_EMAIL: ${{ secrets.E2E_EMAIL }}
         E2E_PASSWORD: ${{ secrets.E2E_PASSWORD }}
         E2E_RESTAURANT_SLUG: ${{ secrets.E2E_RESTAURANT_SLUG }}

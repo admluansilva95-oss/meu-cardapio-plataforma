@@ -9,6 +9,18 @@
 
 A aplicação Next.js **não** envia SMTP próprio para estes fluxos.
 
+## Secrets no GitHub Actions (Playwright)
+
+O workflow `.github/workflows/e2e.yml` precisa destes **Repository secrets** (Settings → Secrets and variables → Actions):
+
+| Secret | Uso |
+|--------|-----|
+| `NEXT_PUBLIC_SUPABASE_URL` | URL do projeto Supabase (mesmo valor que em produção / staging de testes). |
+| `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Chave **anon** pública (Settings → API no Supabase). |
+| `E2E_EMAIL`, `E2E_PASSWORD`, `E2E_RESTAURANT_SLUG` | Opcionais: só para testes de integração “login real” e `/admin` (ver `tests/e2e/fixtures/env.ts`). |
+
+Sem `NEXT_PUBLIC_*`, o `next dev` no CI não alimenta o bundle e o login/cardápio quebram antes dos mocks.
+
 ## Como testar o gatilho sem caixa de entrada real
 
 1. **`tests/e2e/email-auth-trigger.spec.ts`** — `page.route('**/auth/v1/signup**', …)` intercepta o `POST`, lê `postDataJSON().email` e devolve resposta mock. Valida que o cliente montou o pedido correto.

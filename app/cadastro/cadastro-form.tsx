@@ -15,6 +15,12 @@ import {
   validarEmailCliente,
   validarSenhaCliente,
 } from "@/lib/auth/validacao-credenciais";
+import {
+  authSignUpSafe,
+  isSupabaseBrowserEnvConfigured,
+  mensagemFalhaAutenticacaoResidual,
+  MENSAGEM_SUPABASE_ENV_AUSENTE,
+} from "@/lib/auth/supabase-browser-auth-safe";
 import { devClientError } from "@/lib/logging/dev-client-log";
 
 export function CadastroForm() {
@@ -71,13 +77,18 @@ export function CadastroForm() {
     }
 
     try {
+      if (!isSupabaseBrowserEnvConfigured()) {
+        setErrorMessage(MENSAGEM_SUPABASE_ENV_AUSENTE);
+        return;
+      }
+
       const supabase = createBrowserSupabaseClient();
       const afterConfirmPath = buildAssinarPathWithCarry({
         priceId: plan.priceId,
         slug: normalizedSlug,
         whatsapp: whatsapp.trim() || undefined,
       });
-      const { data, error } = await supabase.auth.signUp({
+      const { data, error } = await authSignUpSafe(supabase, {
         email: emailVal.email,
         password,
         options: {
@@ -115,7 +126,7 @@ export function CadastroForm() {
       window.location.href = checkout.url;
     } catch (err) {
       devClientError("[cadastro] handleSubmit:", err);
-      setErrorMessage("Erro inesperado ao criar conta.");
+      setErrorMessage(mensagemFalhaAutenticacaoResidual("cadastro"));
     } finally {
       setLoading(false);
     }

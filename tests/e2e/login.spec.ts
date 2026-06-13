@@ -28,7 +28,10 @@ test.describe("Login", () => {
     await fillWhenHydrated(form.locator("#email"), "definitivamente-nao-existe-e2e@example.com");
     await fillWhenHydrated(form.locator("#password"), "SenhaErrada999!");
     await submitLoginForm(page);
-    await expect(page.getByTestId("login-error")).toContainText(/invalid login credentials/i, { timeout: 25_000 });
+    /** UI usa `mensagemErroSupabaseAuthAmigavel` (PT), não o texto cru em inglês do GoTrue. */
+    await expect(page.getByTestId("login-error")).toContainText(/E-mail ou senha incorretos/i, {
+      timeout: 25_000,
+    });
   });
 
   test.describe("Integração (Supabase real)", () => {

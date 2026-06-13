@@ -10,31 +10,14 @@ import {
   validarEmailCliente,
   validarSenhaCliente,
 } from "@/lib/auth/validacao-credenciais";
+import {
+  authGetSessionSafe,
+  authSignInWithPasswordSafe,
+  isSupabaseBrowserEnvConfigured,
+  mensagemFalhaAutenticacaoResidual,
+  MENSAGEM_SUPABASE_ENV_AUSENTE,
+} from "@/lib/auth/supabase-browser-auth-safe";
 import { devClientError } from "@/lib/logging/dev-client-log";
-
-function supabaseBrowserEnvOk(): boolean {
-  return Boolean(
-    process.env.NEXT_PUBLIC_SUPABASE_URL?.trim() &&
-      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY?.trim(),
-  );
-}
-
-function mensagemErroLoginCatch(err: unknown): string {
-  const raw = err instanceof Error ? err.message : String(err);
-  const lower = raw.toLowerCase();
-  if (lower.includes("no api key") || lower.includes("api key found")) {
-    return "O site não está ligado ao servidor de autenticação. Peça à equipa técnica para configurar NEXT_PUBLIC_SUPABASE_URL e NEXT_PUBLIC_SUPABASE_ANON_KEY no painel de deploy e voltar a publicar.";
-  }
-  if (
-    lower.includes("failed to fetch") ||
-    lower.includes("networkerror") ||
-    lower.includes("load failed") ||
-    lower.includes("network request failed")
-  ) {
-    return "Não foi possível contactar o servidor. Verifique a sua ligação à internet ou tente mais tarde.";
-  }
-  return "Erro inesperado ao entrar. Tente novamente em instantes.";
-}
 
 function LoginForm() {
   const router = useRouter();
@@ -72,14 +55,15 @@ function LoginForm() {
       : "/admin";
 
   useEffect(() => {
-    if (!supabaseBrowserEnvOk()) return;
+    if (!isSupabaseBrowserEnvConfigured()) return;
     let cancelled = false;
     (async () => {
       const supabase = createBrowserSupabaseClient();
       const {
         data: { session },
-      } = await supabase.auth.getSession();
-      if (!cancelled && session?.user) {
+        error,
+      } = await authGetSessionSafe(supabase);
+      if (!cancelled && !error && session?.user) {
         router.replace(redirectAfterLogin);
       }
     })();
@@ -104,15 +88,13 @@ function LoginForm() {
         return;
       }
 
-      if (!supabaseBrowserEnvOk()) {
-        setErrorMessage(
-          "Este ambiente não tem as credenciais públicas do Supabase. Configure NEXT_PUBLIC_SUPABASE_URL e NEXT_PUBLIC_SUPABASE_ANON_KEY e faça um novo deploy.",
-        );
+      if (!isSupabaseBrowserEnvConfigured()) {
+        setErrorMessage(MENSAGEM_SUPABASE_ENV_AUSENTE);
         return;
       }
 
       const supabase = createBrowserSupabaseClient();
-      const { data, error } = await supabase.auth.signInWithPassword({
+      const { data, error } = await authSignInWithPasswordSafe(supabase, {
         email: emailVal.email,
         password,
       });
@@ -124,14 +106,21 @@ function LoginForm() {
       }
 
       if (data.session) {
-        router.push(redirectAfterLogin);
+        try {
+          router.push(redirectAfterLogin);
+        } catch (navErr) {
+          devClientError("[login] router.push:", navErr);
+          window.location.assign(redirectAfterLogin);
+        }
         return;
       }
 
-      setErrorMessage("Não foi possível iniciar a sessão. Tente novamente.");
+      setErrorMessage(
+        "Não foi possível obter sessão após validar os dados. Se acabou de confirmar o e-mail, aguarde um minuto e tente novamente.",
+      );
     } catch (err) {
       devClientError("[login] handleSubmit:", err);
-      setErrorMessage(mensagemErroLoginCatch(err));
+      setErrorMessage(mensagemFalhaAutenticacaoResidual("login"));
     } finally {
       setLoading(false);
     }

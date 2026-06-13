@@ -7,6 +7,13 @@ import { isValidSlug, normalizeSlugInput } from "@/lib/billing/slug";
 import { parseCarryFromObParam } from "@/lib/auth/post-signup-carry";
 import { createBrowserSupabaseClient } from "@/lib/supabase";
 import type { Plan } from "@/lib/plans";
+import {
+  authGetSessionSafe,
+  isSupabaseBrowserEnvConfigured,
+  mensagemFalhaAutenticacaoResidual,
+  MENSAGEM_SUPABASE_ENV_AUSENTE,
+} from "@/lib/auth/supabase-browser-auth-safe";
+import { mensagemErroSupabaseAuthAmigavel } from "@/lib/auth/validacao-credenciais";
 import { devClientError } from "@/lib/logging/dev-client-log";
 
 type SubscribeButtonProps = {
@@ -35,15 +42,20 @@ export function SubscribeButton({ plan, carryOb = null }: SubscribeButtonProps) 
     setErrorMessage(null);
 
     try {
+      if (!isSupabaseBrowserEnvConfigured()) {
+        setErrorMessage(MENSAGEM_SUPABASE_ENV_AUSENTE);
+        return;
+      }
+
       const supabase = createBrowserSupabaseClient();
       const {
         data: { session },
         error: sessionError,
-      } = await supabase.auth.getSession();
+      } = await authGetSessionSafe(supabase);
 
       if (sessionError) {
         devClientError("[SubscribeButton] getSession:", sessionError.message);
-        setErrorMessage("Não foi possível verificar sua sessão. Tente novamente.");
+        setErrorMessage(mensagemErroSupabaseAuthAmigavel(sessionError.message, sessionError.code));
         return;
       }
 
@@ -93,7 +105,7 @@ export function SubscribeButton({ plan, carryOb = null }: SubscribeButtonProps) 
       window.location.assign(checkout.url);
     } catch (err) {
       devClientError("[SubscribeButton] handleSubscribe:", err);
-      setErrorMessage("Erro inesperado. Tente novamente em instantes.");
+      setErrorMessage(mensagemFalhaAutenticacaoResidual("assinatura"));
     } finally {
       setLoading(false);
     }

@@ -53,5 +53,25 @@ export function mensagemErroSupabaseAuthAmigavel(message: string, code?: string)
   if (m.includes("no api key") || m.includes("api key found")) {
     return "O site não está ligado ao servidor de autenticação. As credenciais públicas do Supabase precisam de ser configuradas no deploy (URL e chave anónima).";
   }
-  return message;
+  if (m.includes("cors") || m.includes("blocked by cors")) {
+    return "O navegador bloqueou o pedido. Confirme o domínio em Supabase → Authentication → URL Configuration (Site URL e Redirect URLs).";
+  }
+  if (m.includes("aborted") || m.includes("abort")) {
+    return "O pedido foi interrompido. Tente novamente sem sair desta página.";
+  }
+  if (m.includes("timeout") || m.includes("timed out")) {
+    return "O servidor demorou a responder. Aguarde um instante e tente novamente.";
+  }
+  if (
+    m.includes("failed to fetch") ||
+    m.includes("networkerror") ||
+    m.includes("network request failed") ||
+    m.includes("load failed")
+  ) {
+    return "Não foi possível contactar o servidor de autenticação. Verifique a ligação à internet ou tente mais tarde.";
+  }
+  if (m.includes("jwt") || m.includes("invalid grant") || m.includes("session")) {
+    return "A sessão é inválida ou expirou. Atualize a página e faça login novamente.";
+  }
+  return "Não foi possível concluir a autenticação. Atualize a página (Ctrl+F5 ou Cmd+Shift+R), confirme o e-mail e a palavra-passe e tente novamente.";
 }
