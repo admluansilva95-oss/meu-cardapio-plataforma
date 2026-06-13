@@ -14,6 +14,7 @@ import {
 import { createAdminSupabaseClient } from "@/lib/supabase/admin";
 import type { Restaurante } from "@/types";
 import { sanitizeDbPlainText } from "@/lib/db/sanitize-persist";
+import { runApiWithAccessLog } from "@/lib/http/run-api-with-access-log";
 import {
   SUPABASE_SERVER_WRITE_TIMEOUT_MS,
   isSupabaseQueryTimeoutLike,
@@ -326,302 +327,299 @@ function taxaFixaNum(v: number | string | null | undefined): number | null {
 }
 
 export async function POST(request: Request) {
-  try {
-    const admin = createAdminSupabaseClient();
-    if (!admin) {
-      logStructured("error", "api.pedidos.vitrine.no_service_role", {});
-      return NextResponse.json(
-        {
-          error:
-            "Servidor não configurado para registrar pedidos. Defina SUPABASE_SERVICE_ROLE_KEY no ambiente (ex.: Vercel).",
-        },
-        { status: 503 },
-      );
-    }
+  return runApiWithAccessLog(
+    request,
+    "/api/pedidos/vitrine",
+    "api.pedidos.vitrine.fatal",
+    async () => {
+      const admin = createAdminSupabaseClient();
+      if (!admin) {
+        logStructured("error", "api.pedidos.vitrine.no_service_role", {});
+        return NextResponse.json(
+          {
+            error:
+              "Servidor não configurado para registrar pedidos. Defina SUPABASE_SERVICE_ROLE_KEY no ambiente (ex.: Vercel).",
+          },
+          { status: 503 },
+        );
+      }
 
-    let body: BodyVitrinePedido;
-    let rawBody: Record<string, unknown>;
-    try {
-      rawBody = (await request.json()) as Record<string, unknown>;
-      body = rawBody as BodyVitrinePedido;
-    } catch {
-      logStructured("warn", "api.pedidos.vitrine.invalid_json", {});
-      return NextResponse.json({ error: "JSON inválido." }, { status: 400 });
-    }
+      let body: BodyVitrinePedido;
+      let rawBody: Record<string, unknown>;
+      try {
+        rawBody = (await request.json()) as Record<string, unknown>;
+        body = rawBody as BodyVitrinePedido;
+      } catch {
+        logStructured("warn", "api.pedidos.vitrine.invalid_json", {});
+        return NextResponse.json({ error: "JSON inválido." }, { status: 400 });
+      }
 
-    const restauranteIdRaw = body.restauranteId;
-    const restauranteId =
-      typeof restauranteIdRaw === "string"
-        ? restauranteIdRaw.trim()
-        : typeof restauranteIdRaw === "number" &&
-            Number.isFinite(restauranteIdRaw)
-          ? String(Math.trunc(restauranteIdRaw))
-          : "";
-    warnCamposPrecoIgnorados(rawBody, restauranteId);
-    const clienteRaw =
-      typeof body.cliente === "string" ? body.cliente.trim() : "";
-    const telefoneRaw =
-      typeof body.telefone === "string" ? body.telefone.trim() : "";
-    const cliente = sanitizeDbPlainText(clienteRaw, 200);
-    const telefone = sanitizeDbPlainText(telefoneRaw, 40);
-    const forma = body.formaPagamento;
+      const restauranteIdRaw = body.restauranteId;
+      const restauranteId =
+        typeof restauranteIdRaw === "string"
+          ? restauranteIdRaw.trim()
+          : typeof restauranteIdRaw === "number" &&
+              Number.isFinite(restauranteIdRaw)
+            ? String(Math.trunc(restauranteIdRaw))
+            : "";
+      warnCamposPrecoIgnorados(rawBody, restauranteId);
+      const clienteRaw =
+        typeof body.cliente === "string" ? body.cliente.trim() : "";
+      const telefoneRaw =
+        typeof body.telefone === "string" ? body.telefone.trim() : "";
+      const cliente = sanitizeDbPlainText(clienteRaw, 200);
+      const telefone = sanitizeDbPlainText(telefoneRaw, 40);
+      const forma = body.formaPagamento;
 
-    if (!restauranteId || !cliente || cliente.length < 2) {
-      logStructured("warn", "api.pedidos.vitrine.validation_cliente", {
-        restauranteId,
-      });
-      return NextResponse.json(
-        { error: "Dados do cliente inválidos." },
-        { status: 400 },
-      );
-    }
-    if (!isUuid(restauranteId)) {
-      logStructured("warn", "api.pedidos.vitrine.validation_restaurante_id", {
-        restauranteId,
-      });
-      return NextResponse.json(
-        { error: "Identificador do estabelecimento inválido." },
-        { status: 400 },
-      );
-    }
-    if (!telefone || telefone.length < 8) {
-      logStructured("warn", "api.pedidos.vitrine.validation_telefone", {
-        restauranteId,
-      });
-      return NextResponse.json(
-        { error: "Telefone inválido." },
-        { status: 400 },
-      );
-    }
-    if (
-      forma !== "dinheiro" &&
-      forma !== "pix" &&
-      forma !== "cartao_debito" &&
-      forma !== "cartao_credito"
-    ) {
-      logStructured("warn", "api.pedidos.vitrine.validation_pagamento", {
-        restauranteId,
-      });
-      return NextResponse.json(
-        { error: "Forma de pagamento inválida." },
-        { status: 400 },
-      );
-    }
-
-    const linhas = parseLinhasPedidoVitrine(body);
-    if (!linhas) {
-      logStructured("warn", "api.pedidos.vitrine.validation_linhas", {
-        restauranteId,
-        reason: "linhas_invalidas_ou_ausentes",
-      });
-      return NextResponse.json(
-        {
-          error:
-            "Lista de itens inválida. Envie `linhas: [{ pratoId, quantidade }]` e atualize a página se necessário.",
-        },
-        { status: 400 },
-      );
-    }
-
-    const obsRaw = typeof body.observacoes === "string" ? body.observacoes : "";
-    const obsSan = sanitizeObservacoesVitrine(
-      obsRaw,
-      OBSERVACOES_VITRINE_MAX_USER_CHARS,
-    );
-
-    const tipoEntrega =
-      body.tipoEntrega === "retirada" || body.tipoEntrega === "entrega"
-        ? body.tipoEntrega
-        : "entrega";
-
-    const zonaRaw = body.zonaEntregaId;
-    const zonaEntregaId =
-      zonaRaw === null || zonaRaw === undefined
-        ? null
-        : typeof zonaRaw === "string" && isUuid(zonaRaw.trim())
-          ? zonaRaw.trim()
-          : null;
-
-    const restLoaded = await carregarRestaurantePedido(admin, restauranteId);
-    if (!restLoaded.ok) {
-      logStructured(
-        restLoaded.status >= 500 ? "error" : "warn",
-        "api.pedidos.vitrine.restaurante_load_failed",
-        {
-          restauranteId,
-          status: restLoaded.status,
-        },
-      );
-      return NextResponse.json(
-        { error: restLoaded.error },
-        { status: restLoaded.status },
-      );
-    }
-    const row = restLoaded.row;
-
-    if (row.vitrine_fechada === true) {
-      return NextResponse.json(
-        { error: "Restaurante fechado para novos pedidos." },
-        { status: 409 },
-      );
-    }
-
-    if (tipoEntrega === "retirada" && row.retirada_balcao !== true) {
-      return NextResponse.json(
-        { error: "Este restaurante não oferece retirada no balcão." },
-        { status: 400 },
-      );
-    }
-
-    const observacoesBase = sanitizeDbPlainText(
-      sanitizeObservacoesVitrine(
-        (tipoEntrega === "retirada" ? PREFIXO_OBS_BALCAO : "") + obsSan,
-        OBSERVACOES_VITRINE_MAX_TOTAL_CHARS,
-      ),
-      OBSERVACOES_VITRINE_MAX_TOTAL_CHARS,
-    );
-
-    const funcionamento_semana =
-      parseFuncionamentoSemana(row.funcionamento_semana) ?? undefined;
-    const horarioStub = { funcionamento_semana } as Restaurante;
-    if (statusAberturaPorRelogio(horarioStub) === "fechado") {
-      return NextResponse.json(
-        { error: "Fora do horário de atendimento." },
-        { status: 409 },
-      );
-    }
-
-    const pratoIds = [...new Set(linhas.map((l) => l.pratoId))];
-    const { data: pratosRows, error: prErr } = await admin
-      .from("pratos")
-      .select("id, nome, preco, status, categoria")
-      .eq("restaurante_id", restauranteId)
-      .eq("status", "ativo")
-      .in("id", pratoIds)
-      .abortSignal(dbSignal());
-
-    if (prErr) {
-      if (isSupabaseQueryTimeoutLike(prErr)) {
-        logStructured("error", "api.pedidos.vitrine.pratos_select_timeout", {
+      if (!restauranteId || !cliente || cliente.length < 2) {
+        logStructured("warn", "api.pedidos.vitrine.validation_cliente", {
           restauranteId,
         });
         return NextResponse.json(
-          { error: "O servidor demorou a validar os itens. Tente novamente." },
-          { status: 504 },
+          { error: "Dados do cliente inválidos." },
+          { status: 400 },
         );
       }
-      logStructured("error", "api.pedidos.vitrine.pratos_select", {
-        restauranteId,
-        message: prErr.message,
-        code: prErr.code,
-      });
-      return NextResponse.json(
-        { error: "Não foi possível validar os itens do pedido." },
-        { status: 500 },
-      );
-    }
-
-    const pratosPorId = new Map<string, PratoPrecoRow>();
-    for (const r of pratosRows ?? []) {
-      const p = r as Record<string, unknown>;
-      const id = typeof p.id === "string" ? p.id : "";
-      if (!id) continue;
-      pratosPorId.set(id, {
-        id,
-        nome: typeof p.nome === "string" ? p.nome : "",
-        preco: typeof p.preco === "number" ? p.preco : Number(p.preco),
-        status: typeof p.status === "string" ? p.status : "",
-        categoria: typeof p.categoria === "string" ? p.categoria : null,
-      });
-    }
-
-    const tot = computeTotaisPedidoVitrine({
-      linhas,
-      pratosPorId,
-      tipoEntrega,
-      taxaFixa: taxaFixaNum(row.taxa_entrega),
-      zonasRaw: row.taxas_entrega_zonas,
-      zonaEntregaId,
-    });
-
-    if (!tot.ok) {
-      logStructured("warn", "api.pedidos.vitrine.calculo_falhou", {
-        restauranteId,
-        error: tot.error,
-        linhas: linhas.length,
-      });
-      return NextResponse.json({ error: tot.error }, { status: 400 });
-    }
-
-    const pagamento = mapPagamentoPedidoDb(forma);
-
-    const { data: inserted, error: insErr } = await admin
-      .from("pedidos")
-      .insert({
-        restaurante_id: restauranteId,
-        cliente,
-        telefone,
-        total: tot.total,
-        pagamento,
-        coluna: "recebidos",
-        observacoes: observacoesBase,
-        itens: tot.linhasItensTexto,
-        motoboy: "",
-      })
-      .select("id")
-      .abortSignal(dbSignal())
-      .maybeSingle();
-
-    if (insErr) {
-      if (isSupabaseQueryTimeoutLike(insErr)) {
-        logStructured("error", "api.pedidos.vitrine.insert_timeout", {
+      if (!isUuid(restauranteId)) {
+        logStructured("warn", "api.pedidos.vitrine.validation_restaurante_id", {
           restauranteId,
+        });
+        return NextResponse.json(
+          { error: "Identificador do estabelecimento inválido." },
+          { status: 400 },
+        );
+      }
+      if (!telefone || telefone.length < 8) {
+        logStructured("warn", "api.pedidos.vitrine.validation_telefone", {
+          restauranteId,
+        });
+        return NextResponse.json(
+          { error: "Telefone inválido." },
+          { status: 400 },
+        );
+      }
+      if (
+        forma !== "dinheiro" &&
+        forma !== "pix" &&
+        forma !== "cartao_debito" &&
+        forma !== "cartao_credito"
+      ) {
+        logStructured("warn", "api.pedidos.vitrine.validation_pagamento", {
+          restauranteId,
+        });
+        return NextResponse.json(
+          { error: "Forma de pagamento inválida." },
+          { status: 400 },
+        );
+      }
+
+      const linhas = parseLinhasPedidoVitrine(body);
+      if (!linhas) {
+        logStructured("warn", "api.pedidos.vitrine.validation_linhas", {
+          restauranteId,
+          reason: "linhas_invalidas_ou_ausentes",
         });
         return NextResponse.json(
           {
-            error: "O servidor demorou a registrar o pedido. Tente novamente.",
+            error:
+              "Lista de itens inválida. Envie `linhas: [{ pratoId, quantidade }]` e atualize a página se necessário.",
           },
-          { status: 504 },
+          { status: 400 },
         );
       }
-      logStructured("error", "api.pedidos.vitrine.insert", {
-        restauranteId,
-        code: insErr.code,
-        message: insErr.message,
-      });
-      return NextResponse.json(
-        {
-          error:
-            "Não foi possível registrar o pedido. Tente novamente em instantes.",
-        },
-        { status: 500 },
+
+      const obsRaw =
+        typeof body.observacoes === "string" ? body.observacoes : "";
+      const obsSan = sanitizeObservacoesVitrine(
+        obsRaw,
+        OBSERVACOES_VITRINE_MAX_USER_CHARS,
       );
-    }
 
-    logStructured("info", "api.pedidos.vitrine.ok", {
-      restauranteId,
-      pedidoId: inserted?.id ?? null,
-      subtotalCalculado: tot.subtotal,
-      taxaEntregaCalculada: tot.taxa,
-      totalCalculado: tot.total,
-      linhas: linhas.length,
-    });
+      const tipoEntrega =
+        body.tipoEntrega === "retirada" || body.tipoEntrega === "entrega"
+          ? body.tipoEntrega
+          : "entrega";
 
-    return NextResponse.json(
-      { ok: true, id: inserted?.id ?? null },
-      { headers: { "Content-Type": "application/json; charset=utf-8" } },
-    );
-  } catch (unexpected: unknown) {
-    logStructured("error", "api.pedidos.vitrine.unexpected", {
-      message:
-        unexpected instanceof Error ? unexpected.message : String(unexpected),
-    });
-    return NextResponse.json(
-      { error: "Erro interno ao processar o pedido." },
-      {
-        status: 500,
-        headers: { "Content-Type": "application/json; charset=utf-8" },
-      },
-    );
-  }
+      const zonaRaw = body.zonaEntregaId;
+      const zonaEntregaId =
+        zonaRaw === null || zonaRaw === undefined
+          ? null
+          : typeof zonaRaw === "string" && isUuid(zonaRaw.trim())
+            ? zonaRaw.trim()
+            : null;
+
+      const restLoaded = await carregarRestaurantePedido(admin, restauranteId);
+      if (!restLoaded.ok) {
+        logStructured(
+          restLoaded.status >= 500 ? "error" : "warn",
+          "api.pedidos.vitrine.restaurante_load_failed",
+          {
+            restauranteId,
+            status: restLoaded.status,
+          },
+        );
+        return NextResponse.json(
+          { error: restLoaded.error },
+          { status: restLoaded.status },
+        );
+      }
+      const row = restLoaded.row;
+
+      if (row.vitrine_fechada === true) {
+        return NextResponse.json(
+          { error: "Restaurante fechado para novos pedidos." },
+          { status: 409 },
+        );
+      }
+
+      if (tipoEntrega === "retirada" && row.retirada_balcao !== true) {
+        return NextResponse.json(
+          { error: "Este restaurante não oferece retirada no balcão." },
+          { status: 400 },
+        );
+      }
+
+      const observacoesBase = sanitizeDbPlainText(
+        sanitizeObservacoesVitrine(
+          (tipoEntrega === "retirada" ? PREFIXO_OBS_BALCAO : "") + obsSan,
+          OBSERVACOES_VITRINE_MAX_TOTAL_CHARS,
+        ),
+        OBSERVACOES_VITRINE_MAX_TOTAL_CHARS,
+      );
+
+      const funcionamento_semana =
+        parseFuncionamentoSemana(row.funcionamento_semana) ?? undefined;
+      const horarioStub = { funcionamento_semana } as Restaurante;
+      if (statusAberturaPorRelogio(horarioStub) === "fechado") {
+        return NextResponse.json(
+          { error: "Fora do horário de atendimento." },
+          { status: 409 },
+        );
+      }
+
+      const pratoIds = [...new Set(linhas.map((l) => l.pratoId))];
+      const { data: pratosRows, error: prErr } = await admin
+        .from("pratos")
+        .select("id, nome, preco, status, categoria")
+        .eq("restaurante_id", restauranteId)
+        .eq("status", "ativo")
+        .in("id", pratoIds)
+        .abortSignal(dbSignal());
+
+      if (prErr) {
+        if (isSupabaseQueryTimeoutLike(prErr)) {
+          logStructured("error", "api.pedidos.vitrine.pratos_select_timeout", {
+            restauranteId,
+          });
+          return NextResponse.json(
+            {
+              error: "O servidor demorou a validar os itens. Tente novamente.",
+            },
+            { status: 504 },
+          );
+        }
+        logStructured("error", "api.pedidos.vitrine.pratos_select", {
+          restauranteId,
+          message: prErr.message,
+          code: prErr.code,
+        });
+        return NextResponse.json(
+          { error: "Não foi possível validar os itens do pedido." },
+          { status: 500 },
+        );
+      }
+
+      const pratosPorId = new Map<string, PratoPrecoRow>();
+      for (const r of pratosRows ?? []) {
+        const p = r as Record<string, unknown>;
+        const id = typeof p.id === "string" ? p.id : "";
+        if (!id) continue;
+        pratosPorId.set(id, {
+          id,
+          nome: typeof p.nome === "string" ? p.nome : "",
+          preco: typeof p.preco === "number" ? p.preco : Number(p.preco),
+          status: typeof p.status === "string" ? p.status : "",
+          categoria: typeof p.categoria === "string" ? p.categoria : null,
+        });
+      }
+
+      const tot = computeTotaisPedidoVitrine({
+        linhas,
+        pratosPorId,
+        tipoEntrega,
+        taxaFixa: taxaFixaNum(row.taxa_entrega),
+        zonasRaw: row.taxas_entrega_zonas,
+        zonaEntregaId,
+      });
+
+      if (!tot.ok) {
+        logStructured("warn", "api.pedidos.vitrine.calculo_falhou", {
+          restauranteId,
+          error: tot.error,
+          linhas: linhas.length,
+        });
+        return NextResponse.json({ error: tot.error }, { status: 400 });
+      }
+
+      const pagamento = mapPagamentoPedidoDb(forma);
+
+      const { data: inserted, error: insErr } = await admin
+        .from("pedidos")
+        .insert({
+          restaurante_id: restauranteId,
+          cliente,
+          telefone,
+          total: tot.total,
+          pagamento,
+          coluna: "recebidos",
+          observacoes: observacoesBase,
+          itens: tot.linhasItensTexto,
+          motoboy: "",
+        })
+        .select("id")
+        .abortSignal(dbSignal())
+        .maybeSingle();
+
+      if (insErr) {
+        if (isSupabaseQueryTimeoutLike(insErr)) {
+          logStructured("error", "api.pedidos.vitrine.insert_timeout", {
+            restauranteId,
+          });
+          return NextResponse.json(
+            {
+              error:
+                "O servidor demorou a registrar o pedido. Tente novamente.",
+            },
+            { status: 504 },
+          );
+        }
+        logStructured("error", "api.pedidos.vitrine.insert", {
+          restauranteId,
+          code: insErr.code,
+          message: insErr.message,
+        });
+        return NextResponse.json(
+          {
+            error:
+              "Não foi possível registrar o pedido. Tente novamente em instantes.",
+          },
+          { status: 500 },
+        );
+      }
+
+      logStructured("info", "api.pedidos.vitrine.ok", {
+        restauranteId,
+        pedidoId: inserted?.id ?? null,
+        subtotalCalculado: tot.subtotal,
+        taxaEntregaCalculada: tot.taxa,
+        totalCalculado: tot.total,
+        linhas: linhas.length,
+      });
+
+      return NextResponse.json(
+        { ok: true, id: inserted?.id ?? null },
+        { headers: { "Content-Type": "application/json; charset=utf-8" } },
+      );
+    },
+  );
 }

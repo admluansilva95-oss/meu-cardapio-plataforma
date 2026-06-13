@@ -28,7 +28,20 @@ function deepSanitizeForProduction(input: unknown): unknown {
   const out: Record<string, unknown> = {};
   for (const [k, v] of Object.entries(obj)) {
     const flat = k.replace(/[-_]/g, "").toLowerCase();
-    if (SENSITIVE_KEY.test(k) || SENSITIVE_KEY.test(flat) || flat.endsWith("password") || flat.endsWith("token")) {
+    if (/^(message|details|hint)$/i.test(k)) {
+      out[k] = "[REDACTED]";
+      continue;
+    }
+    if (k === "error" && typeof v === "string") {
+      out[k] = "[REDACTED]";
+      continue;
+    }
+    if (
+      SENSITIVE_KEY.test(k) ||
+      SENSITIVE_KEY.test(flat) ||
+      flat.endsWith("password") ||
+      flat.endsWith("token")
+    ) {
       out[k] = "[REDACTED]";
     } else {
       out[k] = deepSanitizeForProduction(v);
