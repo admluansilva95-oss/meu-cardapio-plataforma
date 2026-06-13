@@ -4,10 +4,10 @@
 -- Cole e execute este arquivo inteiro no SQL Editor (Database → SQL Editor).
 --
 -- O que este script cria:
---   • public.restaurantes   (tenant / cardápio; owner_id → auth.users)
---   • public.pratos         (itens do cardápio — no app não existe "produtos")
---   • public.pedidos        (esteira Kanban no admin)
---   • public.assinaturas    (billing Stripe; restaurante_id → restaurantes)
+--   - public.restaurantes   (tenant / cardápio; owner_id → auth.users)
+--   - public.pratos         (itens do cardápio — no app não existe "produtos")
+--   - public.pedidos        (esteira Kanban no admin)
+--   - public.assinaturas    (billing Stripe; restaurante_id → restaurantes)
 --
 -- Usuários de login: tabela auth.users (Supabase Auth). Não há public.usuarios.
 --

@@ -219,7 +219,7 @@ function contentTypeSomenteAsciiPorExt(ext: string): string {
 }
 
 /**
- * Nomes com caracteres fora de Latin-1 (ex.: "•foto.png", emojis) geram
+ * Nomes com caracteres fora de Latin-1 (ex.: nome de ficheiro com bullet U+2022, emojis) geram
  * `TypeError: Cannot convert argument to a ByteString` no multipart do `fetch` (Storage).
  * Copiamos os bytes para um novo `File` com nome e `type` 100% ASCII.
  */

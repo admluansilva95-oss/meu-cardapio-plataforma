@@ -5,7 +5,7 @@ import { sanitizeUserFreeText } from "@/lib/utils/sanitize-strings";
  * Constrói `Headers` só com pares Latin-1 seguros.
  *
  * **Nunca** use `new Headers(init)` com `init` vindo de SDKs (PostgREST, etc.): se algum valor
- * tiver `•` (U+2022) ou fora de Latin-1, o Chromium lança `TypeError: ByteString` **na construção**
+ * tiver U+2022 (bullet) ou fora de Latin-1, o Chromium lança `TypeError: ByteString` **na construção**
  * — antes de qualquer `forEach` poder sanitizar.
  */
 export function cloneHeadersLatin1Safe(source?: HeadersInit | null): Headers {
@@ -53,6 +53,12 @@ export function cloneHeadersLatin1Safe(source?: HeadersInit | null): Headers {
 
   return fixed;
 }
+
+/**
+ * Cabeçalhos de **pedido** HTTP: use sempre isto (ou `sanitizeFetchInit` / `initJsonPost`) para o wire.
+ * Alias semântico de `cloneHeadersLatin1Safe` — evita `new Headers(init)` com texto não Latin-1.
+ */
+export const wireSafeHeadersInit = cloneHeadersLatin1Safe;
 
 function sanitizeJsonBodyString(raw: string): string {
   const t = raw.trim();
@@ -151,7 +157,7 @@ function sanitizeRequestInitByteStrings(out: RequestInit): void {
 
 /**
  * Ajusta `RequestInit` para evitar `TypeError: ByteString` ao chamar `fetch`:
- * cabeçalhos só podem ser Latin-1 em alguns runtimes; corpo JSON com •, emojis, etc.
+ * cabeçalhos só podem ser Latin-1 em alguns runtimes; corpo JSON com tipografia fora de Latin-1 ou emojis
  * também pode disparar o erro quando o runtime trata o payload de forma estrita.
  */
 export function sanitizeFetchInit(init: RequestInit): RequestInit {

@@ -730,7 +730,7 @@ export default function PublicCardapioPage() {
       totalGeral,
     } as const;
 
-    /** Só Latin-1: nunca enviar o modelo com `•` no JSON da API. */
+    /** Só Latin-1: nunca enviar o modelo com bullet U+2022 no JSON da API. */
     const observacoesApi = montarTextoPedidoResumoParaApi(payloadPedido);
 
     const linhasApi = cart.map(({ prato, quantidade }) => ({

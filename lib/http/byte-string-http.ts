@@ -3,7 +3,7 @@ import { latin1SafeString } from "@/lib/utils/sanitize-strings";
 
 /**
  * Camada HTTP (reason phrase, `Set-Cookie`, alguns cabeçalhos) exige **ByteString / Latin-1**.
- * Mensagens com `•` (U+2022) ou Unicode devem ir **apenas** no corpo JSON — nunca em `statusText`
+ * Mensagens com U+2022 (bullet) ou Unicode devem ir **apenas** no corpo JSON — nunca em `statusText`
  * nem em valores de cookie no wire.
  */
 
@@ -48,7 +48,7 @@ function fallbackReasonPhrase(code: number): string {
 
 /**
  * Texto seguro para `ResponseInit.statusText`: só ASCII fixo por status.
- * Nunca repasse `xhr.statusText` nem mensagens de erro do servidor — podem começar com `•`.
+ * Nunca repasse `xhr.statusText` nem mensagens de erro do servidor — podem começar com U+2022.
  */
 export function httpReasonPhraseForStatus(status: number): string {
   const code = Math.trunc(Number(status));

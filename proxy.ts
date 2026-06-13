@@ -2,14 +2,20 @@ import { createServerClient, type CookieOptions } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
 import { isValidSlug } from "@/lib/billing/slug";
 import { latin1CookieWrite } from "@/lib/http/byte-string-http";
+import { nextResponseWithByteStringSafeWire } from "@/lib/http/next-response-wire-safe";
 
 type CookieToSet = { name: string; value: string; options: CookieOptions };
+
+/** Última camada: cabeçalhos + statusText Latin-1 / ASCII antes de sair do middleware. */
+function out(res: NextResponse): NextResponse {
+  return nextResponseWithByteStringSafeWire(res);
+}
 
 export async function proxy(request: NextRequest) {
   const { pathname, searchParams } = request.nextUrl;
 
   if (pathname !== "/admin") {
-    return NextResponse.next();
+    return out(NextResponse.next());
   }
 
   // Uma única instância: `setAll` pode ser chamado várias vezes (ex.: refresh).
@@ -54,7 +60,7 @@ export async function proxy(request: NextRequest) {
     login.pathname = "/login";
     const nextPath = `${pathname}${request.nextUrl.search}`;
     login.searchParams.set("next", nextPath);
-    return NextResponse.redirect(login);
+    return out(NextResponse.redirect(login));
   }
 
   const { data: assinaturasValidas, error: assinaturasError } = await supabase
@@ -75,7 +81,7 @@ export async function proxy(request: NextRequest) {
       "error_description",
       "Não foi possível verificar sua assinatura. Tente novamente em instantes ou entre em contato com o suporte.",
     );
-    return NextResponse.redirect(fallback);
+    return out(NextResponse.redirect(fallback));
   }
 
   // Stripe success_url: /admin?checkout=success&success=true — libera acesso antes do
@@ -88,7 +94,7 @@ export async function proxy(request: NextRequest) {
     cadastro.pathname = "/cadastro";
     cadastro.search = "";
     cadastro.searchParams.set("billing", "required");
-    return NextResponse.redirect(cadastro);
+    return out(NextResponse.redirect(cadastro));
   }
 
   const slugParam = searchParams.get("slug")?.trim();
@@ -96,7 +102,7 @@ export async function proxy(request: NextRequest) {
     if (!isValidSlug(slugParam)) {
       const url = request.nextUrl.clone();
       url.searchParams.delete("slug");
-      return NextResponse.redirect(url);
+      return out(NextResponse.redirect(url));
     }
 
     const { data: alvo, error: alvoErr } = await supabase
@@ -109,11 +115,11 @@ export async function proxy(request: NextRequest) {
       console.error("[proxy/admin] slug tenant:", alvoErr.message);
       const url = request.nextUrl.clone();
       url.searchParams.delete("slug");
-      return NextResponse.redirect(url);
+      return out(NextResponse.redirect(url));
     }
 
     if (alvo?.owner_id === user.id) {
-      return response;
+      return out(response);
     }
 
     const url = request.nextUrl.clone();
@@ -128,19 +134,19 @@ export async function proxy(request: NextRequest) {
 
     if (meuErr) {
       console.error("[proxy/admin] meu restaurante:", meuErr.message);
-      return NextResponse.redirect(url);
+      return out(NextResponse.redirect(url));
     }
     if (meu?.slug) {
       url.searchParams.set("slug", meu.slug);
     }
-    return NextResponse.redirect(url);
+    return out(NextResponse.redirect(url));
   }
 
   const envSlug = process.env.NEXT_PUBLIC_ADMIN_RESTAURANT_SLUG?.trim();
   if (envSlug) {
     const url = request.nextUrl.clone();
     url.searchParams.set("slug", envSlug);
-    return NextResponse.redirect(url);
+    return out(NextResponse.redirect(url));
   }
 
   const { data: restaurante, error } = await supabase
@@ -153,16 +159,16 @@ export async function proxy(request: NextRequest) {
 
   if (error) {
     console.error("[proxy/admin] restaurantes:", error.message);
-    return response;
+    return out(response);
   }
 
   if (restaurante?.slug) {
     const url = request.nextUrl.clone();
     url.searchParams.set("slug", restaurante.slug);
-    return NextResponse.redirect(url);
+    return out(NextResponse.redirect(url));
   }
 
-  return response;
+  return out(response);
 }
 
 export const config = {

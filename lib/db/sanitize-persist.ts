@@ -1,7 +1,7 @@
 import { deepSanitizeStringsForWire, sanitizeUserFreeText } from "@/lib/utils/sanitize-strings";
 
 /**
- * Texto livre antes de gravar em `varchar` / `text` (remove •, tipografia, > Latin-1).
+ * Texto livre antes de gravar em `varchar` / `text` (remove bullet U+2022, tipografia, > Latin-1).
  * Aplica `maxLen` após higienizar para respeitar limites de coluna.
  */
 export function sanitizeDbPlainText(raw: string, maxLen?: number): string {

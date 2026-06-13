@@ -21,6 +21,9 @@ jobs:
     - name: Install dependencies
       run: npm ci
 
+    - name: Latin-1 / ByteString gate (fonte)
+      run: npm run check:wire-latin1
+
     - name: Install Playwright Browsers
       run: npx playwright install --with-deps chromium
 

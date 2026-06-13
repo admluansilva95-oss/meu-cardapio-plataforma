@@ -15,7 +15,7 @@ export function mensagemUploadStorageAmigavel(err: unknown): string {
     /bytestring|cannot convert argument to a bytestring|greater than 255/i.test(msg)
   ) {
     return (
-      "O navegador bloqueou o envio por causa de caracteres especiais (ex.: • no nome do arquivo ou metadados da foto). " +
+      "O navegador bloqueou o envio por causa de caracteres especiais (ex.: bullet U+2022 no nome do arquivo ou metadados da foto). " +
       "Recarregue a página e tente de novo; se continuar, renomeie a imagem no aparelho para usar só letras, números e extensão .jpg ou .png."
     );
   }

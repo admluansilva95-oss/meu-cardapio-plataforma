@@ -50,7 +50,7 @@ function linhasItensComMarcador(
   itens: CarrinhoItem[],
   marcador: "bullet" | "ascii",
 ): string[] {
-  const prefix = "- "; /* sempre ASCII: U+2022 (•) quebra ByteString no Chrome em alguns fluxos */
+  const prefix = "- "; /* sempre ASCII: U+2022 bullet quebra ByteString no Chrome em alguns fluxos */
   const linhas: string[] = [];
   for (const { prato, quantidade, observacoes } of itens) {
     const unit = formatBRL(prato.preco);
@@ -65,7 +65,7 @@ function linhasItensComMarcador(
 
 /**
  * Resumo do pedido para **persistência / fetch** (painel, API).
- * Sem `•` (U+2022), sem emojis: só Latin-1 seguro para corpo JSON e stacks ByteString.
+ * Sem bullet U+2022, sem emojis: só Latin-1 seguro para corpo JSON e stacks ByteString.
  */
 export function montarTextoPedidoResumoParaApi(p: PedidoWhatsAppFormatadoInput): string {
   const tipoLabel =
@@ -113,7 +113,7 @@ export function montarTextoPedidoResumoParaApi(p: PedidoWhatsAppFormatadoInput):
 
 /**
  * Texto formatado para **abrir no WhatsApp** (`wa.me` / `window.open`).
- * Só caracteres Latin-1 (sem U+2022 `•`, sem emojis) para evitar `ByteString` no Chrome.
+ * Só caracteres Latin-1 (sem bullet U+2022, sem emojis) para evitar `ByteString` no Chrome.
  */
 export function montarTextoPedidoWhatsAppFormatado(p: PedidoWhatsAppFormatadoInput): string {
   const tipoLabel =
