@@ -1,12 +1,13 @@
 /** E-mail prático (RFC completa no servidor fica a cargo do Supabase). */
-const EMAIL_RE =
-  /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 const EMAIL_MAX = 254;
 const PASSWORD_MIN = 6;
 const PASSWORD_MAX = 128;
 
-export function validarEmailCliente(raw: string): { ok: true; email: string } | { ok: false; mensagem: string } {
+export function validarEmailCliente(
+  raw: string,
+): { ok: true; email: string } | { ok: false; mensagem: string } {
   const email = raw.trim().toLowerCase();
   if (!email) return { ok: false, mensagem: "Informe o e-mail." };
   if (email.length > EMAIL_MAX) return { ok: false, mensagem: "E-mail muito longo." };
@@ -24,54 +25,96 @@ export function validarSenhaCliente(raw: string): { ok: true } | { ok: false; me
   return { ok: true };
 }
 
-/** Mensagem amigável para erros comuns do `signUp` / `signInWithPassword` do Supabase. */
-export function mensagemErroSupabaseAuthAmigavel(message: string, code?: string): string {
-  const m = message.toLowerCase();
-  const c = (code ?? "").toLowerCase();
+const FALLBACK_AUTH =
+  "Não foi possível concluir a autenticação. Atualize a página (Ctrl+F5 ou Cmd+Shift+R), confirme o e-mail e a palavra-passe e tente novamente.";
 
-  if (
-    m.includes("already registered") ||
-    m.includes("user already exists") ||
-    m.includes("email address is already") ||
-    m.includes("already been registered") ||
-    c === "user_already_exists"
-  ) {
-    return "Este e-mail já está cadastrado. Use “Entrar” ou recuperação de senha.";
+const ERRO_DESCONHECIDO = "Erro desconhecido";
+
+/**
+ * Extrai texto seguro do primeiro argumento, aceitando string ou objeto estilo `{ message?: unknown }`.
+ * Ordem: `typeof error === "string" ? error : (error?.message ?? "Erro desconhecido")` com normalização.
+ */
+function normalizeAuthErrorMessage(error: unknown): string {
+  const raw =
+    typeof error === "string"
+      ? error
+      : String(
+          (error as { message?: unknown } | null | undefined)?.message ?? ERRO_DESCONHECIDO,
+        );
+  const trimmed = raw.trim();
+  return trimmed.length > 0 ? trimmed : ERRO_DESCONHECIDO;
+}
+
+/** Código de erro opcional: parâmetro explícito ou `code` no objeto passado como primeiro argumento. */
+function normalizeAuthErrorCode(code: unknown, messageSource: unknown): string {
+  if (code !== undefined && code !== null && String(code).trim().length > 0) {
+    return String(code).trim().toLowerCase();
   }
-  if (m.includes("invalid login credentials") || m.includes("invalid credentials")) {
-    return "E-mail ou senha incorretos. Verifique os dados ou use “Esqueci a senha” no Supabase.";
+  if (messageSource !== null && typeof messageSource === "object") {
+    const nested = (messageSource as { code?: unknown }).code;
+    if (nested !== undefined && nested !== null) {
+      return String(nested).trim().toLowerCase();
+    }
   }
-  if (m.includes("email not confirmed") || m.includes("confirm your email")) {
-    return "Confirme o e-mail antes de entrar (verifique a caixa de entrada e o spam).";
+  return "";
+}
+
+/**
+ * Mensagem amigável para erros comuns do `signUp` / `signInWithPassword` do Supabase.
+ * Não assume que `message` é string: aceita objeto com `message`/`code` (encadeamento opcional).
+ */
+export function mensagemErroSupabaseAuthAmigavel(message: unknown, code?: unknown): string {
+  try {
+    const resolved = normalizeAuthErrorMessage(message);
+    const m = resolved.toLowerCase();
+    const c = normalizeAuthErrorCode(code, message);
+
+    if (
+      m.includes("already registered") ||
+      m.includes("user already exists") ||
+      m.includes("email address is already") ||
+      m.includes("already been registered") ||
+      c === "user_already_exists"
+    ) {
+      return "Este e-mail já está cadastrado. Use “Entrar” ou recuperação de senha.";
+    }
+    if (m.includes("invalid login credentials") || m.includes("invalid credentials")) {
+      return "E-mail ou senha incorretos. Verifique os dados ou use “Esqueci a senha” no Supabase.";
+    }
+    if (m.includes("email not confirmed") || m.includes("confirm your email")) {
+      return "Confirme o e-mail antes de entrar (verifique a caixa de entrada e o spam).";
+    }
+    if (m.includes("password") && m.includes("weak")) {
+      return "Senha fraca demais para a política do projeto. Use letras e números e aumente o tamanho.";
+    }
+    if (m.includes("rate limit") || m.includes("too many requests")) {
+      return "Muitas tentativas. Aguarde um minuto e tente novamente.";
+    }
+    if (m.includes("no api key") || m.includes("api key found")) {
+      return "O site não está ligado ao servidor de autenticação. As credenciais públicas do Supabase precisam de ser configuradas no deploy (URL e chave anónima).";
+    }
+    if (m.includes("cors") || m.includes("blocked by cors")) {
+      return "O navegador bloqueou o pedido. Confirme o domínio em Supabase → Authentication → URL Configuration (Site URL e Redirect URLs).";
+    }
+    if (m.includes("aborted") || m.includes("abort")) {
+      return "O pedido foi interrompido. Tente novamente sem sair desta página.";
+    }
+    if (m.includes("timeout") || m.includes("timed out")) {
+      return "O servidor demorou a responder. Aguarde um instante e tente novamente.";
+    }
+    if (
+      m.includes("failed to fetch") ||
+      m.includes("networkerror") ||
+      m.includes("network request failed") ||
+      m.includes("load failed")
+    ) {
+      return "Não foi possível contactar o servidor de autenticação. Verifique a ligação à internet ou tente mais tarde.";
+    }
+    if (m.includes("jwt") || m.includes("invalid grant") || m.includes("session")) {
+      return "A sessão é inválida ou expirou. Atualize a página e faça login novamente.";
+    }
+    return FALLBACK_AUTH;
+  } catch {
+    return FALLBACK_AUTH;
   }
-  if (m.includes("password") && m.includes("weak")) {
-    return "Senha fraca demais para a política do projeto. Use letras e números e aumente o tamanho.";
-  }
-  if (m.includes("rate limit") || m.includes("too many requests")) {
-    return "Muitas tentativas. Aguarde um minuto e tente novamente.";
-  }
-  if (m.includes("no api key") || m.includes("api key found")) {
-    return "O site não está ligado ao servidor de autenticação. As credenciais públicas do Supabase precisam de ser configuradas no deploy (URL e chave anónima).";
-  }
-  if (m.includes("cors") || m.includes("blocked by cors")) {
-    return "O navegador bloqueou o pedido. Confirme o domínio em Supabase → Authentication → URL Configuration (Site URL e Redirect URLs).";
-  }
-  if (m.includes("aborted") || m.includes("abort")) {
-    return "O pedido foi interrompido. Tente novamente sem sair desta página.";
-  }
-  if (m.includes("timeout") || m.includes("timed out")) {
-    return "O servidor demorou a responder. Aguarde um instante e tente novamente.";
-  }
-  if (
-    m.includes("failed to fetch") ||
-    m.includes("networkerror") ||
-    m.includes("network request failed") ||
-    m.includes("load failed")
-  ) {
-    return "Não foi possível contactar o servidor de autenticação. Verifique a ligação à internet ou tente mais tarde.";
-  }
-  if (m.includes("jwt") || m.includes("invalid grant") || m.includes("session")) {
-    return "A sessão é inválida ou expirou. Atualize a página e faça login novamente.";
-  }
-  return "Não foi possível concluir a autenticação. Atualize a página (Ctrl+F5 ou Cmd+Shift+R), confirme o e-mail e a palavra-passe e tente novamente.";
 }

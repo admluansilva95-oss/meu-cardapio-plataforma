@@ -346,6 +346,7 @@ export async function POST(request: Request) {
     "/api/pedidos/vitrine",
     "api.pedidos.vitrine.fatal",
     async ({ request, requestId }) => {
+      try {
       const admin = createAdminSupabaseClient();
       if (!admin) {
         logStructured("error", "api.pedidos.vitrine.no_service_role", { requestId });
@@ -362,11 +363,27 @@ export async function POST(request: Request) {
       let body: BodyVitrinePedido;
       let rawBody: Record<string, unknown>;
       try {
-        rawBody = (await request.json()) as Record<string, unknown>;
+        const raw = await request.json();
+        if (raw === null || typeof raw !== "object" || Array.isArray(raw)) {
+          logStructured("warn", "api.pedidos.vitrine.invalid_body_shape", { requestId });
+          return jsonWithRequestId(
+            requestId,
+            {
+              error:
+                "O corpo deve ser um objeto JSON com os campos do pedido (ex.: restauranteId, cliente, linhas).",
+            },
+            400,
+          );
+        }
+        rawBody = raw as Record<string, unknown>;
         body = rawBody as BodyVitrinePedido;
       } catch {
         logStructured("warn", "api.pedidos.vitrine.invalid_json", { requestId });
-        return jsonWithRequestId(requestId, { error: "JSON inválido." }, 400);
+        return jsonWithRequestId(
+          requestId,
+          { error: "JSON inválido ou corpo vazio." },
+          400,
+        );
       }
 
       const idempotencyKey = resolveIdempotencyKey(request, rawBody);
@@ -662,6 +679,22 @@ export async function POST(request: Request) {
             504,
           );
         }
+        if (isSchemaOrUnknownColumnError(insErr)) {
+          logStructured("error", "api.pedidos.vitrine.insert_schema", {
+            restauranteId,
+            code: insErr.code ?? null,
+            requestId,
+          });
+          return jsonWithRequestId(
+            requestId,
+            {
+              error:
+                "O servidor precisa de uma migração na base de dados (tabela de pedidos desatualizada). Execute as migrações do repositório no Supabase e tente novamente.",
+              code: "schema_migration_required",
+            },
+            503,
+          );
+        }
         logStructured("error", "api.pedidos.vitrine.insert", {
           restauranteId,
           code: insErr.code,
@@ -693,6 +726,27 @@ export async function POST(request: Request) {
         { ok: true, id: inserted?.id ?? null },
         200,
       );
+    } catch (unexpected: unknown) {
+      const errName =
+        unexpected instanceof Error ? unexpected.name : typeof unexpected;
+      const errSummary =
+        unexpected instanceof Error
+          ? unexpected.message.slice(0, 500)
+          : String(unexpected).slice(0, 500);
+      logStructured("error", "api.pedidos.vitrine.unexpected_handler", {
+        requestId,
+        errName,
+        errSummary,
+      });
+      return jsonWithRequestId(
+        requestId,
+        {
+          error:
+            "Erro interno ao processar o pedido. Tente novamente em instantes.",
+        },
+        500,
+      );
+    }
     },
   );
 }

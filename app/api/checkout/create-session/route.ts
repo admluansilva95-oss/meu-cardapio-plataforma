@@ -82,7 +82,29 @@ export async function POST(request: NextRequest) {
       );
 
       try {
-        const body = (await request.json()) as CheckoutBody;
+        let body: CheckoutBody;
+        try {
+          const raw = await request.json();
+          if (raw === null || typeof raw !== "object" || Array.isArray(raw)) {
+            const res = jsonWithRequestId(
+              requestId,
+              {
+                error:
+                  "O corpo deve ser um objeto JSON com priceId, userId, slug e campos opcionais.",
+              },
+              400,
+            );
+            return applyAuthCookies(res, authCookieWrites);
+          }
+          body = raw as CheckoutBody;
+        } catch {
+          const res = jsonWithRequestId(
+            requestId,
+            { error: "JSON inválido ou corpo vazio." },
+            400,
+          );
+          return applyAuthCookies(res, authCookieWrites);
+        }
         const { priceId, userId, slug, restaurantName, whatsapp } = body;
 
         if (!priceId || typeof priceId !== "string") {
@@ -222,8 +244,29 @@ export async function POST(request: NextRequest) {
         const res = jsonWithRequestId(requestId, { url: result.url }, 200);
         return applyAuthCookies(res, authCookieWrites);
       } catch (err) {
+        const isJson =
+          err instanceof SyntaxError ||
+          (err instanceof Error &&
+            (err.message.toLowerCase().includes("json") ||
+              err.message.toLowerCase().includes("unexpected")));
+        if (isJson) {
+          logStructured("warn", "api.checkout.create_session.bad_json", {
+            requestId,
+          });
+          const res = jsonWithRequestId(
+            requestId,
+            { error: "JSON inválido ou corpo vazio." },
+            400,
+          );
+          return applyAuthCookies(res, authCookieWrites);
+        }
         logStructured("error", "api.checkout.create_session.unexpected", {
           errName: err instanceof Error ? err.name : "unknown",
+          errSummary:
+            err instanceof Error
+              ? err.message.slice(0, 400)
+              : String(err).slice(0, 400),
+          requestId,
         });
         const res = jsonWithRequestId(
           requestId,

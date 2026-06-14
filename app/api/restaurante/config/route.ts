@@ -93,8 +93,8 @@ function isSchemaColumnError(
   return false;
 }
 
-function isRlsError(message: string): boolean {
-  const m = message.toLowerCase();
+function isRlsError(message: unknown): boolean {
+  const m = String(message ?? "").toLowerCase();
   return (
     m.includes("row-level security") ||
     m.includes("42501") ||
@@ -124,10 +124,11 @@ function interpretUpdate(
 ): Interpret {
   const { data, error } = res;
   if (error) {
+    const msg = String(error.message ?? "");
     return {
       ok: false,
-      message: error.message,
-      code: isRlsError(error.message) ? "rls" : "other",
+      message: msg || "Erro ao atualizar dados no servidor.",
+      code: isRlsError(msg) ? "rls" : "other",
     };
   }
   if (!data?.length) {
@@ -223,11 +224,12 @@ export async function POST(request: NextRequest) {
     "/api/restaurante/config",
     "api.restaurante.config.fatal",
     async ({ requestId }) => {
+      const authCookieWrites: CookieToSet[] = [];
+      try {
       const cookieStore = await cookies();
       const sessionResponse = NextResponse.next({
         request: { headers: request.headers },
       });
-      const authCookieWrites: CookieToSet[] = [];
 
       const supabase = createServerClient(
         process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -293,11 +295,20 @@ export async function POST(request: NextRequest) {
       try {
         let body: ConfigBody;
         try {
-          body = (await request.json()) as ConfigBody;
+          const raw = await request.json();
+          if (raw === null || typeof raw !== "object" || Array.isArray(raw)) {
+            return jsonCfg(
+              requestId,
+              { error: "O corpo deve ser um objeto JSON com os campos esperados." },
+              400,
+              authCookieWrites,
+            );
+          }
+          body = raw as ConfigBody;
         } catch {
           return jsonCfg(
             requestId,
-            { error: "Corpo da requisição inválido." },
+            { error: "Corpo da requisição inválido (JSON malformado ou vazio)." },
             400,
             authCookieWrites,
           );
@@ -578,6 +589,23 @@ export async function POST(request: NextRequest) {
             .maybeSingle();
 
           if (selErr) {
+            if (isSchemaColumnError(selErr)) {
+              logStructured("warn", "api.restaurante.config.select_owner_schema", {
+                code: selErr.code ?? null,
+                requestId,
+              });
+              return jsonCfg(
+                requestId,
+                {
+                  error:
+                    "A base de dados está desatualizada em relação ao código (colunas em falta). Execute as migrações SQL do projeto no Supabase e tente novamente.",
+                  code: "schema_migration_required",
+                  migrationHint: MIGRATION_HINT,
+                },
+                503,
+                authCookieWrites,
+              );
+            }
             logStructured("error", "api.restaurante.config.select_owner", {
               code: selErr.code ?? null,
             });
@@ -662,10 +690,34 @@ export async function POST(request: NextRequest) {
       } catch (unexpected: unknown) {
         logStructured("error", "api.restaurante.config.unexpected", {
           errName: unexpected instanceof Error ? unexpected.name : "unknown",
+          errSummary:
+            unexpected instanceof Error
+              ? unexpected.message.slice(0, 400)
+              : String(unexpected).slice(0, 400),
+          requestId,
         });
         return jsonCfg(
           requestId,
           { error: "Erro interno ao salvar as configurações." },
+          500,
+          authCookieWrites,
+        );
+      }
+      } catch (fatal: unknown) {
+        logStructured("error", "api.restaurante.config.fatal_outer", {
+          errName: fatal instanceof Error ? fatal.name : typeof fatal,
+          errSummary:
+            fatal instanceof Error
+              ? fatal.message.slice(0, 400)
+              : String(fatal).slice(0, 400),
+          requestId,
+        });
+        return jsonCfg(
+          requestId,
+          {
+            error:
+              "Erro interno ao processar o pedido de configuração. Tente novamente em instantes.",
+          },
           500,
           authCookieWrites,
         );

@@ -266,11 +266,17 @@ async function enviarImagemAoBucketImagensPratos(
   const pasta = sanitizarSegmentoPathStorage(restauranteId, "Upload de foto do prato");
   const objectPath = `${pasta}/${crypto.randomUUID().replace(/-/g, "")}.${ext}`;
   const contentType = contentTypeSomenteAsciiPorExt(ext);
+  painelLog("upload.prato.start", {
+    restauranteId,
+    bytes: fileToSend.size,
+    objectPathSuffix: objectPath.slice(-24),
+  });
   const { error } = await supabase.storage
     .from(BUCKET_IMAGENS_PRATOS)
     .upload(objectPath, fileToSend, { contentType, cacheControl: "3600", upsert: false });
   if (error) {
     devClientError("Erro no Upload do Storage:", error);
+    painelError("upload.prato.failed", { restauranteId, message: error.message });
     throw error;
   }
   const { data } = supabase.storage.from(BUCKET_IMAGENS_PRATOS).getPublicUrl(objectPath);
@@ -280,8 +286,10 @@ async function enviarImagemAoBucketImagensPratos(
       `URL pública ausente após upload (objectPath=${objectPath}).`,
     );
     devClientError("Erro no Upload do Storage:", err);
+    painelError("upload.prato.no_public_url", { restauranteId, objectPath });
     throw err;
   }
+  painelLog("upload.prato.ok", { restauranteId, objectPathSuffix: objectPath.slice(-24) });
   return publicUrl;
 }
 
@@ -313,11 +321,17 @@ async function enviarLogoRestaurante(
   const pasta = sanitizarSegmentoPathStorage(restauranteId, "Upload de logo do restaurante");
   const objectPath = `${pasta}/${crypto.randomUUID().replace(/-/g, "")}.${ext}`;
   const contentType = contentTypeSomenteAsciiPorExt(ext);
+  painelLog("upload.logo.start", {
+    restauranteId,
+    bytes: fileToSend.size,
+    objectPathSuffix: objectPath.slice(-24),
+  });
   const { error } = await supabase.storage
     .from(BUCKET_RESTAURANT_LOGOS)
     .upload(objectPath, fileToSend, { contentType, cacheControl: "3600", upsert: false });
   if (error) {
     devClientError("Erro no Upload do Storage:", error);
+    painelError("upload.logo.failed", { restauranteId, message: error.message });
     throw error;
   }
   const { data } = supabase.storage.from(BUCKET_RESTAURANT_LOGOS).getPublicUrl(objectPath);
@@ -325,8 +339,10 @@ async function enviarLogoRestaurante(
   if (!publicUrl) {
     const err = new Error(`URL pública ausente após upload do logo (objectPath=${objectPath}).`);
     devClientError("Erro no Upload do Storage:", err);
+    painelError("upload.logo.no_public_url", { restauranteId, objectPath });
     throw err;
   }
+  painelLog("upload.logo.ok", { restauranteId, objectPathSuffix: objectPath.slice(-24) });
   return publicUrl;
 }
 
@@ -485,6 +501,23 @@ function mensagemParaColuna(p: Pedido, destino: KanbanCol): string {
 }
 
 const DRAG_MIME = "application/x-meu-cardapio-pedido-id";
+
+function painelLogsDetalhados(): boolean {
+  return (
+    typeof process !== "undefined" &&
+    (process.env.NODE_ENV !== "production" ||
+      process.env.NEXT_PUBLIC_ADMIN_PANEL_LOGS === "1")
+  );
+}
+
+function painelLog(tag: string, details: Record<string, unknown>): void {
+  if (!painelLogsDetalhados()) return;
+  console.log(`[admin:painel] ${tag}`, details);
+}
+
+function painelError(tag: string, details: Record<string, unknown>): void {
+  console.error(`[admin:painel] ${tag}`, details);
+}
 
 function AdminMissingSlugView() {
   useEffect(() => {
@@ -1263,6 +1296,12 @@ function AdminPageInner() {
   const [pedidosRealtimeOk, setPedidosRealtimeOk] = useState(true);
   /** Evita condição de corrida: só a última `loadData()` em voo aplica estado e limpa loading. */
   const loadDataSeqRef = useRef(0);
+  /** Resolução automática de `?slug=` quando o painel abre sem slug na URL. */
+  const slugResolveSeqRef = useRef(0);
+  /** Pedido de diagnóstico (service role) por `restaurante.id`. */
+  const diagnosticsSeqRef = useRef(0);
+  /** Inscrição Realtime de pedidos — ignora callbacks de montagens anteriores. */
+  const realtimeMountRef = useRef(0);
 
   useEffect(() => {
     return () => {
@@ -1279,8 +1318,10 @@ function AdminPageInner() {
   useEffect(() => {
     if (tenantSlug) return;
 
+    const resolveGen = ++slugResolveSeqRef.current;
     let cancelled = false;
     setResolvingSlug(true);
+    painelLog("slug_resolve.start", { resolveGen });
 
     void (async () => {
       const {
@@ -1288,7 +1329,16 @@ function AdminPageInner() {
       } = await withRetry(async () => supabase.auth.getUser(), {
         shouldRetry: (r) => isRetryableSupabaseError(r.error),
       });
-      if (!user || cancelled) {
+      if (cancelled || resolveGen !== slugResolveSeqRef.current) {
+        painelLog("slug_resolve.skip_stale", {
+          resolveGen,
+          current: slugResolveSeqRef.current,
+          phase: "after_get_user",
+          cancelled,
+        });
+        return;
+      }
+      if (!user) {
         setResolvingSlug(false);
         return;
       }
@@ -1305,11 +1355,18 @@ function AdminPageInner() {
         { shouldRetry: (r) => isRetryableSupabaseError(r.error) },
       );
 
-      if (cancelled) return;
+      if (cancelled || resolveGen !== slugResolveSeqRef.current) {
+        painelLog("slug_resolve.skip_stale", {
+          resolveGen,
+          current: slugResolveSeqRef.current,
+          phase: "after_restaurantes_query",
+          cancelled,
+        });
+        return;
+      }
 
       if (!error && data?.slug) {
-        // Preserva ?checkout=success da volta do Stripe; senão o proxy redireciona
-        // para /cadastro antes do webhook gravar a assinatura (parece “travado”).
+        painelLog("slug_resolve.redirect", { resolveGen, slug: data.slug });
         const next = new URL("/admin", window.location.origin);
         next.searchParams.set("slug", data.slug);
         const cur = new URLSearchParams(window.location.search);
@@ -1323,6 +1380,7 @@ function AdminPageInner() {
         return;
       }
 
+      if (resolveGen !== slugResolveSeqRef.current) return;
       setResolvingSlug(false);
     })();
 
@@ -1334,6 +1392,7 @@ function AdminPageInner() {
   const loadData = useCallback(async (opts?: { soft?: boolean }) => {
     const seq = ++loadDataSeqRef.current;
     const isSoft = Boolean(opts?.soft);
+    painelLog("loadData.start", { seq, tenantSlug: tenantSlug ?? "", soft: isSoft });
 
     if (!tenantSlug) {
       if (seq === loadDataSeqRef.current) {
@@ -1371,7 +1430,14 @@ function AdminPageInner() {
         { shouldRetry: (r) => isRetryableSupabaseError(r.error) },
       );
 
-      if (seq !== loadDataSeqRef.current) return;
+      if (seq !== loadDataSeqRef.current) {
+        painelLog("loadData.stale", {
+          seq,
+          current: loadDataSeqRef.current,
+          phase: "after_restaurante_query",
+        });
+        return;
+      }
 
       if (restErr) {
         setFetchError(restErr.message);
@@ -1394,7 +1460,14 @@ function AdminPageInner() {
         data: { user: sessionUser },
       } = await supabase.auth.getUser();
 
-      if (seq !== loadDataSeqRef.current) return;
+      if (seq !== loadDataSeqRef.current) {
+        painelLog("loadData.stale", {
+          seq,
+          current: loadDataSeqRef.current,
+          phase: "after_session_user",
+        });
+        return;
+      }
 
       if (!sessionUser) {
         setFetchError("Sessão expirada. Faça login novamente.");
@@ -1445,7 +1518,14 @@ function AdminPageInner() {
           ),
         ]);
 
-      if (seq !== loadDataSeqRef.current) return;
+      if (seq !== loadDataSeqRef.current) {
+        painelLog("loadData.stale", {
+          seq,
+          current: loadDataSeqRef.current,
+          phase: "after_pratos_pedidos_parallel",
+        });
+        return;
+      }
 
       if (pratosErr) {
         setFetchError(pratosErr.message);
@@ -1469,6 +1549,11 @@ function AdminPageInner() {
         setPedidos(mapped);
       }
     } catch (e) {
+      painelError("loadData.exception", {
+        seq,
+        currentSeq: loadDataSeqRef.current,
+        message: e instanceof Error ? e.message : String(e),
+      });
       if (seq === loadDataSeqRef.current) {
         setFetchError(e instanceof Error ? e.message : "Erro ao carregar dados.");
       }
@@ -1476,6 +1561,7 @@ function AdminPageInner() {
       if (seq === loadDataSeqRef.current) {
         if (isSoft) setSilentRefreshing(false);
         else setLoading(false);
+        painelLog("loadData.loading_cleared", { seq, soft: isSoft });
       }
     }
   }, [supabase, tenantSlug]);
@@ -1538,9 +1624,11 @@ function AdminPageInner() {
       setServiceRoleConfigured(null);
       return;
     }
+    const diagGen = ++diagnosticsSeqRef.current;
     let cancelled = false;
     void (async () => {
       try {
+        painelLog("diagnostics.start", { diagGen, restauranteId: restaurante.id });
         const {
           data: { session },
         } = await supabase.auth.getSession();
@@ -1564,10 +1652,30 @@ function AdminPageInner() {
           ok?: boolean;
           supabaseServiceRoleConfigured?: boolean;
         };
-        if (cancelled || !res.ok || !j.ok) return;
+        if (cancelled || diagGen !== diagnosticsSeqRef.current) {
+          painelLog("diagnostics.skip_stale", {
+            diagGen,
+            current: diagnosticsSeqRef.current,
+          });
+          return;
+        }
+        if (!res.ok || !j.ok) {
+          painelLog("diagnostics.http_not_ok", { diagGen, status: res.status });
+          return;
+        }
         setServiceRoleConfigured(Boolean(j.supabaseServiceRoleConfigured));
-      } catch {
-        if (!cancelled) setServiceRoleConfigured(null);
+        painelLog("diagnostics.ok", {
+          diagGen,
+          serviceRoleConfigured: Boolean(j.supabaseServiceRoleConfigured),
+        });
+      } catch (err) {
+        painelError("diagnostics.exception", {
+          diagGen,
+          message: err instanceof Error ? err.message : String(err),
+        });
+        if (!cancelled && diagGen === diagnosticsSeqRef.current) {
+          setServiceRoleConfigured(null);
+        }
       }
     })();
     return () => {
@@ -1779,6 +1887,9 @@ function AdminPageInner() {
     const rid = restaurante?.id;
     if (!rid) return;
 
+    const mountId = ++realtimeMountRef.current;
+    painelLog("realtime.subscribe", { rid, mountId });
+
     setPedidosRealtimeOk(true);
     let cancelled = false;
 
@@ -1794,6 +1905,14 @@ function AdminPageInner() {
           filter,
         },
         (payload) => {
+          if (cancelled || mountId !== realtimeMountRef.current) {
+            painelLog("realtime.payload_ignored", {
+              mountId,
+              currentMount: realtimeMountRef.current,
+              eventType: payload.eventType,
+            });
+            return;
+          }
           if (payload.eventType === "INSERT") {
             const mapped = mapPedidoRow(payload.new as Parameters<typeof mapPedidoRow>[0]);
             if (!mapped) return;
@@ -1833,11 +1952,14 @@ function AdminPageInner() {
       )
       .subscribe((status) => {
         if (cancelled) return;
+        if (mountId !== realtimeMountRef.current) return;
+        painelLog("realtime.status", { rid, mountId, status });
         if (status === "SUBSCRIBED") {
           setPedidosRealtimeOk(true);
           return;
         }
         if (status === "CHANNEL_ERROR" || status === "TIMED_OUT") {
+          painelError("realtime.degraded", { rid, mountId, status });
           setPedidosRealtimeOk(false);
         }
       });

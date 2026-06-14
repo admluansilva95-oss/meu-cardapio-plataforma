@@ -27,8 +27,14 @@ export async function runApiWithAccessLog(
     status = res.status;
     return attachRequestIdToResponse(res, requestId);
   } catch (unexpected: unknown) {
+    const errName = unexpected instanceof Error ? unexpected.name : typeof unexpected;
+    const errSummary =
+      unexpected instanceof Error
+        ? unexpected.message.slice(0, 400)
+        : String(unexpected).slice(0, 400);
     logStructured("error", fatalErrorTag, {
-      errName: unexpected instanceof Error ? unexpected.name : "unknown",
+      errName,
+      errSummary,
       requestId,
     });
     status = 500;

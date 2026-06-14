@@ -17,6 +17,35 @@ function out(res: NextResponse): NextResponse {
   return nextResponseWithByteStringSafeWire(res);
 }
 
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => {
+    setTimeout(resolve, ms);
+  });
+}
+
+type PostgrestLikeError = {
+  message?: string;
+  code?: string;
+  details?: string;
+};
+
+/**
+ * Erros frequentemente transitórios na consulta a `assinaturas` (rede, cold start, timeout).
+ * Não inclui RLS nem “tabela inexistente” — esses não devem ser mascarados com retry infinito.
+ */
+function isTransientAssinaturaQueryError(err: PostgrestLikeError): boolean {
+  const m = (err.message ?? "").toLowerCase();
+  const c = (err.code ?? "").toLowerCase();
+  if (m.includes("timeout") || m.includes("timed out")) return true;
+  if (m.includes("fetch failed") || m.includes("failed to fetch")) return true;
+  if (m.includes("network")) return true;
+  if (m.includes("econnreset") || m.includes("econnrefused") || m.includes("etimedout")) return true;
+  if (m.includes("socket") && (m.includes("hang") || m.includes("closed"))) return true;
+  if (m.includes("503") || m.includes("502") || m.includes("504")) return true;
+  if (c === "08006" || c === "08003" || c === "57p01") return true;
+  return false;
+}
+
 export async function proxy(request: NextRequest) {
   const { pathname, searchParams } = request.nextUrl;
 
@@ -67,15 +96,55 @@ export async function proxy(request: NextRequest) {
     return out(NextResponse.redirect(login));
   }
 
-  const { data: assinaturasValidas, error: assinaturasError } = await supabase
-    .from("assinaturas")
-    .select("id")
-    .eq("user_id", user.id)
-    .in("status", ["active", "trialing"])
-    .limit(1);
+  const maxAttempts = 3;
+  const backoffMs = [0, 200, 500];
+  let assinaturasValidas: { id: string }[] | null = null;
+  let assinaturasError: PostgrestLikeError | null = null;
+
+  for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
+    const wait = backoffMs[attempt] ?? 0;
+    if (wait > 0) {
+      await sleep(wait);
+    }
+    const res = await supabase
+      .from("assinaturas")
+      .select("id")
+      .eq("user_id", user.id)
+      .in("status", ["active", "trialing"])
+      .limit(1);
+    assinaturasValidas = res.data;
+    assinaturasError = res.error as PostgrestLikeError | null;
+
+    if (!assinaturasError) {
+      if (attempt > 0) {
+        logStructured("info", "proxy.admin.assinaturas.recovered_after_retry", {
+          attempt: attempt + 1,
+          userIdSuffix: user.id.slice(-8),
+        });
+      }
+      break;
+    }
+
+    const transient = isTransientAssinaturaQueryError(assinaturasError);
+    logStructured(transient ? "warn" : "error", "proxy.admin.assinaturas.attempt", {
+      attempt: attempt + 1,
+      maxAttempts,
+      code: assinaturasError.code ?? null,
+      transient,
+      userIdSuffix: user.id.slice(-8),
+    });
+
+    if (!transient || attempt === maxAttempts - 1) {
+      break;
+    }
+  }
 
   if (assinaturasError) {
-    logStructured("error", "proxy.admin.assinaturas", { code: assinaturasError.code ?? null });
+    logStructured("error", "proxy.admin.assinaturas.final_failure", {
+      code: assinaturasError.code ?? null,
+      transient: isTransientAssinaturaQueryError(assinaturasError),
+      userIdSuffix: user.id.slice(-8),
+    });
     /** Falha fechada: não liberar o painel se não for possível verificar assinatura (evita bypass por erro transitório). */
     const fallback = request.nextUrl.clone();
     fallback.pathname = "/login";
