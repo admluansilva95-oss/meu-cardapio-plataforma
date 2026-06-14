@@ -1,5 +1,22 @@
 # meu-cardapio
 
+## Documentação
+
+- [Checklist de maturidade SaaS (comparativo)](docs/SAAS-MATURIDADE.md)
+
+## Produção: ligar o site ao Supabase (Auth e API)
+
+No painel do teu hosting (ex.: **Vercel** → Project → Settings → Environment Variables), define **pelo menos**:
+
+| Variável | Onde obter o valor |
+| -------- | ------------------- |
+| `NEXT_PUBLIC_SUPABASE_URL` | Supabase → **Project Settings** → **API** → *Project URL* (ex.: `https://xxxx.supabase.co`) |
+| `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Mesmo ecrã → *anon public* |
+
+Estas variáveis entram no **build** do Next.js; depois de as adicionares ou alterares, faz um **novo deploy** (rebuild). Sem elas, o login e o resto da app que falam com o Supabase não têm para onde ligar — vês mensagens como a de `lib/auth/supabase-browser-auth-safe.ts` (“credenciais públicas… no painel de deploy”).
+
+Copia local: ficheiro `.env.example` na raiz. Para funcionalidades só de servidor (pedidos na vitrine, webhooks, etc.) vê também `SUPABASE_SERVICE_ROLE_KEY` no mesmo `.env.example`.
+
 ## Supabase Storage (evitar “Bucket not found” / 404)
 
 O painel envia fotos para dois buckets **públicos** com estes nomes exatos:

@@ -6,7 +6,14 @@ import path from "node:path";
  * Não sobrescreve chaves já definidas no ambiente (CI / shell).
  */
 export function loadLocalEnvFiles(): void {
-  for (const name of [".env.local", ".env.e2e"]) {
+  /** Ordem: primeiro ficheiro define a chave; os seguintes só preenchem `undefined` (como no Playwright/CI). */
+  const relativePaths = [
+    ".env.local",
+    ".env.e2e",
+    /** Muitos exemplos vivem em `tests/e2e/`; o Next não lê este path sozinho. */
+    path.join("tests", "e2e", ".env.e2e"),
+  ];
+  for (const name of relativePaths) {
     const filePath = path.join(process.cwd(), name);
     if (!fs.existsSync(filePath)) continue;
     const text = fs.readFileSync(filePath, "utf8");

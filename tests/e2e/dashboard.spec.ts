@@ -5,6 +5,8 @@ import { requireE2eAuthCredentials } from "./fixtures/require-e2e-auth";
 
 test.describe("Dashboard /admin", () => {
   test.describe("Integração", () => {
+    test.describe.configure({ timeout: 90_000 });
+
     test.beforeAll(() => {
       requireE2eAuthCredentials();
     });

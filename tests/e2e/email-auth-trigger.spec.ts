@@ -1,4 +1,5 @@
 import { expect, test } from "@playwright/test";
+import { fillWhenHydrated } from "./fill-hydrated";
 import { parseJsonBodyFromRouteRequest } from "./fixtures/parse-route-json-body";
 import { submitCadastroForm } from "./fixtures/submit-form";
 
@@ -31,18 +32,20 @@ test.describe("Pedido HTTP de cadastro (Supabase Auth)", () => {
 
     await page.goto("/cadastro");
     await expect(page.getByRole("heading", { name: /Crie sua conta/i })).toBeVisible({ timeout: 20_000 });
-    await page.locator("form").first().waitFor({ state: "visible", timeout: 20_000 });
-    await page.locator("form").first().evaluate((el: HTMLFormElement) => {
+    const form = page.getByTestId("cadastro-form");
+    await expect(form).toBeVisible({ timeout: 20_000 });
+    await form.evaluate((el: HTMLFormElement) => {
       el.noValidate = true;
     });
-    await page.locator("#password").waitFor({ state: "visible", timeout: 10_000 });
-    await page.locator("#password").evaluate((el: HTMLInputElement) => {
+    const passwordInput = form.locator("#password");
+    await passwordInput.waitFor({ state: "visible", timeout: 10_000 });
+    await passwordInput.evaluate((el: HTMLInputElement) => {
       el.removeAttribute("minlength");
     });
 
-    await page.locator("#slug").fill("rest-e2e-email");
-    await page.locator("#email").fill("trigger-signup@example.com");
-    await page.locator("#password").fill("senha123");
+    await fillWhenHydrated(form.locator("#slug"), "rest-e2e-email");
+    await fillWhenHydrated(form.locator("#email"), "trigger-signup@example.com");
+    await fillWhenHydrated(form.locator("#password"), "senha123");
     await submitCadastroForm(page);
 
     await expect.poll(() => posted?.email).toBe("trigger-signup@example.com");
