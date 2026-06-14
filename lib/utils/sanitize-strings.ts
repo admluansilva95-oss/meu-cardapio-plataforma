@@ -52,9 +52,31 @@ export function normalizeLatin1StoragePath(path: string): string {
   return latin1SafeString(path).replace(/\/{2,}/g, "/").replace(/^\/+/, "");
 }
 
+/**
+ * Chaves cujo valor é credencial / token: não podem passar por `sanitizeUserFreeText` + Latin-1,
+ * senão caracteres fora de U+00FF (ex.: emoji em senha) são removidos e o Supabase Auth recebe
+ * uma palavra-passe errada → "Invalid login credentials".
+ * O `JSON.stringify` escapa Unicode em `\uXXXX` no fio — o resultado continua compatível com ByteString.
+ * (Relevante para login real nos E2E com `E2E_PASSWORD` fora de Latin-1.)
+ */
+const JSON_WIRE_PRESERVE_UTF8_STRING_KEYS = new Set([
+  "password",
+  "new_password",
+  "refresh_token",
+  "access_token",
+  "token_hash",
+]);
+
+function sanitizeWireSecretString(s: string): string {
+  return stripInvisibleFormatting(s);
+}
+
 export function jsonStringifyLatin1Wire(value: unknown): string {
-  return JSON.stringify(value, (_key, v) => {
+  return JSON.stringify(value, (key, v) => {
     if (typeof v !== "string") return v;
+    if (key !== "" && JSON_WIRE_PRESERVE_UTF8_STRING_KEYS.has(key)) {
+      return sanitizeWireSecretString(v);
+    }
     return sanitizeUserFreeText(v);
   });
 }
@@ -69,7 +91,11 @@ export function deepSanitizeStringsForWire(input: unknown): unknown {
     for (const [k, v] of Object.entries(src)) {
       const sk = latin1SafeString(k);
       if (!sk) continue;
-      out[sk] = deepSanitizeStringsForWire(v);
+      if (typeof v === "string" && JSON_WIRE_PRESERVE_UTF8_STRING_KEYS.has(sk)) {
+        out[sk] = sanitizeWireSecretString(v);
+      } else {
+        out[sk] = deepSanitizeStringsForWire(v);
+      }
     }
     return out;
   }
