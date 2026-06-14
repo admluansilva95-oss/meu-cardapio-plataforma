@@ -2,24 +2,11 @@ import { expect, test } from "@playwright/test";
 import { fillWhenHydrated } from "./fill-hydrated";
 import { submitCadastroForm } from "./fixtures/submit-form";
 
-/** Garante que validações do React corram (senão `required` / `type=email` / `minLength` bloqueiam o submit). */
-async function allowClientValidationOnly(page: import("@playwright/test").Page) {
-  const form = page.getByTestId("cadastro-form");
-  await form.waitFor({ state: "visible", timeout: 20_000 });
-  await form.evaluate((el: HTMLFormElement) => {
-    el.noValidate = true;
-  });
-  await page.locator("#password").waitFor({ state: "visible", timeout: 10_000 });
-  await page.locator("#password").evaluate((el: HTMLInputElement) => {
-    el.removeAttribute("minlength");
-  });
-}
-
 test.describe("Cadastro (sign-up) — validação client-side e e-mail duplicado (mock)", () => {
   test.beforeEach(async ({ page }) => {
     await page.goto("/cadastro");
     await expect(page.getByRole("heading", { name: /Crie sua conta/i })).toBeVisible({ timeout: 20_000 });
-    await allowClientValidationOnly(page);
+    await expect(page.getByTestId("cadastro-form")).toBeVisible({ timeout: 20_000 });
   });
 
   test("slug inválido (curto demais) mostra mensagem", async ({ page }) => {

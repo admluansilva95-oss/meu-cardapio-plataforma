@@ -1,10 +1,14 @@
 import { Suspense } from "react";
+import { PLANS } from "@/lib/plans";
 import { CadastroForm } from "./cadastro-form";
 
 /** Evita HTML estático sem query string: useSearchParams precisa bater com o SSR. */
 export const dynamic = "force-dynamic";
 
 export default function CadastroPage() {
+  /** Mesmo valor no SSR e no primeiro render do cliente (evita divergência de `priceId` por env em módulos). */
+  const defaultEssencialPriceId = PLANS[0].priceId;
+
   return (
     <Suspense
       fallback={
@@ -13,7 +17,7 @@ export default function CadastroPage() {
         </div>
       }
     >
-      <CadastroForm />
+      <CadastroForm defaultEssencialPriceId={defaultEssencialPriceId} />
     </Suspense>
   );
 }

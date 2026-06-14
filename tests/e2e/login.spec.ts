@@ -1,6 +1,8 @@
 import { expect, test } from "@playwright/test";
+import { buildAdminUrlWithCheckoutBypass } from "./fixtures/admin-url";
+import { loginWithE2eUser } from "./fixtures/e2e-auth-login";
+import { requireE2eAuthCredentials } from "./fixtures/require-e2e-auth";
 import { fillWhenHydrated } from "./fill-hydrated";
-import { e2eRestaurantQuery, hasE2eAuthCredentials } from "./fixtures/env";
 import { submitLoginForm } from "./fixtures/submit-form";
 
 test.describe("Login", () => {
@@ -35,67 +37,40 @@ test.describe("Login", () => {
   });
 
   test.describe("Integração (Supabase real)", () => {
-    test.skip(!hasE2eAuthCredentials(), "Defina E2E_EMAIL, E2E_PASSWORD e E2E_RESTAURANT_SLUG");
+    test.beforeAll(() => {
+      requireE2eAuthCredentials();
+    });
 
-    test("login com sucesso e acesso ao painel", async ({ page }, testInfo) => {
-      const email = process.env.E2E_EMAIL!.trim();
-      const password = process.env.E2E_PASSWORD!;
-      const q = e2eRestaurantQuery();
-
-      await page.goto("/login");
-      await page.locator("#email").fill(email);
-      await page.locator("#password").fill(password);
-      await page.getByRole("button", { name: /Entrar|Continuar para assinatura/i }).click();
-      await page.waitForURL((url) => !url.pathname.includes("/login"), { timeout: 30_000 });
-      if (page.url().includes("/cadastro")) {
-        testInfo.skip(true, "Conta sem assinatura ativa — acedeu a /cadastro. Configure assinatura ou use conta de teste com plano.");
-      }
-      if (page.url().includes("/assinar")) {
+    test("login com sucesso e acesso ao painel", async ({ page }) => {
+      await loginWithE2eUser(page);
+      const afterLogin = page.url();
+      if (afterLogin.includes("/assinar")) {
         await expect(page).toHaveURL(/\/assinar/);
         return;
       }
-      await page.goto(`/admin${q}`);
-      await expect(page.getByRole("heading", { name: /Painel de operações|Cardápio na vitrine|Pratos|Painel de configuração/i })).toBeVisible({
+      await page.goto(buildAdminUrlWithCheckoutBypass());
+      await expect(
+        page.getByRole("heading", { name: /Painel de operações|Cardápio na vitrine|Pratos|Painel de configuração/i }),
+      ).toBeVisible({
         timeout: 20_000,
       });
     });
 
-    test("persistência: recarregar /admin mantém sessão", async ({ page }, testInfo) => {
-      const email = process.env.E2E_EMAIL!.trim();
-      const password = process.env.E2E_PASSWORD!;
-      const q = e2eRestaurantQuery();
-
-      await page.goto("/login");
-      await page.locator("#email").fill(email);
-      await page.locator("#password").fill(password);
-      await page.getByRole("button", { name: /Entrar|Continuar para assinatura/i }).click();
-      await page.waitForURL((url) => !url.pathname.includes("/login"), { timeout: 30_000 });
-      if (page.url().includes("/cadastro")) {
-        testInfo.skip(true, "Conta sem assinatura ativa — não é possível validar /admin.");
-      }
-
-      await page.goto(`/admin${q}`);
+    test("persistência: recarregar /admin mantém sessão", async ({ page }) => {
+      await loginWithE2eUser(page);
+      await page.goto(buildAdminUrlWithCheckoutBypass());
+      await expect(page.getByRole("heading", { name: /Painel de operações/i })).toBeVisible({ timeout: 25_000 });
       await page.reload();
       await expect(page).not.toHaveURL(/\/login(\?|$)/);
       const keys = await page.evaluate(() => Object.keys(localStorage));
       expect(keys.some((k) => k.includes("auth") || k.includes("supabase") || k.includes("sb-"))).toBeTruthy();
     });
 
-    test("logout remove sessão e redireciona para login", async ({ page }, testInfo) => {
-      const email = process.env.E2E_EMAIL!.trim();
-      const password = process.env.E2E_PASSWORD!;
-      const q = e2eRestaurantQuery();
+    test("logout remove sessão e redireciona para login", async ({ page }) => {
+      await loginWithE2eUser(page);
+      await page.goto(buildAdminUrlWithCheckoutBypass());
+      await expect(page.getByRole("heading", { name: /Painel de operações/i })).toBeVisible({ timeout: 25_000 });
 
-      await page.goto("/login");
-      await page.locator("#email").fill(email);
-      await page.locator("#password").fill(password);
-      await page.getByRole("button", { name: /Entrar|Continuar para assinatura/i }).click();
-      await page.waitForURL((url) => !url.pathname.includes("/login"), { timeout: 30_000 });
-      if (page.url().includes("/cadastro")) {
-        testInfo.skip(true, "Conta sem assinatura ativa — botão Sair só no /admin.");
-      }
-
-      await page.goto(`/admin${q}`);
       const authKeysBeforeSignOut = await page.evaluate(() =>
         Object.keys(localStorage).filter((k) => k.startsWith("sb-") || k.toLowerCase().includes("supabase")),
       );

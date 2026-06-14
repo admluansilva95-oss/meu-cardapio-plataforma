@@ -28,6 +28,7 @@ import {
 import { latin1CookieWrite } from "@/lib/http/byte-string-http";
 import { serverLatin1SafeFetch } from "@/lib/http/server-latin1-fetch";
 import { logStructured } from "@/lib/logging/structured-log";
+import { jsonWithRequestId } from "@/lib/http/json-with-request-id";
 import { runApiWithAccessLog } from "@/lib/http/run-api-with-access-log";
 
 export const dynamic = "force-dynamic";
@@ -40,6 +41,15 @@ function applyAuthCookies(target: NextResponse, writes: CookieToSet[]) {
     target.cookies.set(name, value, options);
   });
   return target;
+}
+
+function jsonCfg(
+  requestId: string,
+  body: Record<string, unknown>,
+  status: number,
+  authCookieWrites: CookieToSet[],
+): NextResponse {
+  return applyAuthCookies(jsonWithRequestId(requestId, body, status), authCookieWrites);
 }
 
 type ConfigBody = {
@@ -272,11 +282,12 @@ export async function POST(request: NextRequest) {
       }
 
       if (!user) {
-        const res = NextResponse.json(
+        return jsonCfg(
+          requestId,
           { error: "Sessão inválida ou expirada." },
-          { status: 401 },
+          401,
+          authCookieWrites,
         );
-        return applyAuthCookies(res, authCookieWrites);
       }
 
       try {
@@ -284,11 +295,12 @@ export async function POST(request: NextRequest) {
         try {
           body = (await request.json()) as ConfigBody;
         } catch {
-          const res = NextResponse.json(
+          return jsonCfg(
+            requestId,
             { error: "Corpo da requisição inválido." },
-            { status: 400 },
+            400,
+            authCookieWrites,
           );
-          return applyAuthCookies(res, authCookieWrites);
         }
 
         const restauranteId =
@@ -365,40 +377,43 @@ export async function POST(request: NextRequest) {
           : null;
 
         if (!restauranteId) {
-          const res = NextResponse.json(
+          return jsonCfg(
+            requestId,
             { error: "restauranteId é obrigatório." },
-            { status: 400 },
+            400,
+            authCookieWrites,
           );
-          return applyAuthCookies(res, authCookieWrites);
         }
         if (nome.length < 2) {
-          const res = NextResponse.json(
+          return jsonCfg(
+            requestId,
             {
               error: "Informe o nome do estabelecimento (mínimo 2 caracteres).",
             },
-            { status: 400 },
+            400,
+            authCookieWrites,
           );
-          return applyAuthCookies(res, authCookieWrites);
         }
         if (!whatsapp) {
-          const res = NextResponse.json(
+          return jsonCfg(
+            requestId,
             { error: "Informe o WhatsApp." },
-            { status: 400 },
+            400,
+            authCookieWrites,
           );
-          return applyAuthCookies(res, authCookieWrites);
         }
 
         if (!funcionamento_semana || typeof funcionamento_semana !== "object") {
-          const res = NextResponse.json(
+          return jsonCfg(
+            requestId,
             { error: "Dados de funcionamento semanal inválidos." },
-            { status: 400 },
+            400,
+            authCookieWrites,
           );
-          return applyAuthCookies(res, authCookieWrites);
         }
         const errF = validarFuncionamentoSemana(funcionamento_semana);
         if (errF) {
-          const res = NextResponse.json({ error: errF }, { status: 400 });
-          return applyAuthCookies(res, authCookieWrites);
+          return jsonCfg(requestId, { error: errF }, 400, authCookieWrites);
         }
         const funcionamentoSemanaGravar: FuncionamentoSemana =
           funcionamento_semana;
@@ -408,8 +423,7 @@ export async function POST(request: NextRequest) {
         const listaZonas = taxas_zonas ?? [];
         const errZ = validarTaxasZonas(listaZonas);
         if (errZ) {
-          const res = NextResponse.json({ error: errZ }, { status: 400 });
-          return applyAuthCookies(res, authCookieWrites);
+          return jsonCfg(requestId, { error: errZ }, 400, authCookieWrites);
         }
 
         const cardapio_categorias = Array.isArray(body.cardapio_categorias)
@@ -421,20 +435,20 @@ export async function POST(request: NextRequest) {
               .filter(Boolean);
         const errC = validarCardapioCategorias(cardapio_categorias);
         if (errC) {
-          const res = NextResponse.json({ error: errC }, { status: 400 });
-          return applyAuthCookies(res, authCookieWrites);
+          return jsonCfg(requestId, { error: errC }, 400, authCookieWrites);
         }
 
         const entrega_modo = body.entrega_modo === "zonas" ? "zonas" : "fixa";
         if (entrega_modo === "zonas" && listaZonas.length === 0) {
-          const res = NextResponse.json(
+          return jsonCfg(
+            requestId,
             {
               error:
                 "Em taxas por bairro, adicione ao menos uma região com nome e valor.",
             },
-            { status: 400 },
+            400,
+            authCookieWrites,
           );
-          return applyAuthCookies(res, authCookieWrites);
         }
 
         const retirada_balcao = body.retirada_balcao === true;
@@ -446,29 +460,32 @@ export async function POST(request: NextRequest) {
           if (body.logo === null) {
             logoGravar = null;
           } else if (typeof body.logo !== "string") {
-            const res = NextResponse.json(
+            return jsonCfg(
+              requestId,
               { error: "Campo logo inválido." },
-              { status: 400 },
+              400,
+              authCookieWrites,
             );
-            return applyAuthCookies(res, authCookieWrites);
           } else {
             const t = body.logo.trim();
             if (!t) {
               logoGravar = null;
             } else if (t.length > 2500) {
-              const res = NextResponse.json(
+              return jsonCfg(
+                requestId,
                 { error: "URL do logo muito longa." },
-                { status: 400 },
+                400,
+                authCookieWrites,
               );
-              return applyAuthCookies(res, authCookieWrites);
             } else if (!/^https?:\/\//i.test(t)) {
-              const res = NextResponse.json(
+              return jsonCfg(
+                requestId,
                 {
                   error: "A URL do logo deve começar com http:// ou https://.",
                 },
-                { status: 400 },
+                400,
+                authCookieWrites,
               );
-              return applyAuthCookies(res, authCookieWrites);
             } else {
               logoGravar = sanitizeDbPlainText(t, 2500);
             }
@@ -564,49 +581,56 @@ export async function POST(request: NextRequest) {
             logStructured("error", "api.restaurante.config.select_owner", {
               code: selErr.code ?? null,
             });
-            const res = NextResponse.json(
+            return jsonCfg(
+              requestId,
               {
                 error:
                   "Não foi possível validar o restaurante. Tente novamente.",
               },
-              { status: 500 },
+              500,
+              authCookieWrites,
             );
-            return applyAuthCookies(res, authCookieWrites);
           }
           if (!row) {
-            const res = NextResponse.json(
+            return jsonCfg(
+              requestId,
               { error: "Restaurante não encontrado." },
-              { status: 404 },
+              404,
+              authCookieWrites,
             );
-            return applyAuthCookies(res, authCookieWrites);
           }
           if (row.owner_id !== user.id) {
-            const res = NextResponse.json(
+            return jsonCfg(
+              requestId,
               {
                 error: "Você não tem permissão para alterar este restaurante.",
               },
-              { status: 403 },
+              403,
+              authCookieWrites,
             );
-            return applyAuthCookies(res, authCookieWrites);
           }
 
           const out = await runAll(admin, null, lockVersion);
           if ("error" in out) {
             const errStatus =
               out.code === "rls" ? 403 : out.code === "conflict" ? 409 : 500;
-            const res = NextResponse.json(
-              { error: out.error, code: out.code, requestId },
-              { status: errStatus },
+            return jsonCfg(
+              requestId,
+              { error: out.error, code: out.code },
+              errStatus,
+              authCookieWrites,
             );
-            return applyAuthCookies(res, authCookieWrites);
           }
-          const res = NextResponse.json({
-            ok: true,
-            ...(lockVersion != null ? { configVersion: lockVersion + 1 } : {}),
-            ...(out.partial ? { warning: MIGRATION_HINT } : {}),
+          return jsonCfg(
             requestId,
-          });
-          return applyAuthCookies(res, authCookieWrites);
+            {
+              ok: true,
+              ...(lockVersion != null ? { configVersion: lockVersion + 1 } : {}),
+              ...(out.partial ? { warning: MIGRATION_HINT } : {}),
+            },
+            200,
+            authCookieWrites,
+          );
         }
 
         const out = await runAll(supabase, user.id, lockVersion);
@@ -617,29 +641,34 @@ export async function POST(request: NextRequest) {
               : "";
           const errStatus =
             out.code === "rls" ? 403 : out.code === "conflict" ? 409 : 500;
-          const res = NextResponse.json(
-            { error: `${out.error}${hint}`, code: out.code, requestId },
-            { status: errStatus },
+          return jsonCfg(
+            requestId,
+            { error: `${out.error}${hint}`, code: out.code },
+            errStatus,
+            authCookieWrites,
           );
-          return applyAuthCookies(res, authCookieWrites);
         }
 
-        const res = NextResponse.json({
-          ok: true,
-          ...(lockVersion != null ? { configVersion: lockVersion + 1 } : {}),
-          ...(out.partial ? { warning: MIGRATION_HINT } : {}),
+        return jsonCfg(
           requestId,
-        });
-        return applyAuthCookies(res, authCookieWrites);
+          {
+            ok: true,
+            ...(lockVersion != null ? { configVersion: lockVersion + 1 } : {}),
+            ...(out.partial ? { warning: MIGRATION_HINT } : {}),
+          },
+          200,
+          authCookieWrites,
+        );
       } catch (unexpected: unknown) {
         logStructured("error", "api.restaurante.config.unexpected", {
           errName: unexpected instanceof Error ? unexpected.name : "unknown",
         });
-        const res = NextResponse.json(
+        return jsonCfg(
+          requestId,
           { error: "Erro interno ao salvar as configurações." },
-          { status: 500 },
+          500,
+          authCookieWrites,
         );
-        return applyAuthCookies(res, authCookieWrites);
       }
     },
   );

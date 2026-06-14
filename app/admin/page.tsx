@@ -1,6 +1,7 @@
 "use client";
 
 import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import type { EntregaModo, Prato, PratoStatus, Restaurante } from "../../types";
 import { AdminOperacionalPainelLateral } from "@/components/admin/AdminOperacionalPainelLateral";
@@ -501,12 +502,12 @@ function AdminMissingSlugView() {
           Não encontramos um restaurante vinculado à sua conta. Conclua o cadastro e o pagamento
           no Stripe para liberar o painel.
         </p>
-        <a
+        <Link
           href="/cadastro"
           className="mt-8 inline-flex rounded-xl bg-[#1d1d1f] px-5 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-black"
         >
           Ir para cadastro
-        </a>
+        </Link>
       </div>
     </div>
   );
@@ -1696,19 +1697,31 @@ function AdminPageInner() {
         token,
       );
 
-      if (res.status === 401) {
+      if (res.status === 401 || res.status === 403) {
+        clearBrowserAuthArtifacts();
         await performOwnerLogout(supabase);
         window.location.assign("/login?reason=session_expired");
         return;
       }
 
-      const json = (await res.json()) as {
+      type ConfigSaveJson = {
         error?: string;
         warning?: string;
         code?: string;
         requestId?: string;
         configVersion?: number;
+        ok?: boolean;
       };
+      let json: ConfigSaveJson;
+      try {
+        const text = await res.text();
+        json = text ? (JSON.parse(text) as ConfigSaveJson) : {};
+      } catch {
+        setCfgMsg(
+          `Resposta inválida do servidor (${res.status}). Tente novamente ou recarregue a página.`,
+        );
+        return;
+      }
       if (res.status === 409 || json.code === "conflict") {
         setCfgMsg(
           json.error ??
@@ -1877,8 +1890,16 @@ function AdminPageInner() {
         .from("restaurantes")
         .update({ cardapio_categorias: next })
         .eq("id", restaurante.id);
-      if (error) throw new Error(error.message);
-      await loadData({ soft: true });
+      if (error) {
+        throw new Error(mensagemErroSupabasePainel(error.message));
+      }
+      try {
+        await loadData({ soft: true });
+      } catch {
+        setFetchError(
+          "Categoria gravada, mas não foi possível atualizar a lista na tela. Recarregue a página (F5) se não aparecer.",
+        );
+      }
       setAdminToast(TOAST_ALTERACOES_SALVAS);
     },
     [restaurante, supabase, loadData],
@@ -1907,6 +1928,11 @@ function AdminPageInner() {
           lista.map((p) => (p.id === pedidoId ? { ...p, coluna: anterior.coluna } : p)),
         );
       }
+    } catch (e) {
+      setFetchError(e instanceof Error ? e.message : "Falha de rede ao atualizar o pedido.");
+      setPedidos((lista) =>
+        lista.map((p) => (p.id === pedidoId ? { ...p, coluna: anterior.coluna } : p)),
+      );
     } finally {
       setPedidoBusyId(null);
       setPedidoBusyKind(null);
@@ -1951,6 +1977,16 @@ function AdminPageInner() {
 
       const msg = mensagemParaColuna(atual, destino);
       navigatePreparedTabOrOpen(waTab, buildWhatsappSendHref(atual.telefone, msg));
+    } catch (e) {
+      setFetchError(e instanceof Error ? e.message : "Falha de rede ao avançar o pedido.");
+      setPedidos((lista) =>
+        lista.map((p) => (p.id === id ? { ...p, coluna: prev } : p)),
+      );
+      try {
+        waTab?.close();
+      } catch {
+        /* ignore */
+      }
     } finally {
       setPedidoBusyId(null);
       setPedidoBusyKind(null);
@@ -1977,6 +2013,9 @@ function AdminPageInner() {
       } else {
         setAdminToast(TOAST_PEDIDO_REMOVIDO);
       }
+    } catch (e) {
+      setFetchError(e instanceof Error ? e.message : "Falha de rede ao remover o pedido.");
+      setPedidos(prev);
     } finally {
       setPedidoBusyId(null);
       setPedidoBusyKind(null);
@@ -2026,6 +2065,9 @@ function AdminPageInner() {
       }
       setAdminToast(TOAST_ALTERACOES_SALVAS);
       setPedidoModal(null);
+    } catch (e) {
+      setFetchError(e instanceof Error ? e.message : "Falha de rede ao salvar o pedido.");
+      setPedidos(prevList);
     } finally {
       setPedidoModalSaving(false);
     }

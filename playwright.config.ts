@@ -8,11 +8,12 @@ const useSystemChrome = process.env.PW_CHANNEL === "chrome";
 /**
  * E2E contra Next.js local ou staging.
  *
- * Variáveis opcionais (integração real com Supabase):
- * - E2E_EMAIL, E2E_PASSWORD — login e fluxos autenticados
- * - E2E_RESTAURANT_SLUG — query `?slug=` no /admin (tenant)
+ * Integração Supabase (carrega `.env.local` / `.env.e2e` antes dos testes):
+ * - E2E_EMAIL, E2E_PASSWORD — obrigatórios para os 6 testes de painel/login autenticado
+ * - E2E_RESTAURANT_SLUG — opcional; `?slug=` no /admin. Sem assinatura ativa use-se `checkout=success` no helper.
  */
 export default defineConfig({
+  globalSetup: "./tests/e2e/global-setup.ts",
   testDir: "./tests/e2e",
   fullyParallel: true,
   forbidOnly: !!process.env.CI,

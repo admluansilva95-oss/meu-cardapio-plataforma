@@ -17,7 +17,8 @@ O workflow `.github/workflows/e2e.yml` precisa destes **Repository secrets** (Se
 |--------|-----|
 | `NEXT_PUBLIC_SUPABASE_URL` | URL do projeto Supabase (mesmo valor que em produção / staging de testes). |
 | `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Chave **anon** pública (Settings → API no Supabase). |
-| `E2E_EMAIL`, `E2E_PASSWORD`, `E2E_RESTAURANT_SLUG` | Opcionais: só para testes de integração “login real” e `/admin` (ver `tests/e2e/fixtures/env.ts`). |
+| `E2E_EMAIL`, `E2E_PASSWORD` | **Obrigatórios** no CI para login, `/admin` e logout (ver `tests/e2e/fixtures/env.ts` e `global-setup.ts`). |
+| `E2E_RESTAURANT_SLUG` | Opcional: tenant em `/admin?slug=…`. |
 
 Sem `NEXT_PUBLIC_*`, o `next dev` no CI não alimenta o bundle e o login/cardápio quebram antes dos mocks.
 

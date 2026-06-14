@@ -9,7 +9,7 @@ import { submitCadastroForm } from "./fixtures/submit-form";
  * (gatilho do fluxo). Para inspecionar o e-mail real, use Mailpit, Inbucket ou o painel Supabase.
  *
  * **Recuperação de senha:** a UI atual não expõe `resetPasswordForEmail`. Quando existir,
- * adicionar teste com `page.route('**/auth/v1/recover**', …)` (path pode variar com a versão
+ * adicionar teste com `page.route('** /auth/v1/recover**', …)` (path pode variar com a versão
  * do GoTrue) — ver `tests/e2e/EMAIL_AND_AUTH.md`.
  */
 test.describe("Disparo de e-mail (Supabase Auth)", () => {

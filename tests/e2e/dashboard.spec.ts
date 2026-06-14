@@ -1,23 +1,17 @@
 import { expect, test } from "@playwright/test";
-import { e2eRestaurantQuery, hasE2eAuthCredentials } from "./fixtures/env";
+import { buildAdminUrlWithCheckoutBypass } from "./fixtures/admin-url";
+import { loginWithE2eUser } from "./fixtures/e2e-auth-login";
+import { requireE2eAuthCredentials } from "./fixtures/require-e2e-auth";
 
 test.describe("Dashboard /admin", () => {
   test.describe("Integração", () => {
-    test.skip(!hasE2eAuthCredentials(), "Defina E2E_EMAIL, E2E_PASSWORD e E2E_RESTAURANT_SLUG");
+    test.beforeAll(() => {
+      requireE2eAuthCredentials();
+    });
 
-    test.beforeEach(async ({ page }, testInfo) => {
-      const email = process.env.E2E_EMAIL!.trim();
-      const password = process.env.E2E_PASSWORD!;
-      const q = e2eRestaurantQuery();
-      await page.goto("/login");
-      await page.locator("#email").fill(email);
-      await page.locator("#password").fill(password);
-      await page.getByRole("button", { name: /Entrar|Continuar para assinatura/i }).click();
-      await page.waitForURL((url) => !url.pathname.includes("/login"), { timeout: 30_000 });
-      if (page.url().includes("/cadastro")) {
-        testInfo.skip(true, "Conta sem assinatura ativa: middleware redireciona para /cadastro.");
-      }
-      await page.goto(`/admin${q}`);
+    test.beforeEach(async ({ page }) => {
+      await loginWithE2eUser(page);
+      await page.goto(buildAdminUrlWithCheckoutBypass());
       await expect(page.getByRole("heading", { name: /Painel de operações/i })).toBeVisible({ timeout: 25_000 });
     });
 

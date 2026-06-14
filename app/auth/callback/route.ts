@@ -101,32 +101,52 @@ export async function GET(request: NextRequest) {
   const code = searchParams.get("code");
 
   if (token_hash && otpTypeRaw && isEmailOtpType(otpTypeRaw)) {
-    const { error: verifyError } = await supabase.auth.verifyOtp({
-      type: otpTypeRaw,
-      token_hash,
-    });
+    try {
+      const { error: verifyError } = await supabase.auth.verifyOtp({
+        type: otpTypeRaw,
+        token_hash,
+      });
 
-    if (verifyError) {
+      if (verifyError) {
+        const errLogin = new URL("/login", origin);
+        errLogin.searchParams.set("error", "auth_callback");
+        errLogin.searchParams.set("message", verifyError.message);
+        return NextResponse.redirect(errLogin);
+      }
+
+      return response;
+    } catch (unexpected: unknown) {
       const errLogin = new URL("/login", origin);
       errLogin.searchParams.set("error", "auth_callback");
-      errLogin.searchParams.set("message", verifyError.message);
+      errLogin.searchParams.set(
+        "message",
+        unexpected instanceof Error ? unexpected.message : "Falha ao confirmar o e-mail.",
+      );
       return NextResponse.redirect(errLogin);
     }
-
-    return response;
   }
 
   if (code) {
-    const { error: exchangeError } = await supabase.auth.exchangeCodeForSession(code);
+    try {
+      const { error: exchangeError } = await supabase.auth.exchangeCodeForSession(code);
 
-    if (exchangeError) {
+      if (exchangeError) {
+        const errLogin = new URL("/login", origin);
+        errLogin.searchParams.set("error", "auth_callback");
+        errLogin.searchParams.set("message", exchangeError.message);
+        return NextResponse.redirect(errLogin);
+      }
+
+      return response;
+    } catch (unexpected: unknown) {
       const errLogin = new URL("/login", origin);
       errLogin.searchParams.set("error", "auth_callback");
-      errLogin.searchParams.set("message", exchangeError.message);
+      errLogin.searchParams.set(
+        "message",
+        unexpected instanceof Error ? unexpected.message : "Falha ao criar sessão.",
+      );
       return NextResponse.redirect(errLogin);
     }
-
-    return response;
   }
 
   loginUrl.searchParams.set("error", "missing_auth_code");

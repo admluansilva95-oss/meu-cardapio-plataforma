@@ -6,7 +6,8 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "next lint",
+    "lint": "eslint .",
+    "verify": "npm run check:wire-latin1 && npx tsc --noEmit && npm run lint && npm run build",
     "check:wire-latin1": "node scripts/forbid-latin1-wire-chars.mjs",
     "test:e2e": "playwright test",
     "test:e2e:ui": "playwright test --ui",
@@ -22,11 +23,13 @@
     "stripe": "^22.1.1"
   },
   "devDependencies": {
-    "@playwright/test": "1.51.1",
+    "@playwright/test": "^1.60.0",
     "@types/node": "latest",
     "@types/react": "latest",
     "@types/react-dom": "latest",
     "autoprefixer": "^10.4.18",
+    "eslint": "^9.39.4",
+    "eslint-config-next": "^16.2.6",
     "postcss": "^8.4.35",
     "tailwindcss": "^3.4.1",
     "typescript": "latest"

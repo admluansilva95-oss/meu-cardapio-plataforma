@@ -73,10 +73,25 @@ export async function startSubscriptionCheckout(
   }
   clearTimeout(timeoutId);
 
-  const payload = (await response.json()) as { url?: string; error?: string };
+  type CheckoutJson = { url?: string; error?: string; requestId?: string };
+  let payload: CheckoutJson = {};
+  try {
+    const text = await response.text();
+    payload = text ? (JSON.parse(text) as CheckoutJson) : {};
+  } catch {
+    return {
+      ok: false,
+      error: `Resposta inválida do servidor (${response.status}). Tente novamente.`,
+    };
+  }
 
   if (!response.ok) {
-    return { ok: false, error: payload.error ?? "Falha ao iniciar o checkout." };
+    const base = payload.error ?? "Falha ao iniciar o checkout.";
+    const ref =
+      typeof payload.requestId === "string" && payload.requestId.trim()
+        ? ` (ref: ${payload.requestId.trim()})`
+        : "";
+    return { ok: false, error: `${base}${ref}` };
   }
 
   if (!payload.url) {

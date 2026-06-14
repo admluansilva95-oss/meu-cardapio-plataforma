@@ -84,6 +84,8 @@ export function ProductModal({
         status: form.status,
       });
       onClose();
+    } catch {
+      /* Erro já tratado pelo componente pai (toast / estado global). */
     } finally {
       setSubmitting(false);
     }

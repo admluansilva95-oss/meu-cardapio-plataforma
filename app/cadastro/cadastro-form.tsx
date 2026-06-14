@@ -5,7 +5,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { useMemo, useState } from "react";
 import { startSubscriptionCheckout } from "@/lib/billing/start-checkout";
 import { isValidSlug, normalizeSlugInput } from "@/lib/billing/slug";
-import { getPlanByPriceId, PLANS } from "@/lib/plans";
+import { getPlanByPriceId, PLANS, type Plan } from "@/lib/plans";
 import { PhoneInput } from "@/components/PhoneInput";
 import { buildAssinarPathWithCarry } from "@/lib/auth/post-signup-carry";
 import { getPublicAppUrl } from "@/lib/site-url";
@@ -23,22 +23,29 @@ import {
 } from "@/lib/auth/supabase-browser-auth-safe";
 import { devClientError } from "@/lib/logging/dev-client-log";
 
-export function CadastroForm() {
+export type CadastroFormProps = {
+  /** Definido no Server Component pai para alinhar SSR e hidratação (ver `app/cadastro/page.tsx`). */
+  defaultEssencialPriceId: string;
+};
+
+export function CadastroForm({ defaultEssencialPriceId }: CadastroFormProps) {
   const router = useRouter();
   const searchParams = useSearchParams();
   const canceled = searchParams.get("canceled") === "1";
 
-  const plan = useMemo(() => {
+  const plan = useMemo((): Plan => {
     const fromQuery = searchParams.get("priceId");
     if (fromQuery) {
-      return getPlanByPriceId(fromQuery) ?? PLANS[0];
+      return getPlanByPriceId(fromQuery) ?? { ...PLANS[0], priceId: fromQuery };
     }
-    const fromEnv = process.env.NEXT_PUBLIC_STRIPE_PRICE_ESSENCIAL?.trim();
-    if (fromEnv) {
-      return getPlanByPriceId(fromEnv) ?? PLANS[0];
-    }
-    return PLANS[0];
-  }, [searchParams]);
+    const fromProp = getPlanByPriceId(defaultEssencialPriceId);
+    if (fromProp) return fromProp;
+    /**
+     * O bundle do browser pode não listar o mesmo `priceId` que o SSR (env só no servidor).
+     * Usamos o `priceId` vindo do Server Component para manter o HTML idêntico na hidratação.
+     */
+    return { ...PLANS[0], priceId: defaultEssencialPriceId };
+  }, [searchParams, defaultEssencialPriceId]);
 
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -166,6 +173,13 @@ export function CadastroForm() {
               e.preventDefault();
               void submitCadastro();
             }}
+            onKeyDown={(e) => {
+              if (e.key !== "Enter") return;
+              const t = e.target;
+              if (!(t instanceof HTMLInputElement)) return;
+              e.preventDefault();
+              void submitCadastro();
+            }}
             className="space-y-5"
           >
             <div className="space-y-2">
@@ -233,9 +247,10 @@ export function CadastroForm() {
               />
             </div>
             <button
-              type="submit"
+              type="button"
               data-testid="cadastro-submit"
               disabled={loading}
+              onClick={() => void submitCadastro()}
               className="w-full rounded-2xl bg-gradient-to-r from-teal-400 via-emerald-400 to-cyan-400 py-3.5 text-sm font-semibold text-zinc-950 disabled:opacity-60"
             >
               {loading

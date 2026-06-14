@@ -180,6 +180,13 @@ function LoginForm() {
               e.preventDefault();
               void submitLogin();
             }}
+            onKeyDown={(e) => {
+              if (e.key !== "Enter") return;
+              const t = e.target;
+              if (!(t instanceof HTMLInputElement)) return;
+              e.preventDefault();
+              void submitLogin();
+            }}
             className="space-y-5"
           >
             <div className="space-y-2">
@@ -211,9 +218,10 @@ function LoginForm() {
               />
             </div>
             <button
-              type="submit"
+              type="button"
               data-testid="login-submit"
               disabled={loading}
+              onClick={() => void submitLogin()}
               className="w-full rounded-2xl bg-gradient-to-r from-teal-400 via-emerald-400 to-cyan-400 py-3.5 text-sm font-semibold text-zinc-950 disabled:opacity-60"
             >
               {loading ? "Entrando…" : priceId ? "Continuar para assinatura" : "Entrar"}
