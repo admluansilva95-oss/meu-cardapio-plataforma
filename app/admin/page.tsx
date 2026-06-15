@@ -31,7 +31,7 @@ import {
 import { sanitizeDbPlainText, sanitizeDbPlainTextNullable } from "@/lib/db/sanitize-persist";
 import { navigatePreparedTabOrOpen, prepareNewTabForLaterNavigation } from "@/lib/restaurante/open-url-nova-guia";
 import { buildWhatsappSendHref } from "@/lib/restaurante/whatsapp-href";
-import { fetchAppApiResilient } from "@/lib/http/fetch-app-api";
+import { fetchAppApiResilient, parseAppApiJsonResponse } from "@/lib/http/fetch-app-api";
 import { sanitizeFetchInit } from "@/lib/fetch-latin1-safe";
 import { postJsonComBearer } from "@/lib/restaurante/post-json-bearer-client";
 import {
@@ -254,6 +254,10 @@ function caminhoStorageDeUrlPublica(publicUrl: string): string | null {
   return normalizeLatin1StoragePath(raw);
 }
 
+/**
+ * Upload para o bucket público `imagens-pratos` (migração `20260621120000_storage_imagens_pratos_bucket.sql`).
+ * O SDK envia multipart (FormData); o `Content-Type: application/json` no wrapper do cliente aplica-se a `/rest/v1`, não a este fluxo.
+ */
 async function enviarImagemAoBucketImagensPratos(
   supabase: ReturnType<typeof createBrowserSupabaseClient>,
   restauranteId: string,
@@ -1702,10 +1706,19 @@ function AdminPageInner() {
           window.location.assign("/login?reason=session_expired");
           return;
         }
-        const j = (await res.json()) as {
+        const parsed = await parseAppApiJsonResponse<{
           ok?: boolean;
           supabaseServiceRoleConfigured?: boolean;
-        };
+        }>(res);
+        if (!parsed.ok) {
+          painelError("diagnostics.http_not_ok", {
+            diagGen,
+            status: parsed.status,
+            message: parsed.userMessage,
+          });
+          return;
+        }
+        const j = parsed.data;
         if (cancelled || diagGen !== diagnosticsSeqRef.current) {
           painelLog("diagnostics.skip_stale", {
             diagGen,
@@ -1713,7 +1726,7 @@ function AdminPageInner() {
           });
           return;
         }
-        if (!res.ok || !j.ok) {
+        if (!j.ok) {
           painelLog("diagnostics.http_not_ok", { diagGen, status: res.status });
           return;
         }
@@ -1874,29 +1887,22 @@ function AdminPageInner() {
         configVersion?: number;
         ok?: boolean;
       };
-      let json: ConfigSaveJson;
-      try {
-        const text = await res.text();
-        json = text ? (JSON.parse(text) as ConfigSaveJson) : {};
-      } catch {
-        setCfgMsg(
-          `Resposta inválida do servidor (${res.status}). Tente novamente ou recarregue a página.`,
-        );
+      const parsed = await parseAppApiJsonResponse<ConfigSaveJson>(res);
+      if (!parsed.ok) {
+        const errJson = parsed.errorBody;
+        if (res.status === 409 || errJson?.code === "conflict") {
+          setCfgMsg(
+            errJson?.error ??
+              "Outra aba ou dispositivo salvou antes. Sincronizamos o painel com a versão mais recente.",
+          );
+          await loadData();
+          return;
+        }
+        setCfgMsg(parsed.userMessage);
         return;
       }
-      if (res.status === 409 || json.code === "conflict") {
-        setCfgMsg(
-          json.error ??
-            "Outra aba ou dispositivo salvou antes. Sincronizamos o painel com a versão mais recente.",
-        );
-        await loadData();
-        return;
-      }
-      if (!res.ok) {
-        const rid = json.requestId ? ` (ref: ${json.requestId})` : "";
-        setCfgMsg((json.error ?? `Falha ao salvar (${res.status}).`) + rid);
-        return;
-      }
+      const json = parsed.data;
+
       setAdminToast(TOAST_ALTERACOES_SALVAS);
       const partesMsg: string[] = [];
       if (logoUploadWarning) partesMsg.push(logoUploadWarning);
@@ -2067,7 +2073,7 @@ function AdminPageInner() {
         .update({ cardapio_categorias: next })
         .eq("id", restaurante.id);
       if (error) {
-        throw new Error(mensagemErroSupabasePainel(error.message));
+        throw new Error(mensagemErroSupabasePainel(error));
       }
       try {
         await loadData({ soft: true });
@@ -2338,7 +2344,7 @@ function AdminPageInner() {
             imagemSalva: imagemParaDb,
             raw: error,
           });
-          const msg = mensagemErroSupabasePainel(error.message);
+          const msg = mensagemErroSupabasePainel(error);
           setFetchError(msg);
           setAdminToast(msg);
           throw new Error(msg);
@@ -2397,7 +2403,7 @@ function AdminPageInner() {
             imagemSalva: imagemParaDb,
             raw: error,
           });
-          const msg = mensagemErroSupabasePainel(error.message);
+          const msg = mensagemErroSupabasePainel(error);
           setFetchError(msg);
           setAdminToast(msg);
           throw new Error(msg);
@@ -2433,7 +2439,7 @@ function AdminPageInner() {
     try {
       const { error } = await supabase.from("pratos").delete().eq("id", prato.id);
       if (error) {
-        setFetchError(mensagemErroSupabasePainel(error.message));
+        setFetchError(mensagemErroSupabasePainel(error));
         setPratos(prev);
         return;
       }

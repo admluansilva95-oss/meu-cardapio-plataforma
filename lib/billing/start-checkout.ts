@@ -1,5 +1,5 @@
 import { initJsonPost, sanitizeFetchInit, cloneHeadersLatin1Safe } from "@/lib/fetch-latin1-safe";
-import { fetchAppApiResilient } from "@/lib/http/fetch-app-api";
+import { fetchAppApiResilient, parseAppApiJsonResponse } from "@/lib/http/fetch-app-api";
 import { newClientRequestId } from "@/lib/http/client-request-id";
 import { latin1SafeString } from "@/lib/utils/sanitize-strings";
 
@@ -77,28 +77,18 @@ export async function startSubscriptionCheckout(
   clearTimeout(timeoutId);
 
   type CheckoutJson = { url?: string; error?: string; requestId?: string };
-  let payload: CheckoutJson = {};
-  try {
-    const text = await response.text();
-    payload = text ? (JSON.parse(text) as CheckoutJson) : {};
-  } catch {
+  const parsed = await parseAppApiJsonResponse<CheckoutJson>(response);
+  if (!parsed.ok) {
     return {
       ok: false,
-      error: `Resposta inválida do servidor (${response.status}). Tente novamente.`,
+      error: parsed.userMessage,
     };
   }
-
-  if (!response.ok) {
-    const base = payload.error ?? "Falha ao iniciar o checkout.";
-    const ref =
-      typeof payload.requestId === "string" && payload.requestId.trim()
-        ? ` (ref: ${payload.requestId.trim()})`
-        : "";
-    return { ok: false, error: `${base}${ref}` };
-  }
+  const payload = parsed.data;
 
   if (!payload.url) {
-    return { ok: false, error: "Resposta inválida do servidor de pagamento." };
+    const err = typeof payload.error === "string" && payload.error.trim() ? payload.error.trim() : null;
+    return { ok: false, error: err ?? "Resposta inválida do servidor de pagamento." };
   }
 
   return { ok: true, url: payload.url };

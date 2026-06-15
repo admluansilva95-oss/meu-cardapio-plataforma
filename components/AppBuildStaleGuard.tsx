@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, type ReactNode } from "react";
-import { fetchAppApiResilient } from "@/lib/http/fetch-app-api";
+import { fetchAppApiResilient, parseAppApiJsonResponse } from "@/lib/http/fetch-app-api";
 
 /**
  * Se o HTML/JS em cache for de outro deploy, `NEXT_PUBLIC_BUILD_ID` (empacotado no bundle)
@@ -19,7 +19,9 @@ export function AppBuildStaleGuard({ children }: { children: ReactNode }) {
       try {
         const res = await fetchAppApiResilient("/api/build-info", { cache: "no-store" });
         if (!res.ok || cancelled) return;
-        const body = (await res.json()) as { buildId?: string };
+        const parsed = await parseAppApiJsonResponse<{ buildId?: string }>(res);
+        if (!parsed.ok) return;
+        const body = parsed.data;
         const serverBuild = body.buildId?.trim();
         if (!serverBuild || serverBuild === "unknown" || serverBuild === clientBuild) return;
         if (reloaded.current) return;

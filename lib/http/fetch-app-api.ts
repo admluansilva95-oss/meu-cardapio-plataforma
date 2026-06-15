@@ -1,7 +1,11 @@
 import { clearBrowserAuthArtifacts } from "@/lib/auth/clear-client-auth-state";
 import { notifyGlobalUnauthorized } from "@/lib/auth/global-unauthorized";
 import { newClientRequestId } from "@/lib/http/client-request-id";
+import { parseAppApiJsonResponse, type ParseAppApiJsonResult } from "@/lib/http/parse-app-api-json-response";
 import { cloneHeadersLatin1Safe, latin1SafeFetch, sanitizeFetchInit } from "@/lib/fetch-latin1-safe";
+
+export type { ParseAppApiJsonResult };
+export { parseAppApiJsonResponse };
 
 const RETRYABLE_STATUS = new Set([502, 503, 504]);
 const MAX_ATTEMPTS = 4;
@@ -91,4 +95,15 @@ export async function fetchAppApiResilient(
     }
   }
   throw lastErr instanceof Error ? lastErr : new Error("fetchAppApiResilient: falha desconhecida");
+}
+
+/**
+ * `fetchAppApiResilient` + parsing seguro do corpo (não assume `application/json` nem usa `res.json()` cego).
+ */
+export async function fetchAppApiJson<T = unknown>(
+  input: RequestInfo | URL,
+  init?: FetchAppApiInit,
+): Promise<ParseAppApiJsonResult<T>> {
+  const res = await fetchAppApiResilient(input, init);
+  return parseAppApiJsonResponse<T>(res);
 }

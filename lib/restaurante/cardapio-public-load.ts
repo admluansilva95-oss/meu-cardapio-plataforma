@@ -1,4 +1,4 @@
-import { fetchAppApiResilient } from "@/lib/http/fetch-app-api";
+import { fetchAppApiResilient, parseAppApiJsonResponse } from "@/lib/http/fetch-app-api";
 
 type CardapioPayload = {
   restaurante: unknown;
@@ -30,13 +30,19 @@ export function fetchPublicCardapioDeduped(slug: string, signal?: AbortSignal): 
       `/api/public/cardapio?slug=${encodeURIComponent(key)}`,
       { signal, cache: "no-store" },
     );
-    const body = (await res.json()) as {
+    const parsed = await parseAppApiJsonResponse<{
       error?: string;
       restaurante?: unknown;
       pratos?: unknown;
-    };
+    }>(res);
+    if (!parsed.ok) {
+      throw new Error(parsed.userMessage);
+    }
+    const body = parsed.data;
     if (res.status < 200 || res.status >= 300) {
-      throw new Error(body.error ?? `Erro ${res.status}`);
+      throw new Error(
+        (typeof body.error === "string" && body.error) || `Erro ${res.status}`,
+      );
     }
     const data: CardapioPayload = {
       restaurante: body.restaurante ?? null,

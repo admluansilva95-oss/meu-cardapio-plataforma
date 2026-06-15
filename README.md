@@ -33,6 +33,10 @@ Se aparecer **404** ou **Bucket not found**, no Supabase abra **SQL Editor** e r
 
 Alternativa: executar só a seção **STORAGE** de `supabase/init-completo.sql` (cria os dois buckets e as policies em `storage.objects`).
 
+A migração `20260621120000_storage_imagens_pratos_bucket.sql` define o bucket `imagens-pratos` como **público** (`public = true`), limite de ~5 MB e `allowed_mime_types` para `image/jpeg`, `image/png`, `image/webp` e `image/gif`. As policies permitem **leitura** anónima/autenticada e **insert/update/delete** para `anon` e `authenticated` nesse bucket (ajuste no SQL se quiseres restringir por pasta ou `owner_id`).
+
+Se o painel mostrar erro de **Content-Type** ao gravar o prato (sem ser só upload), costuma ser o pedido JSON ao PostgREST (`/rest/v1`) sem `Content-Type: application/json` — a app força isso no cliente; um **hard refresh** ajuda após deploy.
+
 ## Banco: erro `column restaurantes.horario_funcionamento does not exist`
 
 O app grava um resumo de horário nessa coluna. Se o Postgres ainda não tiver o campo, no **SQL Editor** do Supabase rode **uma** destas opções (são idempotentes):
