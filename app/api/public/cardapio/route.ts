@@ -10,6 +10,7 @@ import {
   supabaseQuerySignal,
 } from "@/lib/supabase/query-timeouts";
 import { runApiWithAccessLog } from "@/lib/http/run-api-with-access-log";
+import { getPublicSupabaseProjectUrl } from "@/lib/supabase/normalize-public-supabase-url";
 
 export const dynamic = "force-dynamic";
 
@@ -39,7 +40,7 @@ export async function GET(request: NextRequest) {
         return jsonWithRequestId(requestId, { error: "Slug inválido." }, 400);
       }
 
-      const url = process.env.NEXT_PUBLIC_SUPABASE_URL?.trim();
+      const url = getPublicSupabaseProjectUrl();
       const anonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY?.trim();
       if (!url || !anonKey) {
         return jsonWithRequestId(

@@ -1,5 +1,6 @@
 import fs from "node:fs";
 import path from "node:path";
+import { normalizePublicSupabaseUrl } from "../../../lib/supabase/normalize-public-supabase-url";
 
 const PUBLIC_SUPABASE_KEYS = ["NEXT_PUBLIC_SUPABASE_URL", "NEXT_PUBLIC_SUPABASE_ANON_KEY"] as const;
 
@@ -69,7 +70,9 @@ export function getPublicSupabaseEnvFromFiles(): Record<string, string> {
   const out: Record<string, string> = {};
   for (const k of PUBLIC_SUPABASE_KEYS) {
     const v = picked[k]?.trim();
-    if (v) out[k] = v;
+    if (v) {
+      out[k] = k === "NEXT_PUBLIC_SUPABASE_URL" ? normalizePublicSupabaseUrl(v) : v;
+    }
   }
   return out;
 }
@@ -108,4 +111,9 @@ export function loadLocalEnvFiles(): void {
     }
   }
   applyPublicSupabaseFromFilesOverridingShell(relativePaths);
+  if (process.env.NEXT_PUBLIC_SUPABASE_URL?.trim()) {
+    process.env.NEXT_PUBLIC_SUPABASE_URL = normalizePublicSupabaseUrl(
+      process.env.NEXT_PUBLIC_SUPABASE_URL,
+    );
+  }
 }

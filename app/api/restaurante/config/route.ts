@@ -30,6 +30,7 @@ import { serverLatin1SafeFetch } from "@/lib/http/server-latin1-fetch";
 import { logStructured } from "@/lib/logging/structured-log";
 import { jsonWithRequestId } from "@/lib/http/json-with-request-id";
 import { runApiWithAccessLog } from "@/lib/http/run-api-with-access-log";
+import { getPublicSupabaseProjectUrl } from "@/lib/supabase/normalize-public-supabase-url";
 
 export const dynamic = "force-dynamic";
 
@@ -232,7 +233,7 @@ export async function POST(request: NextRequest) {
       });
 
       const supabase = createServerClient(
-        process.env.NEXT_PUBLIC_SUPABASE_URL!,
+        getPublicSupabaseProjectUrl(),
         process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
         {
           cookieOptions: getSupabaseServerCookieOptions(),

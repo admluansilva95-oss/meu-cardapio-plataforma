@@ -1,10 +1,10 @@
 import type { AuthError, SupabaseClient } from "@supabase/supabase-js";
+import { getPublicSupabaseProjectUrl } from "@/lib/supabase/normalize-public-supabase-url";
 
 /** Variáveis públicas necessárias ao cliente Supabase no browser. */
 export function isSupabaseBrowserEnvConfigured(): boolean {
   return Boolean(
-    process.env.NEXT_PUBLIC_SUPABASE_URL?.trim() &&
-      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY?.trim(),
+    getPublicSupabaseProjectUrl() && process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY?.trim(),
   );
 }
 

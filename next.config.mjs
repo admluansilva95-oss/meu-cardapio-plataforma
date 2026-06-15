@@ -1,6 +1,35 @@
 import fs from "node:fs";
 import path from "node:path";
 
+/** Alinhar com `lib/supabase/normalize-public-supabase-url.ts` (Next não importa TS daqui). */
+function normalizePublicSupabaseUrlRaw(raw) {
+  let u = String(raw ?? "").trim();
+  if (!u) return "";
+  const suffixes = [
+    "/auth/v1",
+    "/rest/v1",
+    "/storage/v1",
+    "/realtime/v1",
+    "/functions/v1",
+    "/graphql/v1",
+  ];
+  let guard = 0;
+  while (guard++ < 8) {
+    u = u.replace(/\/+$/g, "");
+    const lower = u.toLowerCase();
+    let stripped = false;
+    for (const suf of suffixes) {
+      if (lower.endsWith(suf)) {
+        u = u.slice(0, -suf.length);
+        stripped = true;
+        break;
+      }
+    }
+    if (!stripped) break;
+  }
+  return u.replace(/\/+$/g, "");
+}
+
 /**
  * Igual à ideia em `tests/e2e/fixtures/load-env-files.ts`: preenche `undefined`,
  * e permite `.env.e2e` substituir placeholders vazios das chaves públicas do Supabase.
@@ -102,6 +131,12 @@ function mergePublicSupabaseFromStandardEnvFiles() {
 if (process.env.VERCEL !== "1") {
   mergeOptionalNonStandardEnvFiles();
   mergePublicSupabaseFromStandardEnvFiles();
+}
+
+if (process.env.NEXT_PUBLIC_SUPABASE_URL?.trim()) {
+  process.env.NEXT_PUBLIC_SUPABASE_URL = normalizePublicSupabaseUrlRaw(
+    process.env.NEXT_PUBLIC_SUPABASE_URL.trim(),
+  );
 }
 
 /** @type {import('next').NextConfig} */

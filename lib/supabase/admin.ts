@@ -1,5 +1,6 @@
 import { createClient } from "@supabase/supabase-js";
 import { serverLatin1SafeFetch } from "@/lib/http/server-latin1-fetch";
+import { getPublicSupabaseProjectUrl } from "@/lib/supabase/normalize-public-supabase-url";
 
 /**
  * Cliente com service role — usar apenas em Route Handlers / jobs server-side.
@@ -8,7 +9,7 @@ import { serverLatin1SafeFetch } from "@/lib/http/server-latin1-fetch";
  * nem ser importada por ficheiros `"use client"` / bundles do browser.
  */
 export function createAdminSupabaseClient() {
-  const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const url = getPublicSupabaseProjectUrl();
   const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
 
   if (!url || !serviceKey) {

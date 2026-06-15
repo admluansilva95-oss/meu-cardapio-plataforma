@@ -1,5 +1,6 @@
 import "@/lib/wire/bootstrap-byte-string-guard";
 import { createBrowserClient } from "@supabase/ssr";
+import { getPublicSupabaseProjectUrl } from "@/lib/supabase/normalize-public-supabase-url";
 import { getNativeFetchForSupabase } from "@/lib/wire/install-client-byte-string-guard";
 import {
   getOwnerAuthStorageOptions,
@@ -15,13 +16,9 @@ import {
  * O resto da app continua com `fetch` / `Headers` / `Request` instrumentados via layout.
  */
 export function createBrowserSupabaseClient() {
-  return createBrowserClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-    {
-      global: { fetch: getNativeFetchForSupabase() },
-      cookieOptions: getSupabaseBrowserCookieOptions(),
-      ...getOwnerAuthStorageOptions(),
-    },
-  );
+  return createBrowserClient(getPublicSupabaseProjectUrl(), process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!, {
+    global: { fetch: getNativeFetchForSupabase() },
+    cookieOptions: getSupabaseBrowserCookieOptions(),
+    ...getOwnerAuthStorageOptions(),
+  });
 }

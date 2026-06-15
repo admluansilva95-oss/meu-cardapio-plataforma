@@ -5,6 +5,7 @@ import {
   getOwnerAuthStorageOptions,
   getSupabaseServerCookieOptions,
 } from "@/lib/auth/supabase-session-cookies";
+import { getPublicSupabaseProjectUrl } from "@/lib/supabase/normalize-public-supabase-url";
 import { latin1CookieWrite } from "@/lib/http/byte-string-http";
 import { nextResponseWithByteStringSafeWire } from "@/lib/http/next-response-wire-safe";
 import { serverLatin1SafeFetch } from "@/lib/http/server-latin1-fetch";
@@ -60,7 +61,7 @@ export async function proxy(request: NextRequest) {
   });
 
   const supabase = createServerClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    getPublicSupabaseProjectUrl(),
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
     {
       cookieOptions: getSupabaseServerCookieOptions(),

@@ -10,7 +10,7 @@ No painel do teu hosting (ex.: **Vercel** → Project → Settings → Environme
 
 | Variável | Onde obter o valor |
 | -------- | ------------------- |
-| `NEXT_PUBLIC_SUPABASE_URL` | Supabase → **Project Settings** → **API** → *Project URL* (ex.: `https://xxxx.supabase.co`) |
+| `NEXT_PUBLIC_SUPABASE_URL` | Supabase → **Project Settings** → **API** → *Project URL* (só a base, ex.: `https://xxxx.supabase.co`). **Não** incluas `/auth/v1`, `/rest/v1` nem barra no fim — isso provoca “Invalid path specified in request URL”. O projeto normaliza automaticamente se colares com sufixo. |
 | `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Mesmo ecrã → *anon public* |
 
 Estas variáveis entram no **build** do Next.js; depois de as adicionares ou alterares, faz um **novo deploy** (rebuild). Sem elas, o login e o resto da app que falam com o Supabase não têm para onde ligar — vês mensagens como a de `lib/auth/supabase-browser-auth-safe.ts` (“credenciais públicas… no painel de deploy”).

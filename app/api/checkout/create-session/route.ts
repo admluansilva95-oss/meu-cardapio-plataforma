@@ -12,6 +12,7 @@ import { logStructured } from "@/lib/logging/structured-log";
 import { requireAdminSupabaseClient } from "@/lib/supabase/admin";
 import { serverLatin1SafeFetch } from "@/lib/http/server-latin1-fetch";
 import { runApiWithAccessLog } from "@/lib/http/run-api-with-access-log";
+import { getPublicSupabaseProjectUrl } from "@/lib/supabase/normalize-public-supabase-url";
 
 type CookieToSet = { name: string; value: string; options: CookieOptions };
 
@@ -49,7 +50,7 @@ export async function POST(request: NextRequest) {
       const authCookieWrites: CookieToSet[] = [];
 
       const supabase = createServerClient(
-        process.env.NEXT_PUBLIC_SUPABASE_URL!,
+        getPublicSupabaseProjectUrl(),
         process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
         {
           cookieOptions: getSupabaseServerCookieOptions(),

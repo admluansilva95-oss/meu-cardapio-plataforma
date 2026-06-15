@@ -7,6 +7,7 @@ import {
 import { getPublicAppUrl } from "@/lib/site-url";
 import { latin1CookieWrite } from "@/lib/http/byte-string-http";
 import { serverLatin1SafeFetch } from "@/lib/http/server-latin1-fetch";
+import { getPublicSupabaseProjectUrl } from "@/lib/supabase/normalize-public-supabase-url";
 
 type CookieToSet = { name: string; value: string; options: CookieOptions };
 
@@ -76,7 +77,7 @@ export async function GET(request: NextRequest) {
   const response = NextResponse.redirect(redirectUrl);
 
   const supabase = createServerClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    getPublicSupabaseProjectUrl(),
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
     {
       cookieOptions: getSupabaseServerCookieOptions(),

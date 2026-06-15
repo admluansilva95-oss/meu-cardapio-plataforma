@@ -1,4 +1,5 @@
 import { createClient } from "@supabase/supabase-js";
+import { normalizePublicSupabaseUrl } from "../../../lib/supabase/normalize-public-supabase-url";
 import { hasE2eAuthCredentials, hasPublicSupabaseEnv } from "./env";
 
 const README = "tests/e2e/README.md (secção «Dados no Supabase»)";
@@ -14,7 +15,7 @@ export async function assertE2eRestauranteForOwnerOrSlug(): Promise<void> {
   if (process.env.E2E_SKIP_RESTAURANT_CHECK === "1") return;
   if (!hasE2eAuthCredentials() || !hasPublicSupabaseEnv()) return;
 
-  const url = process.env.NEXT_PUBLIC_SUPABASE_URL!.trim();
+  const url = normalizePublicSupabaseUrl(process.env.NEXT_PUBLIC_SUPABASE_URL!.trim());
   const anon = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!.trim();
   const email = process.env.E2E_EMAIL!.trim();
   const password = process.env.E2E_PASSWORD!.trim();
