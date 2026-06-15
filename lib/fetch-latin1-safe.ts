@@ -17,6 +17,16 @@ function isRequestLike(source: unknown): source is Request {
   return typeof R !== "undefined" && source instanceof R;
 }
 
+/** Cabeçalhos de negociação / corpo: não passar por `sanitizeUserFreeText` (tipografia/NFKC podem alterar media types). */
+const HEADER_VALUE_PRESERVE_WIRE = new Set([
+  "accept",
+  "accept-profile",
+  "content-type",
+  "content-profile",
+  "prefer",
+  "range",
+]);
+
 /**
  * Constrói `Headers` só com pares Latin-1 seguros (usa construtor **nativo** para não
  * recursar se `globalThis.Headers` estiver instrumentado).
@@ -29,11 +39,19 @@ export function cloneHeadersLatin1Safe(source?: HeadersInit | null): Headers {
     const name = latin1SafeString(nameRaw);
     if (!name) return;
     const nameLower = name.toLowerCase();
-    /** JWT / chaves Supabase: não passar por `sanitizeUserFreeText` (NFKC e substituições podem alterar o wire). */
-    const value =
-      nameLower === "apikey" || nameLower === "authorization"
-        ? latin1SafeString(stripInvisibleFormatting(valueRaw))
-        : sanitizeUserFreeText(valueRaw);
+    /**
+     * JWT, chaves Supabase, negociação HTTP: não passar por `sanitizeUserFreeText`
+     * (NFKC e substituições podem alterar o wire; omitir `Content-Type` leva o fetch a
+     * enviar corpo string como `text/plain` → PostgREST: "Content-Type not acceptable: text/plain").
+     */
+    const preserveWire =
+      nameLower === "apikey" ||
+      nameLower === "authorization" ||
+      nameLower.startsWith("x-supabase-") ||
+      HEADER_VALUE_PRESERVE_WIRE.has(nameLower);
+    const value = preserveWire
+      ? latin1SafeString(stripInvisibleFormatting(valueRaw))
+      : sanitizeUserFreeText(valueRaw);
     try {
       if (append) fixed.append(name, value);
       else fixed.set(name, value);
