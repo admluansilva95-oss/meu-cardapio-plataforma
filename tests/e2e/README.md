@@ -2,7 +2,7 @@
 
 ## Stack
 
-- **Next.js** (App Router), **Supabase Auth** no cliente, proteção de `/admin` no `proxy.ts` (middleware).
+- **Next.js** (App Router), **Supabase Auth** no cliente, proteção de `/admin` em `proxy.ts` (no Next 16+ aparece como **Proxy (Middleware)** no output de `next build` — não usar um `middleware.ts` separado em paralelo).
 
 ## Estratégia de QA (resumo)
 

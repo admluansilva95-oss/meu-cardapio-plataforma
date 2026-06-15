@@ -15,5 +15,8 @@ export async function postJsonComBearer(
   bearerToken: string,
 ): Promise<Response> {
   const wired = deepSanitizeStringsForWire(payload);
-  return fetchAppApiResilient(url, sanitizeFetchInit(initJsonPost(wired, bearerToken)));
+  return fetchAppApiResilient(url, {
+    appAuthCascade: true,
+    ...sanitizeFetchInit(initJsonPost(wired, bearerToken)),
+  });
 }

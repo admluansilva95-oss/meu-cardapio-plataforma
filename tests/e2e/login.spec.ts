@@ -39,7 +39,7 @@ test.describe("Login", () => {
   });
 
   test.describe("Integração (Supabase real)", () => {
-    test.describe.configure({ timeout: 90_000 });
+    test.describe.configure({ mode: "serial", timeout: 90_000 });
 
     test.beforeAll(() => {
       requireE2eAuthCredentials();

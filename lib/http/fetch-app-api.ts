@@ -40,15 +40,33 @@ function mergeRequestIdHeader(init: RequestInit): RequestInit {
   return { ...merged, headers: h };
 }
 
+export type FetchAppApiInit = RequestInit & {
+  /**
+   * Só com `true`: 401/403 limpam cookies do dono e disparam `notifyGlobalUnauthorized`.
+   * Por omissão `false` — evita deslogar por pings (`/api/build-info`, diagnostics), analytics
+   * ou respostas transitórias enquanto a sessão ainda está a hidratar após reload.
+   */
+  appAuthCascade?: boolean;
+};
+
 /**
  * `fetch` para APIs **do próprio app** (mesma origem): cabeçalho `X-Request-ID`,
- * retry com backoff em 502/503/504 e falhas de rede transitórias, e cascata de auth em 401/403.
+ * retry com backoff em 502/503/504 e falhas de rede transitórias.
+ * Cascata global de sessão (401/403) só com `appAuthCascade: true` em rotas que o pedem.
  */
 export async function fetchAppApiResilient(
   input: RequestInfo | URL,
-  init?: RequestInit,
+  init?: FetchAppApiInit,
 ): Promise<Response> {
-  const wired = init == null ? undefined : mergeRequestIdHeader(init);
+  const authCascade = Boolean(init?.appAuthCascade);
+  const restInit: RequestInit | undefined =
+    init == null
+      ? undefined
+      : (() => {
+          const { appAuthCascade: _omit, ...r } = init;
+          return Object.keys(r).length > 0 ? r : undefined;
+        })();
+  const wired = restInit == null ? undefined : mergeRequestIdHeader(restInit);
   let lastErr: unknown = null;
 
   for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt += 1) {
@@ -58,7 +76,7 @@ export async function fetchAppApiResilient(
         await sleep(backoffMs(attempt));
         continue;
       }
-      if (res.status === 401 || res.status === 403) {
+      if (authCascade && (res.status === 401 || res.status === 403)) {
         clearBrowserAuthArtifacts();
         notifyGlobalUnauthorized(res.status === 401 ? 401 : 403);
       }

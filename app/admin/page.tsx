@@ -22,7 +22,12 @@ import { devClientError, devClientWarn } from "@/lib/logging/dev-client-log";
 import { mensagemErroSupabasePainel } from "@/lib/supabase/mensagem-erro";
 import { mensagemUploadStorageAmigavel } from "@/lib/restaurante/mensagem-upload-storage";
 import { sanitizarNomeArquivoStorageBase } from "@/lib/restaurante/sanitizar-nome-arquivo-storage";
-import { normalizeLatin1StoragePath, sanitizeUserFreeText } from "@/lib/utils/sanitize-strings";
+import {
+  latin1SafeString,
+  normalizeLatin1StoragePath,
+  stripInvisibleFormatting,
+  sanitizeUserFreeText,
+} from "@/lib/utils/sanitize-strings";
 import { sanitizeDbPlainText, sanitizeDbPlainTextNullable } from "@/lib/db/sanitize-persist";
 import { navigatePreparedTabOrOpen, prepareNewTabForLaterNavigation } from "@/lib/restaurante/open-url-nova-guia";
 import { buildWhatsappSendHref } from "@/lib/restaurante/whatsapp-href";
@@ -1330,7 +1335,7 @@ function AdminPageInner() {
        * que `loadData()` usa ao esperar `sessionUser` antes de validar o restaurante.
        */
       let user: { id: string } | null = null;
-      const sessionWaitDeadline = Date.now() + 12_000;
+      const sessionWaitDeadline = Date.now() + 20_000;
       while (Date.now() < sessionWaitDeadline) {
         if (cancelled || resolveGen !== slugResolveSeqRef.current) {
           painelLog("slug_resolve.skip_stale", {
@@ -1684,7 +1689,9 @@ function AdminPageInner() {
         const res = await fetchAppApiResilient(
           "/api/admin/diagnostics",
           sanitizeFetchInit({
-            headers: { Authorization: `Bearer ${sanitizeUserFreeText(token)}` },
+            headers: {
+              Authorization: `Bearer ${latin1SafeString(stripInvisibleFormatting(token.trim()))}`,
+            },
             credentials: "include",
             cache: "no-store",
             referrerPolicy: "no-referrer",

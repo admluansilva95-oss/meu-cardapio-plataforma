@@ -52,11 +52,14 @@ export async function startSubscriptionCheckout(
   try {
     response = await fetchAppApiResilient(
       "/api/checkout/create-session",
-      sanitizeFetchInit({
-        ...baseInit,
-        headers,
-        signal: controller.signal,
-      }),
+      {
+        appAuthCascade: true,
+        ...sanitizeFetchInit({
+          ...baseInit,
+          headers,
+          signal: controller.signal,
+        }),
+      },
     );
   } catch (err) {
     clearTimeout(timeoutId);

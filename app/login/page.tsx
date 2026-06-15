@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useRouter, useSearchParams } from "next/navigation";
+import { useSearchParams } from "next/navigation";
 import { Suspense, useEffect, useState } from "react";
 import { createBrowserSupabaseClient } from "@/lib/supabase";
 import { getPublicAppUrl } from "@/lib/site-url";
@@ -16,11 +16,11 @@ import {
   isSupabaseBrowserEnvConfigured,
   mensagemFalhaAutenticacaoResidual,
   MENSAGEM_SUPABASE_ENV_AUSENTE,
+  waitForOwnerSessionAfterSignIn,
 } from "@/lib/auth/supabase-browser-auth-safe";
 import { devClientError } from "@/lib/logging/dev-client-log";
 
 function LoginForm() {
-  const router = useRouter();
   const searchParams = useSearchParams();
   const priceId = searchParams.get("priceId") ?? "";
   const signupPending = searchParams.get("signup") === "1";
@@ -67,13 +67,14 @@ function LoginForm() {
         error,
       } = await authGetSessionSafe(supabase);
       if (!cancelled && !error && session?.user) {
-        router.replace(redirectAfterLogin);
+        /** Navegação completa: o `proxy` no próximo documento lê cookies antes do React hidratar. */
+        window.location.replace(redirectAfterLogin);
       }
     })();
     return () => {
       cancelled = true;
     };
-  }, [router, redirectAfterLogin]);
+  }, [redirectAfterLogin]);
 
   async function submitLogin() {
     setLoading(true);
@@ -119,12 +120,15 @@ function LoginForm() {
       }
 
       if (data.session) {
-        try {
-          router.push(redirectAfterLogin);
-        } catch (navErr) {
-          devClientError("[login] router.push:", navErr);
-          window.location.assign(redirectAfterLogin);
+        const persisted = await waitForOwnerSessionAfterSignIn(supabase);
+        if (!persisted) {
+          devClientError("[login] sessão GoTrue não ficou visível em getSession após signIn");
+          setErrorMessage(
+            "A sessão não foi gravada a tempo neste dispositivo. Aguarde um instante e toque em Entrar de novo (sem recarregar a página).",
+          );
+          return;
         }
+        window.location.assign(redirectAfterLogin);
         return;
       }
 

@@ -1,6 +1,4 @@
 import "@/lib/wire/bootstrap-byte-string-guard";
-import { clearBrowserAuthArtifacts } from "@/lib/auth/clear-client-auth-state";
-import { notifyGlobalUnauthorized } from "@/lib/auth/global-unauthorized";
 import { jsonStringifyLatin1Wire } from "@/lib/restaurante/json-latin1-wire";
 import { buildVitrinePedidoWirePayload } from "@/lib/restaurante/vitrine-pedido-wire";
 import { latin1SafeString } from "@/lib/utils/sanitize-strings";
@@ -75,10 +73,6 @@ export async function registrarPedidoVitrineNaApi(
   for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt += 1) {
     try {
       const out = await postOnce(url, bodyAb, requestId, idempotencyKey);
-      if (out.status === 401 || out.status === 403) {
-        clearBrowserAuthArtifacts();
-        notifyGlobalUnauthorized(out.status === 401 ? 401 : 403);
-      }
       if (RETRY_STATUS.has(out.status) && attempt < MAX_ATTEMPTS - 1) {
         await sleep(backoffMs(attempt));
         continue;
