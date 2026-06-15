@@ -156,6 +156,7 @@ function mapPedidoRow(row: {
   motoboy: string | null;
   criado_em?: string | null;
 }): Pedido | null {
+  if (row == null || typeof row !== "object") return null;
   if (!isKanbanCol(row.coluna)) return null;
   if (!isFormaPagamento(row.pagamento)) return null;
   const criado =
@@ -365,6 +366,7 @@ function mapPratoRow(row: {
   categoria?: string | null;
   status: string;
 }): Prato | null {
+  if (row == null || typeof row !== "object") return null;
   if (row.status !== "ativo" && row.status !== "pausado") return null;
   return {
     id: row.id,
@@ -2338,8 +2340,8 @@ function AdminPageInner() {
 
         if (error) {
           devClientError("[pratos DB] Falha no UPDATE:", {
-            code: error.code,
-            message: error.message,
+            code: error?.code,
+            message: error?.message,
             pratoId: payload.id,
             imagemSalva: imagemParaDb,
             raw: error,
@@ -2397,8 +2399,8 @@ function AdminPageInner() {
 
         if (error) {
           devClientError("[pratos DB] Falha no INSERT:", {
-            code: error.code,
-            message: error.message,
+            code: error?.code,
+            message: error?.message,
             restaurante_id: payload.restaurante_id,
             imagemSalva: imagemParaDb,
             raw: error,
@@ -2408,8 +2410,23 @@ function AdminPageInner() {
           setAdminToast(msg);
           throw new Error(msg);
         }
+        if (data == null) {
+          const msg =
+            "O servidor não devolveu os dados do prato após criar (resposta vazia). Atualize a página ou confira as políticas RLS da tabela `pratos` no Supabase.";
+          setFetchError(msg);
+          setAdminToast(msg);
+          throw new Error(msg);
+        }
         const mapped = mapPratoRow(data as Parameters<typeof mapPratoRow>[0]);
-        if (mapped) setPratos((lista) => [mapped, ...lista]);
+        if (!mapped) {
+          const msg = mensagemErroSupabasePainel(
+            "O prato foi criado mas a resposta tinha um estado inválido. Recarregue a página para ver a lista atualizada.",
+          );
+          setFetchError(msg);
+          setAdminToast(msg);
+          throw new Error(msg);
+        }
+        setPratos((lista) => [mapped, ...lista]);
       }
       setAdminToast(TOAST_ALTERACOES_SALVAS);
     } catch (dbErr) {

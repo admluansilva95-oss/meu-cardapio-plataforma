@@ -11,7 +11,7 @@ export function isRetryableSupabaseError(error: unknown): boolean {
   const e = error as { message?: string; code?: string; status?: number };
   const msg = (e.message ?? "").toLowerCase();
   const code = String(e.code ?? "");
-  const status = e.status;
+  const status = typeof e.status === "number" ? e.status : NaN;
 
   if (status === 429 || status === 502 || status === 503 || status === 504) return true;
   if (["503", "504", "429", "pgrst301", "57014"].includes(code.toLowerCase())) return true;
