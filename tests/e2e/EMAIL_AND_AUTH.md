@@ -24,7 +24,7 @@ Em local, o Playwright carrega **na ordem** `.env.local`, `.env.e2e` na raiz e `
 
 Sem `NEXT_PUBLIC_*`, o `next dev` no CI não alimenta o bundle e o login/cardápio quebram antes dos mocks.
 
-Em **desenvolvimento local**, o `next.config.mjs` funde também `.env.e2e` e `tests/e2e/.env.e2e` (o Next por defeito não os lê). Assim, `NEXT_PUBLIC_SUPABASE_*` definidos só nesses ficheiros passam a estar disponíveis no browser mesmo com `npm run dev` manual ou `reuseExistingServer`. Após alterar variáveis, reinicie o `next dev`.
+Em **desenvolvimento local** (quando `VERCEL` não é `1`), o `next.config.mjs` funde `.env.e2e` e `tests/e2e/.env.e2e` em `process.env` — o Next por defeito não os lê, e **não** confiar em `NODE_ENV !== "production"` aqui: o Next pode avaliar a config com `NODE_ENV === "production"` mesmo em `next dev`, o que impedia o merge. Os valores passam também por `next.config.mjs` → `env` para inlining no cliente. Após alterar variáveis, reinicie o `next dev`.
 
 ## Como testar o gatilho sem caixa de entrada real
 

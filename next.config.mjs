@@ -2,10 +2,30 @@ import fs from "node:fs";
 import path from "node:path";
 
 /**
+ * Igual à ideia em `tests/e2e/fixtures/load-env-files.ts`: preenche `undefined`,
+ * e permite `.env.e2e` substituir placeholders vazios das chaves públicas do Supabase.
+ */
+function shouldApplyMergedEnvKey(key, newVal) {
+  const cur = process.env[key];
+  if (cur === undefined) return true;
+  if (
+    (key === "NEXT_PUBLIC_SUPABASE_URL" || key === "NEXT_PUBLIC_SUPABASE_ANON_KEY") &&
+    !String(cur).trim() &&
+    String(newVal).trim()
+  ) {
+    return true;
+  }
+  return false;
+}
+
+/**
  * O Next só carrega `.env`, `.env.local`, `.env.development*`, etc. — não `.env.e2e`.
- * Em desenvolvimento, fundir os mesmos paths que `tests/e2e/fixtures/load-env-files.ts`
- * para `npm run dev` (manual ou `reuseExistingServer`) expor `NEXT_PUBLIC_*` ao bundle.
- * Não sobrescreve chaves já definidas (shell / `.env.local` já processado pelo Next).
+ * Funde `.env.e2e` em `process.env` para `npm run dev` (manual ou `reuseExistingServer`)
+ * ver `NEXT_PUBLIC_*` no bundle.
+ *
+ * **Não** usar `NODE_ENV !== "production"`: o Next pode avaliar este ficheiro com
+ * `NODE_ENV === "production"` mesmo durante `next dev`, o que impedia o merge.
+ * Em `vercel build` / runtime, `VERCEL=1` — não ler ficheiros locais `.env.e2e`.
  */
 function mergeOptionalNonStandardEnvFiles() {
   const relativePaths = [
@@ -30,14 +50,14 @@ function mergeOptionalNonStandardEnvFiles() {
       ) {
         val = val.slice(1, -1);
       }
-      if (process.env[key] === undefined) {
+      if (shouldApplyMergedEnvKey(key, val)) {
         process.env[key] = val;
       }
     }
   }
 }
 
-if (process.env.NODE_ENV !== "production") {
+if (process.env.VERCEL !== "1") {
   mergeOptionalNonStandardEnvFiles();
 }
 
@@ -47,12 +67,22 @@ const buildId =
   process.env.BUILD_ID?.trim() ||
   `local-${process.env.npm_package_version || "0.1.0"}`;
 
+const publicSupabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL?.trim() ?? "";
+const publicSupabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY?.trim() ?? "";
+
 const nextConfig = {
   /** Playwright usa 127.0.0.1; sem isto o HMR falha e o cliente pode ficar inconsistente no dev. */
   allowedDevOrigins: ["127.0.0.1"],
   env: {
     /** Comparado com `GET /api/build-info` para reload após novo deploy. */
     NEXT_PUBLIC_BUILD_ID: buildId,
+    /** Garante inlining no cliente após o merge de `.env.e2e` acima. */
+    ...(publicSupabaseUrl && publicSupabaseAnonKey
+      ? {
+          NEXT_PUBLIC_SUPABASE_URL: publicSupabaseUrl,
+          NEXT_PUBLIC_SUPABASE_ANON_KEY: publicSupabaseAnonKey,
+        }
+      : {}),
   },
   images: {
     remotePatterns: [

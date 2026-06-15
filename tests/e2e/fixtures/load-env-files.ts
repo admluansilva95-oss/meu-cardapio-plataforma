@@ -1,12 +1,26 @@
 import fs from "node:fs";
 import path from "node:path";
 
+function shouldApplyEnvKey(key: string, newVal: string): boolean {
+  const cur = process.env[key];
+  if (cur === undefined) return true;
+  if (
+    (key === "NEXT_PUBLIC_SUPABASE_URL" || key === "NEXT_PUBLIC_SUPABASE_ANON_KEY") &&
+    !String(cur).trim() &&
+    newVal.trim()
+  ) {
+    return true;
+  }
+  return false;
+}
+
 /**
  * Carrega variáveis de ambiente para o processo do Playwright (Node), sem dependência de `dotenv`.
- * Não sobrescreve chaves já definidas no ambiente (CI / shell).
+ * Não sobrescreve chaves já definidas no ambiente (CI / shell), exceto placeholders vazios
+ * `NEXT_PUBLIC_SUPABASE_*` que `.env.e2e` pode preencher.
  */
 export function loadLocalEnvFiles(): void {
-  /** Ordem: primeiro ficheiro define a chave; os seguintes só preenchem `undefined` (como no Playwright/CI). */
+  /** Ordem: `.env.local` primeiro; `.env.e2e` preenche lacunas (e chaves públicas Supabase vazias). */
   const relativePaths = [
     ".env.local",
     ".env.e2e",
@@ -31,7 +45,7 @@ export function loadLocalEnvFiles(): void {
       ) {
         val = val.slice(1, -1);
       }
-      if (process.env[key] === undefined) {
+      if (shouldApplyEnvKey(key, val)) {
         process.env[key] = val;
       }
     }
