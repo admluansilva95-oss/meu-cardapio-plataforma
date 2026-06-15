@@ -1,3 +1,4 @@
+import { assertE2eRestauranteForOwnerOrSlug } from "./fixtures/assert-e2e-restaurant";
 import { loadLocalEnvFiles } from "./fixtures/load-env-files";
 
 /**
@@ -5,4 +6,5 @@ import { loadLocalEnvFiles } from "./fixtures/load-env-files";
  */
 export default async function globalSetup(): Promise<void> {
   loadLocalEnvFiles();
+  await assertE2eRestauranteForOwnerOrSlug();
 }

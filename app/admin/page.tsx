@@ -1324,16 +1324,35 @@ function AdminPageInner() {
     painelLog("slug_resolve.start", { resolveGen });
 
     void (async () => {
-      const {
-        data: { user },
-      } = await withRetry(async () => supabase.auth.getUser(), {
-        shouldRetry: (r) => isRetryableSupabaseError(r.error),
-      });
+      /**
+       * Após `reload`, o JWT em cookies pode ainda não estar visível para o cliente no mesmo tick
+       * que `getUser()` (que fala com o GoTrue). `getSession()` lê a sessão local — mesmo padrão
+       * que `loadData()` usa ao esperar `sessionUser` antes de validar o restaurante.
+       */
+      let user: { id: string } | null = null;
+      const sessionWaitDeadline = Date.now() + 12_000;
+      while (Date.now() < sessionWaitDeadline) {
+        if (cancelled || resolveGen !== slugResolveSeqRef.current) {
+          painelLog("slug_resolve.skip_stale", {
+            resolveGen,
+            current: slugResolveSeqRef.current,
+            phase: "during_get_session_poll",
+            cancelled,
+          });
+          return;
+        }
+        const {
+          data: { session },
+        } = await supabase.auth.getSession();
+        user = session?.user ?? null;
+        if (user) break;
+        await new Promise((r) => void setTimeout(r, 80));
+      }
       if (cancelled || resolveGen !== slugResolveSeqRef.current) {
         painelLog("slug_resolve.skip_stale", {
           resolveGen,
           current: slugResolveSeqRef.current,
-          phase: "after_get_user",
+          phase: "after_get_session_poll",
           cancelled,
         });
         return;
@@ -1456,9 +1475,24 @@ function AdminPageInner() {
         return;
       }
 
-      const {
-        data: { user: sessionUser },
-      } = await supabase.auth.getUser();
+      let sessionUser: { id: string } | null = null;
+      const sessionWaitDeadline = Date.now() + 4_000;
+      while (Date.now() < sessionWaitDeadline) {
+        const {
+          data: { session },
+        } = await supabase.auth.getSession();
+        sessionUser = session?.user ?? null;
+        if (sessionUser) break;
+        if (seq !== loadDataSeqRef.current) {
+          painelLog("loadData.stale", {
+            seq,
+            current: loadDataSeqRef.current,
+            phase: "after_get_session",
+          });
+          return;
+        }
+        await new Promise((r) => void setTimeout(r, 80));
+      }
 
       if (seq !== loadDataSeqRef.current) {
         painelLog("loadData.stale", {
@@ -1569,6 +1603,19 @@ function AdminPageInner() {
   useEffect(() => {
     void loadData();
   }, [loadData]);
+
+  useEffect(() => {
+    const {
+      data: { subscription },
+    } = supabase.auth.onAuthStateChange((event, session) => {
+      if (!session?.user) return;
+      // Após reload (F5), o primeiro `loadData()` pode correr antes da sessão em cookies estar
+      // hidratada no cliente → `getUser()` null e estado «Sessão expirada» sem novo fetch.
+      if (event !== "INITIAL_SESSION" && event !== "SIGNED_IN") return;
+      void loadData();
+    });
+    return () => subscription.unsubscribe();
+  }, [supabase, loadData]);
 
   useEffect(() => {
     if (!restaurante) return;
@@ -2462,7 +2509,7 @@ function AdminPageInner() {
   }
 
   if (loading && !restaurante) {
-    return <PedidosDashboardSkeleton variant="full" />;
+    return <PedidosDashboardSkeleton variant="full" dataTestId="admin-dashboard-loading" />;
   }
 
   if (!restaurante) {

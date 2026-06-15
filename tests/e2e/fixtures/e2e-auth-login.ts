@@ -18,10 +18,17 @@ export async function loginWithE2eUser(page: Page): Promise<void> {
   } catch {
     const hint =
       page.isClosed() ? "" : (await page.getByTestId("login-error").textContent())?.trim() || "";
+    let raw = "";
+    if (!page.isClosed()) {
+      const rawLoc = page.locator('[data-testid="login-error-raw"]');
+      if ((await rawLoc.count()) > 0) {
+        raw = (await rawLoc.textContent())?.trim() || "";
+      }
+    }
     throw new Error(
       `E2E: continua em /login após enviar credenciais (ver E2E_EMAIL / E2E_PASSWORD e o projeto Supabase).${
         hint ? ` Mensagem na página: ${hint}` : ""
-      }`,
+      }${raw ? ` Detalhe (GoTrue/SDK): ${raw}` : ""}`,
     );
   }
 }

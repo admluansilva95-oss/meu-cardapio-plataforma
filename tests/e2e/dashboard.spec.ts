@@ -2,6 +2,7 @@ import { expect, test } from "@playwright/test";
 import { buildAdminUrlWithCheckoutBypass } from "./fixtures/admin-url";
 import { loginWithE2eUser } from "./fixtures/e2e-auth-login";
 import { requireE2eAuthCredentials } from "./fixtures/require-e2e-auth";
+import { waitForAdminPedidosHeading } from "./fixtures/wait-admin-pedidos-heading";
 
 test.describe("Dashboard /admin", () => {
   test.describe("Integração", () => {
@@ -14,20 +15,22 @@ test.describe("Dashboard /admin", () => {
     test.beforeEach(async ({ page }) => {
       await loginWithE2eUser(page);
       await page.goto(buildAdminUrlWithCheckoutBypass());
-      await expect(page.getByRole("heading", { name: /Painel de operações/i })).toBeVisible({ timeout: 25_000 });
+      await waitForAdminPedidosHeading(page);
     });
 
     test("esteira: vazio (sem pedidos) ou colunas visíveis", async ({ page }) => {
       const tranquilo = page.getByRole("heading", { name: /Tudo tranquilo por aqui/i });
-      const pendente = page.getByText("Pendente").first();
-      await expect(tranquilo.or(pendente)).toBeVisible({ timeout: 20_000 });
+      const pendente = page.getByText("Pendente", { exact: true }).first();
+      // Com esteira vazia aparecem «Pendente» (coluna) e «Tudo tranquilo…» ao mesmo tempo;
+      // `.or()` com strict exige um alvo → `.first()` fixa um elemento no DOM.
+      await expect(tranquilo.or(pendente).first()).toBeVisible({ timeout: 20_000 });
     });
 
     test("navegação entre abas principais (sidebar)", async ({ page }) => {
       await page.getByRole("button", { name: /Cardápio/i }).first().click();
       await expect(page.getByRole("heading", { name: /Cardápio na vitrine/i })).toBeVisible();
       await page.getByRole("button", { name: /Pratos/i }).first().click();
-      await expect(page.getByRole("heading", { name: /^Pratos$/ })).toBeVisible();
+      await expect(page.getByRole("heading", { name: /^Pratos$/, level: 1 })).toBeVisible();
       await page.getByRole("button", { name: /Painel de configuração/i }).first().click();
       await expect(page.getByRole("heading", { name: /Painel de configuração/i })).toBeVisible();
     });

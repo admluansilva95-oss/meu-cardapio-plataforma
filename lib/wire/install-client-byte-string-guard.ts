@@ -10,9 +10,17 @@ import {
   sanitizeFetchInit,
   sanitizeRequestConstructorArgs,
 } from "@/lib/fetch-latin1-safe";
-import { latin1SafeString, sanitizeUserFreeText } from "@/lib/utils/sanitize-strings";
+import { latin1SafeString, sanitizeUserFreeText, stripInvisibleFormatting } from "@/lib/utils/sanitize-strings";
 
 let formDataAppendGuardInstalled = false;
+
+/** `fetch` nativo antes do patch (evita `createLatin1SafeFetch(createLatin1SafeFetch(native))` no `lib/supabase.ts`). */
+let nativeFetchForSupabase: typeof fetch | null = null;
+
+/** Para `createBrowserClient`: usa o `fetch` do runtime sem o wrapper `createLatin1SafeFetch`. */
+export function getNativeFetchForSupabase(): typeof fetch {
+  return nativeFetchForSupabase ?? globalThis.fetch.bind(globalThis);
+}
 
 declare global {
   interface Window {
@@ -149,8 +157,8 @@ export function installClientByteStringGuard(): void {
   window.__BYTE_STRING_GUARD__ = true;
 
   try {
-    const nativeFetch = globalThis.fetch.bind(globalThis);
-    globalThis.fetch = createLatin1SafeFetch(nativeFetch);
+    nativeFetchForSupabase = globalThis.fetch.bind(globalThis);
+    globalThis.fetch = createLatin1SafeFetch(nativeFetchForSupabase);
     try {
       window.fetch = globalThis.fetch;
     } catch {
@@ -196,7 +204,14 @@ export function installClientByteStringGuard(): void {
       const origSetRequestHeader = XP.setRequestHeader;
       XP.setRequestHeader = function setRequestHeaderPatched(name: string, value: string) {
         const nameS = latin1SafeString(name);
-        const valueS = sanitizeUserFreeText(String(value));
+        const nameLower = nameS.toLowerCase();
+        /** Alinhar a `cloneHeadersLatin1Safe`: JWT / chaves Supabase não passam por `sanitizeUserFreeText`. */
+        const valueS =
+          nameLower === "apikey" ||
+          nameLower === "authorization" ||
+          nameLower.startsWith("x-supabase-")
+            ? latin1SafeString(stripInvisibleFormatting(String(value)))
+            : sanitizeUserFreeText(String(value));
         return origSetRequestHeader.call(this, nameS, valueS);
       };
 

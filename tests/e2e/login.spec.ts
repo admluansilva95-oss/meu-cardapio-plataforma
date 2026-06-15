@@ -2,7 +2,9 @@ import { expect, test } from "@playwright/test";
 import { buildAdminUrlWithCheckoutBypass } from "./fixtures/admin-url";
 import { loginWithE2eUser } from "./fixtures/e2e-auth-login";
 import { requireE2eAuthCredentials } from "./fixtures/require-e2e-auth";
+import { waitForAdminPedidosHeading } from "./fixtures/wait-admin-pedidos-heading";
 import { fillWhenHydrated } from "./fill-hydrated";
+import { countOwnerAuthSessionCookies } from "./fixtures/owner-auth-session-cookies";
 import { submitLoginForm } from "./fixtures/submit-form";
 
 test.describe("Login", () => {
@@ -51,41 +53,35 @@ test.describe("Login", () => {
         return;
       }
       await page.goto(buildAdminUrlWithCheckoutBypass());
-      await expect(
-        page.getByRole("heading", { name: /Painel de operações|Cardápio na vitrine|Pratos|Painel de configuração/i }),
-      ).toBeVisible({
-        timeout: 20_000,
-      });
+      await waitForAdminPedidosHeading(page);
     });
 
     test("persistência: recarregar /admin mantém sessão", async ({ page }) => {
       await loginWithE2eUser(page);
       await page.goto(buildAdminUrlWithCheckoutBypass());
-      await expect(page.getByRole("heading", { name: /Painel de operações/i })).toBeVisible({ timeout: 25_000 });
+      await waitForAdminPedidosHeading(page);
       await page.reload();
+      await waitForAdminPedidosHeading(page, { timeoutMs: 90_000 });
       await expect(page).not.toHaveURL(/\/login(\?|$)/);
-      const keys = await page.evaluate(() => Object.keys(localStorage));
-      expect(keys.some((k) => k.includes("auth") || k.includes("supabase") || k.includes("sb-"))).toBeTruthy();
+      // Sessão do dono usa cookies (`@supabase/ssr` + `auth.storageKey`), não chaves genéricas em localStorage.
+      const cookies = await page.context().cookies();
+      expect(countOwnerAuthSessionCookies(cookies)).toBeGreaterThan(0);
     });
 
     test("logout remove sessão e redireciona para login", async ({ page }) => {
       await loginWithE2eUser(page);
       await page.goto(buildAdminUrlWithCheckoutBypass());
-      await expect(page.getByRole("heading", { name: /Painel de operações/i })).toBeVisible({ timeout: 25_000 });
+      await waitForAdminPedidosHeading(page);
 
-      const authKeysBeforeSignOut = await page.evaluate(() =>
-        Object.keys(localStorage).filter((k) => k.startsWith("sb-") || k.toLowerCase().includes("supabase")),
-      );
-      expect(authKeysBeforeSignOut.length).toBeGreaterThan(0);
+      const cookiesBefore = await page.context().cookies();
+      expect(countOwnerAuthSessionCookies(cookiesBefore)).toBeGreaterThan(0);
 
       await page.getByTestId("admin-sign-out").click();
       await page.waitForURL(/\/login/, { timeout: 15_000 });
       await expect(page).toHaveURL(/\/login/);
 
-      const authKeysAfterSignOut = await page.evaluate(() =>
-        Object.keys(localStorage).filter((k) => k.startsWith("sb-") || k.toLowerCase().includes("supabase")),
-      );
-      expect(authKeysAfterSignOut.length).toBe(0);
+      const cookiesAfter = await page.context().cookies();
+      expect(countOwnerAuthSessionCookies(cookiesAfter)).toBe(0);
     });
   });
 });

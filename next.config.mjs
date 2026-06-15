@@ -57,8 +57,51 @@ function mergeOptionalNonStandardEnvFiles() {
   }
 }
 
+const PUBLIC_SUPABASE_KEYS = new Set(["NEXT_PUBLIC_SUPABASE_URL", "NEXT_PUBLIC_SUPABASE_ANON_KEY"]);
+
+/**
+ * Garante `NEXT_PUBLIC_SUPABASE_*` em `process.env` **antes** de ler `publicSupabaseUrl`
+ * (e antes do bloco `env` abaixo). O Next pode avaliar `next.config` cedo demais em relação
+ * ao carregamento automático de `.env.local`; o Playwright também injeta estas variáveis no
+ * filho, mas o merge aqui alinha `next dev` manual com o mesmo trio de ficheiros que
+ * `tests/e2e/fixtures/load-env-files.ts` (primeiro valor não vazio por chave, depois sobrepõe
+ * `process.env` para vencer placeholders no shell).
+ */
+function mergePublicSupabaseFromStandardEnvFiles() {
+  const relativePaths = [".env.local", ".env.e2e", path.join("tests", "e2e", ".env.e2e")];
+  /** @type {Map<string, string>} */
+  const picked = new Map();
+  for (const name of relativePaths) {
+    const filePath = path.join(process.cwd(), name);
+    if (!fs.existsSync(filePath)) continue;
+    const text = fs.readFileSync(filePath, "utf8");
+    for (const rawLine of text.split("\n")) {
+      const line = rawLine.trim();
+      if (!line || line.startsWith("#")) continue;
+      const eq = line.indexOf("=");
+      if (eq <= 0) continue;
+      const key = line.slice(0, eq).trim();
+      if (!PUBLIC_SUPABASE_KEYS.has(key)) continue;
+      if (picked.has(key)) continue;
+      if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(key)) continue;
+      let val = line.slice(eq + 1).trim();
+      if (
+        (val.startsWith('"') && val.endsWith('"')) ||
+        (val.startsWith("'") && val.endsWith("'"))
+      ) {
+        val = val.slice(1, -1);
+      }
+      if (val.trim()) picked.set(key, val);
+    }
+  }
+  for (const [key, val] of picked) {
+    process.env[key] = val;
+  }
+}
+
 if (process.env.VERCEL !== "1") {
   mergeOptionalNonStandardEnvFiles();
+  mergePublicSupabaseFromStandardEnvFiles();
 }
 
 /** @type {import('next').NextConfig} */
@@ -76,7 +119,7 @@ const nextConfig = {
   env: {
     /** Comparado com `GET /api/build-info` para reload após novo deploy. */
     NEXT_PUBLIC_BUILD_ID: buildId,
-    /** Garante inlining no cliente após o merge de `.env.e2e` acima. */
+    /** Garante inlining no cliente após merges de `.env.*` / ficheiros E2E (ver topo deste ficheiro). */
     ...(publicSupabaseUrl && publicSupabaseAnonKey
       ? {
           NEXT_PUBLIC_SUPABASE_URL: publicSupabaseUrl,

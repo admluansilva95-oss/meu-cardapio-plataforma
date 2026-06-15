@@ -1,28 +1,25 @@
 import "@/lib/wire/bootstrap-byte-string-guard";
 import { createBrowserClient } from "@supabase/ssr";
-import { createLatin1SafeFetch } from "@/lib/fetch-latin1-safe";
+import { getNativeFetchForSupabase } from "@/lib/wire/install-client-byte-string-guard";
 import {
   getOwnerAuthStorageOptions,
   getSupabaseBrowserCookieOptions,
 } from "@/lib/auth/supabase-session-cookies";
 
-const browserSafeFetch = createLatin1SafeFetch();
-
 /**
  * Cliente Supabase no navegador (Client Components).
  *
- * **Zero trust na camada HTTP:** `global.fetch` + `Headers`/`Request`/`FormData.append`
- * são instrumentados em `installClientByteStringGuard` (carregado antes deste módulo via
- * `@/lib/wire/bootstrap-byte-string-guard` e `app/layout.tsx`). Aqui forçamos ainda
- * `createBrowserClient` a usar `createLatin1SafeFetch`, duplicando a defesa para chamadas
- * internas do SDK (PostgREST, Auth, Storage).
+ * Usa o **`fetch` nativo** guardado em `installClientByteStringGuard` **antes** do patch global
+ * (`createLatin1SafeFetch`), para não empilhar dois wrappers — o segundo recebia já o `fetch`
+ * instrumentado e podia degradar pedidos ao GoTrue (ex.: erros tipo “no api key”).
+ * O resto da app continua com `fetch` / `Headers` / `Request` instrumentados via layout.
  */
 export function createBrowserSupabaseClient() {
   return createBrowserClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
     {
-      global: { fetch: browserSafeFetch },
+      global: { fetch: getNativeFetchForSupabase() },
       cookieOptions: getSupabaseBrowserCookieOptions(),
       ...getOwnerAuthStorageOptions(),
     },

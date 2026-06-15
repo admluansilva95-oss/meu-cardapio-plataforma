@@ -1,5 +1,5 @@
 import { jsonStringifyLatin1Wire, latin1SafeString } from "@/lib/restaurante/json-latin1-wire";
-import { sanitizeUserFreeText } from "@/lib/utils/sanitize-strings";
+import { sanitizeUserFreeText, stripInvisibleFormatting } from "@/lib/utils/sanitize-strings";
 import { getNativeHeaders, getNativeRequest } from "@/lib/http/native-http-constructors";
 
 function newEmptyWireHeaders(): Headers {
@@ -27,8 +27,13 @@ export function cloneHeadersLatin1Safe(source?: HeadersInit | null): Headers {
 
   const apply = (nameRaw: string, valueRaw: string, append: boolean) => {
     const name = latin1SafeString(nameRaw);
-    const value = sanitizeUserFreeText(valueRaw);
     if (!name) return;
+    const nameLower = name.toLowerCase();
+    /** JWT / chaves Supabase: não passar por `sanitizeUserFreeText` (NFKC e substituições podem alterar o wire). */
+    const value =
+      nameLower === "apikey" || nameLower === "authorization"
+        ? latin1SafeString(stripInvisibleFormatting(valueRaw))
+        : sanitizeUserFreeText(valueRaw);
     try {
       if (append) fixed.append(name, value);
       else fixed.set(name, value);
@@ -258,7 +263,7 @@ export function initJsonPost(payload: unknown, bearerToken: string): RequestInit
   return {
     method: "POST",
     headers: cloneHeadersLatin1Safe({
-      Authorization: `Bearer ${sanitizeUserFreeText(bearerToken.trim())}`,
+      Authorization: `Bearer ${latin1SafeString(stripInvisibleFormatting(bearerToken.trim()))}`,
       "Content-Type": "application/json; charset=utf-8",
     }),
     credentials: "include",

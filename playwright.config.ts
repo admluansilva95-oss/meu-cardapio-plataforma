@@ -1,5 +1,5 @@
 import { defineConfig, devices } from "@playwright/test";
-import { loadLocalEnvFiles } from "./tests/e2e/fixtures/load-env-files";
+import { getPublicSupabaseEnvFromFiles, loadLocalEnvFiles } from "./tests/e2e/fixtures/load-env-files";
 
 /** Antes do `webServer` herdar `process.env`, garante `.env.local`, `.env.e2e` na raiz e `tests/e2e/.env.e2e` (Next não lê estes últimos sozinho). */
 loadLocalEnvFiles();
@@ -14,8 +14,9 @@ const useSystemChrome = process.env.PW_CHANNEL === "chrome";
  *
  * Integração Supabase (`loadLocalEnvFiles` no topo deste ficheiro + `global-setup`):
  * - E2E_EMAIL, E2E_PASSWORD — obrigatórios para os 6 testes de painel/login autenticado
- * - NEXT_PUBLIC_SUPABASE_URL, NEXT_PUBLIC_SUPABASE_ANON_KEY — obrigatórios no mesmo ficheiro `.env.*` (ou no ambiente); o `webServer` herda `process.env`
- * - E2E_RESTAURANT_SLUG — opcional; `?slug=` no /admin. Sem assinatura ativa use-se `checkout=success` no helper.
+ * - NEXT_PUBLIC_SUPABASE_URL, NEXT_PUBLIC_SUPABASE_ANON_KEY — obrigatórios no mesmo ficheiro `.env.*` (ou no ambiente); o `webServer` repõe estes dois a partir dos ficheiros após `process.env`
+ * - E2E_RESTAURANT_SLUG — opcional; `?slug=` no /admin (tem de pertencer ao dono E2E_EMAIL)
+ * - E2E_SKIP_RESTAURANT_CHECK=1 — desliga o pré-flight de `restaurantes` no global-setup
  */
 export default defineConfig({
   globalSetup: "./tests/e2e/global-setup.ts",
@@ -49,6 +50,8 @@ export default defineConfig({
         timeout: 120_000,
         env: {
           ...process.env,
+          /** Sobrepõe placeholders no shell / CI: mesmos ficheiros que `loadLocalEnvFiles`. */
+          ...getPublicSupabaseEnvFromFiles(),
           /** Visto no bundle; `lib/logging/dev-client-log.ts` silencia ruído esperado nos testes. */
           NEXT_PUBLIC_PLAYWRIGHT_E2E: "1",
         },

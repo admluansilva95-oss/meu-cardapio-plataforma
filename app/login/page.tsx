@@ -34,6 +34,8 @@ function LoginForm() {
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  /** Só em E2E: erro cru do GoTrue/SDK para o Playwright anexar ao falhanço (ver `login-error-raw`). */
+  const [authErrorDebug, setAuthErrorDebug] = useState<string | null>(null);
 
   const safeNext = (() => {
     const t = nextParam.trim();
@@ -76,6 +78,7 @@ function LoginForm() {
   async function submitLogin() {
     setLoading(true);
     setErrorMessage(null);
+    setAuthErrorDebug(null);
 
     try {
       const emailVal = validarEmailCliente(email);
@@ -102,6 +105,15 @@ function LoginForm() {
 
       if (error) {
         devClientError("[login] signInWithPassword:", error.message);
+        if (process.env.NEXT_PUBLIC_PLAYWRIGHT_E2E === "1") {
+          setAuthErrorDebug(
+            JSON.stringify({
+              message: error.message,
+              code: error.code ?? null,
+              status: (error as { status?: number }).status ?? null,
+            }),
+          );
+        }
         setErrorMessage(mensagemErroSupabaseAuthAmigavel(error.message, error.code));
         return;
       }
@@ -121,6 +133,15 @@ function LoginForm() {
       );
     } catch (err) {
       devClientError("[login] handleSubmit:", err);
+      if (process.env.NEXT_PUBLIC_PLAYWRIGHT_E2E === "1") {
+        setAuthErrorDebug(
+          JSON.stringify({
+            message: err instanceof Error ? err.message : String(err),
+            code: null,
+            status: null,
+          }),
+        );
+      }
       setErrorMessage(mensagemFalhaAutenticacaoResidual("login"));
     } finally {
       setLoading(false);
@@ -235,6 +256,11 @@ function LoginForm() {
           >
             {errorMessage ?? ""}
           </p>
+          {process.env.NEXT_PUBLIC_PLAYWRIGHT_E2E === "1" && authErrorDebug ? (
+            <span data-testid="login-error-raw" className="sr-only">
+              {authErrorDebug}
+            </span>
+          ) : null}
 
           <p className="mt-6 text-center text-sm text-zinc-500">
             Não tem conta?{" "}

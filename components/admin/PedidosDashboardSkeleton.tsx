@@ -45,9 +45,11 @@ function ColumnSkeleton() {
 type PedidosDashboardSkeletonProps = {
   /** Full page (antes do restaurante carregar) ou só a área da esteira (refresh). */
   variant?: "full" | "embedded";
+  /** Só na variante `full`; usado pelos E2E para esperar o carregamento inicial. */
+  dataTestId?: string;
 };
 
-export function PedidosDashboardSkeleton({ variant = "full" }: PedidosDashboardSkeletonProps) {
+export function PedidosDashboardSkeleton({ variant = "full", dataTestId }: PedidosDashboardSkeletonProps) {
   const grid = (
     <div className="grid grid-cols-1 gap-5 md:grid-cols-2 xl:grid-cols-4">
       <ColumnSkeleton />
@@ -87,7 +89,10 @@ export function PedidosDashboardSkeleton({ variant = "full" }: PedidosDashboardS
   }
 
   return (
-    <div className="flex min-h-screen bg-[#f5f5f7] font-sans antialiased">
+    <div
+      data-testid={dataTestId}
+      className="flex min-h-screen bg-[#f5f5f7] font-sans antialiased"
+    >
       <aside className="hidden w-56 shrink-0 border-r border-black/[0.06] bg-[#fbfbfd] p-5 sm:block">
         <SkeletonPulse className="h-8 w-32 rounded-lg" />
         <div className="mt-8 space-y-3">
