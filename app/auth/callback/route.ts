@@ -32,6 +32,22 @@ function isEmailOtpType(t: string): t is EmailOtpType {
   return EMAIL_OTP_TYPES.has(t);
 }
 
+function decodeNextSearchParam(raw: string | null): string | null {
+  if (raw == null) return null;
+  let s = raw.replace(/[\u0000-\u001F\u007F]/g, "").trim();
+  if (!s) return null;
+  for (let i = 0; i < 4; i++) {
+    try {
+      const dec = decodeURIComponent(s);
+      if (dec === s) break;
+      s = dec.trim();
+    } catch {
+      break;
+    }
+  }
+  return s || null;
+}
+
 function safeInternalPath(next: string | null): string {
   const fallback = "/assinar";
   if (!next?.trim()) return fallback;
@@ -68,7 +84,7 @@ export async function GET(request: NextRequest) {
     return NextResponse.redirect(loginUrl);
   }
 
-  const nextPath = safeInternalPath(searchParams.get("next"));
+  const nextPath = safeInternalPath(decodeNextSearchParam(searchParams.get("next")));
   const redirectUrl = new URL(nextPath, origin);
 
   // Uma única instância de redirect: `setAll` pode ser chamado várias vezes

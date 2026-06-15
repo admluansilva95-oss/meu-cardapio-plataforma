@@ -8,7 +8,7 @@ import { isValidSlug, normalizeSlugInput } from "@/lib/billing/slug";
 import { getPlanByPriceId, PLANS, type Plan } from "@/lib/plans";
 import { PhoneInput } from "@/components/PhoneInput";
 import { buildAssinarPathWithCarry } from "@/lib/auth/post-signup-carry";
-import { getPublicAppUrl } from "@/lib/site-url";
+import { buildEmailAuthRedirectTo } from "@/lib/auth/auth-callback-url";
 import { createBrowserSupabaseClient } from "@/lib/supabase";
 import {
   mensagemErroSupabaseAuthAmigavel,
@@ -99,7 +99,7 @@ export function CadastroForm({ defaultEssencialPriceId }: CadastroFormProps) {
         email: emailVal.email,
         password,
         options: {
-          emailRedirectTo: `${getPublicAppUrl()}/auth/callback?next=${encodeURIComponent(afterConfirmPath)}`,
+          emailRedirectTo: buildEmailAuthRedirectTo(afterConfirmPath),
         },
       });
 

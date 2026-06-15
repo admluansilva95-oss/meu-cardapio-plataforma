@@ -163,11 +163,16 @@ export function mensagemErroSupabaseAuthAmigavel(source: unknown, code?: unknown
     ) {
       return "Não foi possível contactar o servidor de autenticação. Verifique a ligação à internet ou tente mais tarde.";
     }
-    if (
-      m.includes("invalid path") ||
-      m.includes("request url") ||
-      m.includes("requested path is invalid")
-    ) {
+    if (m.includes("requested path is invalid")) {
+      return (
+        "O link de confirmação ou o redirect após o e-mail não coincide com o que o servidor aceita. " +
+        "No Supabase → Authentication → URL Configuration, confira o Site URL e adicione às Redirect URLs " +
+        "as origens com `/auth/callback` e, se usar o tutorial, `/auth/confirm`. " +
+        "Se o erro aparecer ao fazer login ou chamadas à API, verifique também NEXT_PUBLIC_SUPABASE_URL " +
+        "(só a base do projeto, ex.: https://xxxx.supabase.co, sem /auth/v1)."
+      );
+    }
+    if (m.includes("invalid path") || m.includes("request url")) {
       return (
         "O endereço do projeto Supabase (NEXT_PUBLIC_SUPABASE_URL) está incorreto. " +
         "Use só a URL base do painel: Settings → API → Project URL (ex.: https://xxxx.supabase.co), " +
