@@ -25,6 +25,25 @@ function tryParsePublicOrigin(raw: string): string | null {
   }
 }
 
+/** `NEXT_PUBLIC_SUPABASE_URL` não é o site do cardápio — evita links públicos errados no painel. */
+function isMisconfiguredBackendUrlAsAppOrigin(origin: string): boolean {
+  try {
+    const host = new URL(origin).hostname.toLowerCase();
+    return host.endsWith(".supabase.co");
+  } catch {
+    return true;
+  }
+}
+
+function firstValidAppOriginFromCandidates(raws: (string | undefined)[]): string | null {
+  for (const raw of raws) {
+    if (!raw) continue;
+    const origin = tryParsePublicOrigin(raw);
+    if (origin && !isMisconfiguredBackendUrlAsAppOrigin(origin)) return origin;
+  }
+  return null;
+}
+
 /**
  * Origem absoluta quando `NEXT_PUBLIC_APP_URL` não está definida ou é inválida.
  * Em produção ou em deploy na Vercel (`VERCEL === '1'`), nunca cair em `localhost`.
@@ -42,23 +61,18 @@ export function resolveDefaultAppOrigin(): string {
  * Evita `url_invalid` por env com aspas (Netlify/Vercel), host sem esquema ou valor quebrado.
  */
 export function resolveStripeCheckoutOrigin(): string {
-  const candidates = [
+  const fromEnv = firstValidAppOriginFromCandidates([
     stripSurroundingQuotes(process.env.NEXT_PUBLIC_APP_URL),
     stripSurroundingQuotes(process.env.NEXT_PUBLIC_SITE_URL),
-  ];
-  for (const raw of candidates) {
-    if (raw) {
-      const origin = tryParsePublicOrigin(raw);
-      if (origin) return origin;
-    }
-  }
+  ]);
+  if (fromEnv) return fromEnv;
 
   const vercelHost = process.env.VERCEL_URL?.trim();
   if (vercelHost) {
     const hostOnly = vercelHost.replace(/^https?:\/\//i, "").split("/")[0];
     if (hostOnly) {
       const origin = tryParsePublicOrigin(`https://${hostOnly}`);
-      if (origin) return origin;
+      if (origin && !isMisconfiguredBackendUrlAsAppOrigin(origin)) return origin;
     }
   }
 
@@ -69,15 +83,20 @@ export function resolveStripeCheckoutOrigin(): string {
  * URL pública do app (sem barra final). Auth, e-mail redirect, comparação de `next`, etc.
  */
 export function getPublicAppUrl(): string {
-  const candidates = [
+  const fromEnv = firstValidAppOriginFromCandidates([
     stripSurroundingQuotes(process.env.NEXT_PUBLIC_APP_URL),
     stripSurroundingQuotes(process.env.NEXT_PUBLIC_SITE_URL),
-  ];
-  for (const raw of candidates) {
-    if (raw) {
-      const origin = tryParsePublicOrigin(raw);
-      if (origin) return origin;
+  ]);
+  if (fromEnv) return fromEnv;
+
+  const vercelHost = process.env.VERCEL_URL?.trim();
+  if (vercelHost) {
+    const hostOnly = vercelHost.replace(/^https?:\/\//i, "").split("/")[0];
+    if (hostOnly) {
+      const origin = tryParsePublicOrigin(`https://${hostOnly}`);
+      if (origin && !isMisconfiguredBackendUrlAsAppOrigin(origin)) return origin;
     }
   }
+
   return resolveDefaultAppOrigin();
 }
