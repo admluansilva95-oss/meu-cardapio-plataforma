@@ -55,7 +55,7 @@ export function SubscribeButton({ plan, carryOb = null }: SubscribeButtonProps) 
 
       if (sessionError) {
         devClientError("[SubscribeButton] getSession:", sessionError.message);
-        setErrorMessage(mensagemErroSupabaseAuthAmigavel(sessionError.message, sessionError.code));
+        setErrorMessage(mensagemErroSupabaseAuthAmigavel(sessionError));
         return;
       }
 

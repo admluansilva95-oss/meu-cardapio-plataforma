@@ -105,7 +105,7 @@ export function CadastroForm({ defaultEssencialPriceId }: CadastroFormProps) {
 
       if (error) {
         devClientError("[cadastro] signUp:", error.message);
-        setErrorMessage(mensagemErroSupabaseAuthAmigavel(error.message, error.code));
+        setErrorMessage(mensagemErroSupabaseAuthAmigavel(error));
         return;
       }
 

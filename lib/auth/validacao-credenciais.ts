@@ -31,18 +31,23 @@ const FALLBACK_AUTH =
 const ERRO_DESCONHECIDO = "Erro desconhecido";
 
 /**
- * Extrai texto seguro do primeiro argumento, aceitando string ou objeto estilo `{ message?: unknown }`.
- * Ordem: `typeof error === "string" ? error : (error?.message ?? "Erro desconhecido")` com normalização.
+ * Extrai texto útil do GoTrue / `AuthError` (mensagem vazia é comum em alguns caminhos do SDK).
  */
 function normalizeAuthErrorMessage(error: unknown): string {
-  const raw =
-    typeof error === "string"
-      ? error
-      : String(
-          (error as { message?: unknown } | null | undefined)?.message ?? ERRO_DESCONHECIDO,
-        );
-  const trimmed = raw.trim();
-  return trimmed.length > 0 ? trimmed : ERRO_DESCONHECIDO;
+  if (typeof error === "string") {
+    const t = error.trim();
+    return t.length > 0 ? t : ERRO_DESCONHECIDO;
+  }
+  if (error !== null && typeof error === "object") {
+    const o = error as Record<string, unknown>;
+    const parts: string[] = [];
+    for (const k of ["message", "msg", "error_description", "hint"] as const) {
+      const v = o[k];
+      if (typeof v === "string" && v.trim()) parts.push(v.trim());
+    }
+    if (parts.length > 0) return parts.join(" — ");
+  }
+  return ERRO_DESCONHECIDO;
 }
 
 /** Código de erro opcional: parâmetro explícito ou `code` no objeto passado como primeiro argumento. */
@@ -59,15 +64,49 @@ function normalizeAuthErrorCode(code: unknown, messageSource: unknown): string {
   return "";
 }
 
+function isRefreshOrJwtInvalidGrant(messageLower: string): boolean {
+  return (
+    messageLower.includes("refresh") ||
+    messageLower.includes("refresh_token") ||
+    (messageLower.includes("jwt") && !messageLower.includes("invalid login")) ||
+    messageLower.includes("token expired") ||
+    messageLower.includes("session expired") ||
+    messageLower.includes("session not found")
+  );
+}
+
 /**
  * Mensagem amigável para erros comuns do `signUp` / `signInWithPassword` do Supabase.
- * Não assume que `message` é string: aceita objeto com `message`/`code` (encadeamento opcional).
+ * Aceita `string` ou objeto estilo `AuthError` (`message`, `code`, `status`, `error_description`).
  */
-export function mensagemErroSupabaseAuthAmigavel(message: unknown, code?: unknown): string {
+export function mensagemErroSupabaseAuthAmigavel(source: unknown, code?: unknown): string {
   try {
-    const resolved = normalizeAuthErrorMessage(message);
+    const resolved = normalizeAuthErrorMessage(source);
     const m = resolved.toLowerCase();
-    const c = normalizeAuthErrorCode(code, message);
+    const c = normalizeAuthErrorCode(code, source);
+
+    if (
+      c === "invalid_credentials" ||
+      c === "user_banned" ||
+      c === "user_suspended"
+    ) {
+      if (c === "user_banned" || c === "user_suspended") {
+        return "Esta conta está suspensa ou bloqueada. Contacte o suporte do serviço.";
+      }
+      return "E-mail ou senha incorretos. Verifique os dados ou use “Esqueci a senha” no Supabase.";
+    }
+
+    if (c === "bad_jwt" || c === "bad_jwt_signature") {
+      return "A sessão é inválida ou expirou. Atualize a página e faça login novamente.";
+    }
+
+    /** `invalid_grant` no password grant = credenciais erradas; no refresh = sessão. */
+    if (c === "invalid_grant") {
+      if (isRefreshOrJwtInvalidGrant(m)) {
+        return "A sessão é inválida ou expirou. Atualize a página e faça login novamente.";
+      }
+      return "E-mail ou senha incorretos. Verifique os dados ou use “Esqueci a senha” no Supabase.";
+    }
 
     if (
       m.includes("already registered") ||
@@ -78,16 +117,30 @@ export function mensagemErroSupabaseAuthAmigavel(message: unknown, code?: unknow
     ) {
       return "Este e-mail já está cadastrado. Use “Entrar” ou recuperação de senha.";
     }
-    if (m.includes("invalid login credentials") || m.includes("invalid credentials")) {
+    if (
+      m.includes("invalid login credentials") ||
+      m.includes("invalid credentials") ||
+      m.includes("wrong password") ||
+      m.includes("incorrect password")
+    ) {
       return "E-mail ou senha incorretos. Verifique os dados ou use “Esqueci a senha” no Supabase.";
     }
-    if (m.includes("email not confirmed") || m.includes("confirm your email")) {
+    if (
+      m.includes("email not confirmed") ||
+      m.includes("confirm your email") ||
+      c === "email_not_confirmed"
+    ) {
       return "Confirme o e-mail antes de entrar (verifique a caixa de entrada e o spam).";
     }
     if (m.includes("password") && m.includes("weak")) {
       return "Senha fraca demais para a política do projeto. Use letras e números e aumente o tamanho.";
     }
-    if (m.includes("rate limit") || m.includes("too many requests")) {
+    if (
+      m.includes("rate limit") ||
+      m.includes("too many requests") ||
+      c === "over_request_rate_limit" ||
+      c === "too_many_requests"
+    ) {
       return "Muitas tentativas. Aguarde um minuto e tente novamente.";
     }
     if (m.includes("no api key") || m.includes("api key found")) {
@@ -110,8 +163,18 @@ export function mensagemErroSupabaseAuthAmigavel(message: unknown, code?: unknow
     ) {
       return "Não foi possível contactar o servidor de autenticação. Verifique a ligação à internet ou tente mais tarde.";
     }
-    if (m.includes("jwt") || m.includes("invalid grant") || m.includes("session")) {
+    if (
+      (m.includes("jwt") || m.includes("session")) &&
+      !m.includes("invalid login") &&
+      !m.includes("invalid credentials")
+    ) {
       return "A sessão é inválida ou expirou. Atualize a página e faça login novamente.";
+    }
+    if (c.length > 0 && resolved === ERRO_DESCONHECIDO) {
+      return `Não foi possível entrar (código: ${c}). Tente de novo; se persistir, confirme o domínio em Supabase → Authentication → URL Configuration.`;
+    }
+    if (resolved !== ERRO_DESCONHECIDO && !m.includes("erro desconhecido")) {
+      return `Não foi possível entrar: ${resolved.slice(0, 280)}`;
     }
     return FALLBACK_AUTH;
   } catch {

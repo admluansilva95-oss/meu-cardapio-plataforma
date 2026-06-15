@@ -115,11 +115,18 @@ function LoginForm() {
             }),
           );
         }
-        setErrorMessage(mensagemErroSupabaseAuthAmigavel(error.message, error.code));
+        setErrorMessage(mensagemErroSupabaseAuthAmigavel(error));
         return;
       }
 
       if (data.session) {
+        const { error: syncErr } = await supabase.auth.setSession({
+          access_token: data.session.access_token,
+          refresh_token: data.session.refresh_token,
+        });
+        if (syncErr) {
+          devClientError("[login] setSession após signIn:", syncErr.message);
+        }
         const persisted = await waitForOwnerSessionAfterSignIn(supabase);
         if (!persisted) {
           devClientError("[login] sessão GoTrue não ficou visível em getSession após signIn");

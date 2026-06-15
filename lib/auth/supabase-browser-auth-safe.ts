@@ -113,7 +113,7 @@ export async function waitForOwnerSessionAfterSignIn(
   supabase: SupabaseClient,
   opts?: { maxMs?: number; intervalMs?: number },
 ): Promise<boolean> {
-  const maxMs = opts?.maxMs ?? 8000;
+  const maxMs = opts?.maxMs ?? 12_000;
   const intervalMs = opts?.intervalMs ?? 40;
   const deadline = Date.now() + maxMs;
   while (Date.now() < deadline) {
