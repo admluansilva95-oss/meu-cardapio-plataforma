@@ -11,6 +11,7 @@ import { PedidosEmptyState } from "@/components/admin/PedidosEmptyState";
 import { PhoneInput } from "@/components/PhoneInput";
 import { isValidSlug } from "@/lib/billing/slug";
 import { playNewOrderChime } from "@/lib/admin/play-new-order-chime";
+import { imprimirPedidoTermico } from "@/lib/admin/impressao-termica-pedido";
 import { computePedidoKpis } from "@/lib/admin/pedido-kpis";
 import { computePratoRankingFromPedidosLines } from "@/lib/admin/prato-ranking-from-pedidos";
 import { createBrowserSupabaseClient } from "@/lib/supabase";
@@ -71,6 +72,7 @@ import {
   ListOrdered,
   Package,
   Palette,
+  Printer,
   UtensilsCrossed,
   type LucideIcon,
 } from "lucide-react";
@@ -749,13 +751,15 @@ function PedidoCard(props: {
   onAdvance: (opts?: { skipOpenWhatsapp?: boolean }) => void;
   onEdit: () => void;
   onCancel: () => void;
+  /** Impressão térmica (Web USB / Bluetooth); não altera o pedido. */
+  onImprimir?: () => void;
   canAdvance: boolean;
   onDragEnd?: () => void;
   /** Bloqueia ações durante mutação (evita clique duplo / corrida com Realtime). */
   busy?: boolean;
   busyLabel?: string;
 }) {
-  const { pedido, onAdvance, onEdit, onCancel, canAdvance, onDragEnd, busy, busyLabel } = props;
+  const { pedido, onAdvance, onEdit, onCancel, onImprimir, canAdvance, onDragEnd, busy, busyLabel } = props;
   const waHrefFinalizar =
     canAdvance && pedido.coluna === "pronto"
       ? buildWhatsappSendHref(pedido.telefone, mensagemParaColuna(pedido, "entregue"))
@@ -891,6 +895,17 @@ function PedidoCard(props: {
             {textoEtapaFinalKanban(pedido)}
           </p>
         )}
+        {onImprimir ? (
+          <button
+            type="button"
+            disabled={busy}
+            onClick={() => onImprimir()}
+            className="inline-flex w-full items-center justify-center gap-2 rounded-xl border border-sky-600/30 bg-sky-600 px-3 py-2.5 text-xs font-semibold text-white shadow-sm transition hover:bg-sky-700 active:scale-[0.99] disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            <Printer className="h-4 w-4 shrink-0" aria-hidden />
+            Imprimir pedido
+          </button>
+        ) : null}
         <button
           type="button"
           disabled={busy}
@@ -2877,6 +2892,25 @@ function AdminPageInner() {
                                   onAdvance={(o) => void avancarPedido(p.id, o)}
                                   onEdit={() => setPedidoModal(p)}
                                   onCancel={() => void cancelarPedido(p.id)}
+                                  onImprimir={() =>
+                                    void imprimirPedidoTermico({
+                                      id: p.id,
+                                      cliente: p.cliente,
+                                      telefone: p.telefone,
+                                      itens: p.itens,
+                                      total: p.total,
+                                      pagamento: p.pagamento,
+                                      observacoes: p.observacoes,
+                                      motoboy: p.motoboy,
+                                      criado_em: p.criado_em,
+                                      nomeEstabelecimento: restaurante.nome,
+                                      enderecoRetiradaBalcao: restaurante.retirada_endereco_balcao ?? null,
+                                    }).catch((err) =>
+                                      setFetchError(
+                                        err instanceof Error ? err.message : "Nao foi possivel enviar para a impressora.",
+                                      ),
+                                    )
+                                  }
                                   onDragEnd={() => setDragOverCol(null)}
                                   busy={pedidoBusyId === p.id}
                                   busyLabel={
