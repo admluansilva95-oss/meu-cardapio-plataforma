@@ -7,10 +7,9 @@ export type StartCheckoutParams = {
   priceId: string;
   userId: string;
   accessToken: string;
-  slug: string;
+  slug?: string;
   restaurantName?: string;
   whatsapp?: string;
-  /** Opcional; por defeito gera-se uma chave por tentativa de checkout. */
   idempotencyKey?: string;
 };
 
@@ -39,7 +38,7 @@ export async function startSubscriptionCheckout(
     {
       priceId: params.priceId,
       userId: params.userId,
-      slug: params.slug,
+      ...(params.slug ? { slug: params.slug } : {}),
       restaurantName: params.restaurantName,
       whatsapp: params.whatsapp,
     },

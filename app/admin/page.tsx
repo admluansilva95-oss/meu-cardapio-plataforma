@@ -79,6 +79,7 @@ import { FuncionamentoSemanalForm } from "@/components/admin/FuncionamentoSemana
 import { RestauranteLogoUploadField } from "@/components/admin/RestauranteLogoUploadField";
 import { IosToggle } from "@/components/ui/IosToggle";
 import { BotaoGerenciarPlano } from "@/components/BotaoGerenciarPlano";
+import { AdminConfigurarEnderecoPublico } from "@/components/admin/AdminConfigurarEnderecoPublico";
 
 function formatSlugToDisplayName(slug: string): string {
   const s = slug.trim();
@@ -548,30 +549,7 @@ function painelError(tag: string, details: Record<string, unknown>): void {
 }
 
 function AdminMissingSlugView() {
-  useEffect(() => {
-    document.title = "Painel · Cardápio";
-  }, []);
-
-  return (
-    <div className="flex min-h-screen flex-col items-center justify-center bg-[#f5f5f7] px-8 py-20 font-sans text-[#1d1d1f] antialiased">
-      <div className="mx-auto max-w-lg text-center">
-        <p className="text-[11px] font-semibold uppercase tracking-[0.28em] text-[#86868b]">Painel</p>
-        <h1 className="mt-4 text-2xl font-semibold tracking-tight text-[#1d1d1f] sm:text-3xl">
-          Assinatura pendente
-        </h1>
-        <p className="mt-4 text-[15px] leading-relaxed text-[#6e6e73]">
-          Não encontramos um restaurante vinculado à sua conta. Conclua o cadastro e o pagamento
-          no Stripe para liberar o painel.
-        </p>
-        <Link
-          href="/cadastro"
-          className="mt-8 inline-flex rounded-xl bg-[#1d1d1f] px-5 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-black"
-        >
-          Ir para cadastro
-        </Link>
-      </div>
-    </div>
-  );
+  return <AdminConfigurarEnderecoPublico />;
 }
 
 /* ——— Subcomponentes internos (mesmo arquivo) ——— */

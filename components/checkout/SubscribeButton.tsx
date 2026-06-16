@@ -3,7 +3,6 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { startSubscriptionCheckout } from "@/lib/billing/start-checkout";
-import { isValidSlug, normalizeSlugInput } from "@/lib/billing/slug";
 import { parseCarryFromObParam } from "@/lib/auth/post-signup-carry";
 import { createBrowserSupabaseClient } from "@/lib/supabase";
 import type { Plan } from "@/lib/plans";
@@ -18,7 +17,6 @@ import { devClientError } from "@/lib/logging/dev-client-log";
 
 type SubscribeButtonProps = {
   plan: Plan;
-  /** Parâmetro `ob` (pós-cadastro) vindo do servidor — evita `useSearchParams` e suspense infinito. */
   carryOb?: string | null;
 };
 
@@ -26,15 +24,11 @@ export function SubscribeButton({ plan, carryOb = null }: SubscribeButtonProps) 
   const router = useRouter();
   const [loading, setLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
-  const [slug, setSlug] = useState("");
   const [whatsapp, setWhatsapp] = useState("");
-  const [needsOnboarding, setNeedsOnboarding] = useState(false);
 
   useEffect(() => {
     const carry = parseCarryFromObParam(carryOb);
-    if (!carry) return;
-    setSlug(carry.slug);
-    if (carry.whatsapp) setWhatsapp(carry.whatsapp);
+    if (carry?.whatsapp) setWhatsapp(carry.whatsapp);
   }, [carryOb]);
 
   async function handleSubscribe() {
@@ -65,35 +59,15 @@ export function SubscribeButton({ plan, carryOb = null }: SubscribeButtonProps) 
         return;
       }
 
-      const { data: existingRest } = await supabase
-        .from("restaurantes")
-        .select("slug")
-        .eq("owner_id", session.user.id)
-        .limit(1)
-        .maybeSingle();
-
       const carry = parseCarryFromObParam(carryOb);
       const priceId = carry?.priceId ?? plan.priceId;
-
-      const normalized = normalizeSlugInput(slug);
-      const checkoutSlug = existingRest?.slug ?? normalized;
-
-      if (!existingRest?.slug) {
-        if (!normalized || !isValidSlug(normalized)) {
-          setNeedsOnboarding(true);
-          setErrorMessage(
-            "Informe um endereço válido para o cardápio (letras minúsculas, números e hífens, mín. 3 caracteres).",
-          );
-          return;
-        }
-      }
 
       const checkout = await startSubscriptionCheckout({
         priceId,
         userId: session.user.id,
         accessToken: session.access_token,
-        slug: checkoutSlug,
-        whatsapp: whatsapp.trim() || undefined,
+        slug: carry?.slug,
+        whatsapp: whatsapp.trim() || carry?.whatsapp,
       });
 
       if (!checkout.ok) {
@@ -113,22 +87,9 @@ export function SubscribeButton({ plan, carryOb = null }: SubscribeButtonProps) 
 
   return (
     <div className="w-full max-w-md space-y-4">
-      {needsOnboarding ? (
-        <div className="space-y-3 rounded-2xl border border-zinc-200 bg-zinc-50 p-4 text-left">
-          <p className="text-xs font-medium text-zinc-600">Endereço do cardápio</p>
-          <p className="text-[11px] leading-relaxed text-zinc-500">
-            Escolha o link público (slug). O nome exibido no cardápio você ajusta no painel, em Painel de
-            configuração.
-          </p>
-          <input
-            type="text"
-            placeholder="slug-do-restaurante"
-            value={slug}
-            onChange={(e) => setSlug(e.target.value)}
-            className="w-full rounded-xl border border-zinc-200 px-3 py-2 text-sm"
-          />
-        </div>
-      ) : null}
+      <p className="text-center text-xs leading-relaxed text-zinc-500">
+        Após o pagamento, você define o endereço público do cardápio no painel admin.
+      </p>
       <button
         type="button"
         onClick={handleSubscribe}

@@ -65,6 +65,14 @@ function safeInternalPath(next: string | null): string {
   }
 }
 
+function loginPathAfterEmailConfirm(nextPath: string): string {
+  const params = new URLSearchParams({
+    email_confirmed: "1",
+    next: nextPath,
+  });
+  return `/login?${params.toString()}`;
+}
+
 /**
  * Confirmação de e-mail:
  * - `token_hash` + `type` → verifyOtp (funciona em outro navegador/dispositivo; ver lib/auth/supabase-confirm-email.md)
@@ -85,7 +93,7 @@ export async function GET(request: NextRequest) {
   }
 
   const nextPath = safeInternalPath(decodeNextSearchParam(searchParams.get("next")));
-  const redirectUrl = new URL(nextPath, origin);
+  const redirectUrl = new URL(loginPathAfterEmailConfirm(nextPath), origin);
 
   // Uma única instância de redirect: `setAll` pode ser chamado várias vezes
   // (ex.: limpar PKCE e depois gravar a sessão). Recriar NextResponse.redirect

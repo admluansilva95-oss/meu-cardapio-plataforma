@@ -18,19 +18,22 @@ import {
   MENSAGEM_SUPABASE_ENV_AUSENTE,
   waitForOwnerSessionAfterSignIn,
 } from "@/lib/auth/supabase-browser-auth-safe";
+import { isSupabaseUserEmailConfirmed } from "@/lib/auth/email-confirmed";
 import { devClientError } from "@/lib/logging/dev-client-log";
 
 function LoginForm() {
   const searchParams = useSearchParams();
   const priceId = searchParams.get("priceId") ?? "";
   const signupPending = searchParams.get("signup") === "1";
+  const emailConfirmedBanner = searchParams.get("email_confirmed") === "1";
+  const signupEmailParam = searchParams.get("email")?.trim() ?? "";
   const nextParam = searchParams.get("next")?.trim() ?? "";
   const authError = searchParams.get("error");
   const authErrorDetail =
     searchParams.get("error_description") ?? searchParams.get("message");
   const sessionReason = searchParams.get("reason")?.trim() ?? "";
 
-  const [email, setEmail] = useState("");
+  const [email, setEmail] = useState(signupEmailParam);
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
@@ -58,6 +61,10 @@ function LoginForm() {
       : "/admin";
 
   useEffect(() => {
+    if (signupEmailParam) setEmail(signupEmailParam);
+  }, [signupEmailParam]);
+
+  useEffect(() => {
     if (!isSupabaseBrowserEnvConfigured()) return;
     let cancelled = false;
     (async () => {
@@ -67,6 +74,9 @@ function LoginForm() {
         error,
       } = await authGetSessionSafe(supabase);
       if (!cancelled && !error && session?.user) {
+        if (signupPending && !isSupabaseUserEmailConfirmed(session.user)) {
+          return;
+        }
         /** Navegação completa: o `proxy` no próximo documento lê cookies antes do React hidratar. */
         window.location.replace(redirectAfterLogin);
       }
@@ -74,7 +84,7 @@ function LoginForm() {
     return () => {
       cancelled = true;
     };
-  }, [redirectAfterLogin]);
+  }, [redirectAfterLogin, signupPending]);
 
   async function submitLogin() {
     setLoading(true);
@@ -181,9 +191,15 @@ function LoginForm() {
         </div>
 
         {signupPending ? (
-          <p className="mb-4 rounded-2xl border border-teal-500/30 bg-teal-500/10 px-4 py-3 text-center text-sm text-teal-100">
-            Conta criada. Confirme o e-mail se o Supabase pediu, faça login abaixo e conclua o
-            pagamento.
+          <p className="mb-4 rounded-2xl border border-teal-500/30 bg-teal-500/10 px-4 py-3 text-center text-sm leading-relaxed text-teal-100">
+            Conta criada. Enviamos um e-mail de confirmação — abra sua caixa de entrada (e verifique o
+            spam), clique no link do Supabase e só então faça login abaixo para escolher o plano e pagar.
+          </p>
+        ) : null}
+
+        {emailConfirmedBanner ? (
+          <p className="mb-4 rounded-2xl border border-emerald-500/30 bg-emerald-500/10 px-4 py-3 text-center text-sm leading-relaxed text-emerald-100">
+            E-mail confirmado com sucesso. Entre com sua senha para continuar a assinatura.
           </p>
         ) : null}
 

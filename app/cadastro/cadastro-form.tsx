@@ -4,11 +4,11 @@ import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useMemo, useState } from "react";
 import { startSubscriptionCheckout } from "@/lib/billing/start-checkout";
-import { isValidSlug, normalizeSlugInput } from "@/lib/billing/slug";
 import { getPlanByPriceId, PLANS, type Plan } from "@/lib/plans";
 import { PhoneInput } from "@/components/PhoneInput";
 import { buildAssinarPathWithCarry } from "@/lib/auth/post-signup-carry";
 import { buildEmailAuthRedirectTo } from "@/lib/auth/auth-callback-url";
+import { canProceedToSubscriptionCheckout } from "@/lib/auth/email-confirmed";
 import { createBrowserSupabaseClient } from "@/lib/supabase";
 import {
   mensagemErroSupabaseAuthAmigavel,
@@ -49,7 +49,6 @@ export function CadastroForm({ defaultEssencialPriceId }: CadastroFormProps) {
 
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
-  const [slug, setSlug] = useState("");
   const [whatsapp, setWhatsapp] = useState("");
   const [loading, setLoading] = useState(false);
   const [submitPhase, setSubmitPhase] = useState<"signup" | "checkout">("signup");
@@ -59,15 +58,6 @@ export function CadastroForm({ defaultEssencialPriceId }: CadastroFormProps) {
     setLoading(true);
     setSubmitPhase("signup");
     setErrorMessage(null);
-
-    const normalizedSlug = normalizeSlugInput(slug);
-    if (!isValidSlug(normalizedSlug)) {
-      setErrorMessage(
-        "Endereço do cardápio inválido. Use letras, números e hífens (mínimo 3 caracteres).",
-      );
-      setLoading(false);
-      return;
-    }
 
     const emailVal = validarEmailCliente(email);
     if (!emailVal.ok) {
@@ -92,7 +82,6 @@ export function CadastroForm({ defaultEssencialPriceId }: CadastroFormProps) {
       const supabase = createBrowserSupabaseClient();
       const afterConfirmPath = buildAssinarPathWithCarry({
         priceId: plan.priceId,
-        slug: normalizedSlug,
         whatsapp: whatsapp.trim() || undefined,
       });
       const { data, error } = await authSignUpSafe(supabase, {
@@ -110,9 +99,13 @@ export function CadastroForm({ defaultEssencialPriceId }: CadastroFormProps) {
       }
 
       const session = data.session;
-      if (!session?.user) {
-        const next = encodeURIComponent(afterConfirmPath);
-        router.push(`/login?signup=1&next=${next}`);
+      if (!canProceedToSubscriptionCheckout(data.user, session) || !session?.user) {
+        const loginParams = new URLSearchParams({
+          signup: "1",
+          next: afterConfirmPath,
+          email: emailVal.email,
+        });
+        router.push(`/login?${loginParams.toString()}`);
         return;
       }
 
@@ -121,7 +114,6 @@ export function CadastroForm({ defaultEssencialPriceId }: CadastroFormProps) {
         priceId: plan.priceId,
         userId: session.user.id,
         accessToken: session.access_token,
-        slug: normalizedSlug,
         whatsapp: whatsapp.trim() || undefined,
       });
 
@@ -154,8 +146,9 @@ export function CadastroForm({ defaultEssencialPriceId }: CadastroFormProps) {
             Crie sua conta
           </h1>
           <p className="mt-3 text-sm leading-relaxed text-zinc-400">
-            Cadastre-se e finalize o pagamento no Stripe para publicar seu cardápio
-            {plan ? ` (${plan.name})` : ""}.
+            Cadastre-se e finalize o pagamento no Stripe. O endereço público do cardápio você define
+            depois no painel admin.
+            {plan ? ` Plano: ${plan.name}.` : ""}
           </p>
         </div>
 
@@ -182,27 +175,6 @@ export function CadastroForm({ defaultEssencialPriceId }: CadastroFormProps) {
             }}
             className="space-y-5"
           >
-            <div className="space-y-2">
-              <label htmlFor="slug" className="text-xs font-medium text-zinc-300">
-                Endereço público do cardápio
-              </label>
-              <div className="flex items-center gap-2 rounded-2xl border border-white/10 bg-black/30 px-4 py-3 text-sm text-zinc-500">
-                <span className="shrink-0">meucardapio.app/</span>
-                <input
-                  id="slug"
-                  type="text"
-                  required
-                  value={slug}
-                  onChange={(e) => setSlug(e.target.value)}
-                  className="min-w-0 flex-1 bg-transparent text-white outline-none"
-                  placeholder="restaurante-do-luan"
-                />
-              </div>
-              <p className="text-[11px] text-zinc-500">
-                O nome exibido no cardápio você define depois no painel, em Painel de configuração. Este endereço só
-                fica reservado após o pagamento aprovado.
-              </p>
-            </div>
             <div className="space-y-2">
               <label htmlFor="whatsapp" className="text-xs font-medium text-zinc-300">
                 WhatsApp (opcional)

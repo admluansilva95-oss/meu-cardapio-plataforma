@@ -43,7 +43,6 @@ test.describe("Pedido HTTP de cadastro (Supabase Auth)", () => {
       el.removeAttribute("minlength");
     });
 
-    await fillWhenHydrated(form.locator("#slug"), "rest-e2e-email");
     await fillWhenHydrated(form.locator("#email"), "trigger-signup@example.com");
     await fillWhenHydrated(form.locator("#password"), "senha123");
     await submitCadastroForm(page);

@@ -42,23 +42,32 @@ export async function handleCheckoutSessionCompleted(
   }
 
   const slug = metadataSlug(session.metadata) ?? metadataSlug(subscription?.metadata);
-  if (!slug) {
-    console.error("[webhook/stripe] slug ausente nos metadados", { sessionId: session.id });
-    return { ok: false, error: "slug ausente nos metadados do checkout." };
+
+  let restauranteId: string | null = null;
+
+  if (slug) {
+    const provision = await provisionRestauranteAfterPayment(admin, {
+      user_id: userId,
+      slug,
+      restaurant_name: session.metadata?.restaurant_name,
+      whatsapp: session.metadata?.whatsapp,
+    });
+
+    if (!provision.ok) {
+      return { ok: false, error: provision.error };
+    }
+
+    restauranteId = provision.restaurante_id;
+  } else {
+    const { data: existingRest } = await admin
+      .from("restaurantes")
+      .select("id")
+      .eq("owner_id", userId)
+      .order("criado_em", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    restauranteId = existingRest?.id ?? null;
   }
-
-  const provision = await provisionRestauranteAfterPayment(admin, {
-    user_id: userId,
-    slug,
-    restaurant_name: session.metadata?.restaurant_name,
-    whatsapp: session.metadata?.whatsapp,
-  });
-
-  if (!provision.ok) {
-    return { ok: false, error: provision.error };
-  }
-
-  const restauranteId = provision.restaurante_id;
 
   if (!subscriptionId) {
     const priceId = session.metadata?.price_id ?? null;
@@ -67,7 +76,7 @@ export async function handleCheckoutSessionCompleted(
       stripe_customer_id: customerId,
       status: session.payment_status === "paid" ? "active" : "incomplete",
       price_id: priceId,
-      restaurante_id: restauranteId,
+      ...(restauranteId ? { restaurante_id: restauranteId } : {}),
     });
     return result.ok ? { ok: true } : { ok: false, error: result.error };
   }
@@ -80,7 +89,9 @@ export async function handleCheckoutSessionCompleted(
   if (!payload.price_id && session.metadata?.price_id) {
     payload.price_id = session.metadata.price_id;
   }
-  payload.restaurante_id = restauranteId;
+  if (restauranteId) {
+    payload.restaurante_id = restauranteId;
+  }
 
   const result = await upsertAssinatura(admin, payload);
   return result.ok ? { ok: true } : { ok: false, error: result.error };

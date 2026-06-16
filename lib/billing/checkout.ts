@@ -16,11 +16,10 @@ export type CreateSubscriptionCheckoutInput = {
   userId: string;
   userEmail: string | undefined;
   priceId: string;
-  slug: string;
-  /** Opcional; se vazio, o Stripe/metadata usam o slug (nome no painel depois). */
+  /** Opcional — se omitido, o slug é definido depois no painel admin. */
+  slug?: string;
   restaurantName?: string;
   whatsapp?: string;
-  /** Idempotência Stripe (rede instável / duplo clique). */
   idempotencyKey?: string;
 };
 
@@ -28,13 +27,58 @@ export type CreateSubscriptionCheckoutResult =
   | { ok: true; url: string }
   | { ok: false; error: string; status: number };
 
+async function resolveCheckoutSlug(
+  admin: SupabaseClient,
+  userId: string,
+  rawSlug?: string,
+): Promise<{ ok: true; slug: string | null } | { ok: false; error: string; status: number }> {
+  const normalized = normalizeSlugInput(rawSlug ?? "");
+  if (normalized) {
+    if (!isValidSlug(normalized)) {
+      return {
+        ok: false,
+        error: "Slug inválido. Use letras minúsculas, números e hífens (mín. 3 caracteres).",
+        status: 400,
+      };
+    }
+    const available = await isSlugAvailable(admin, normalized, userId);
+    if (!available) {
+      return {
+        ok: false,
+        error: "Este endereço do cardápio já está em uso. Escolha outro slug.",
+        status: 409,
+      };
+    }
+    return { ok: true, slug: normalized };
+  }
+
+  const { data: existing, error } = await admin
+    .from("restaurantes")
+    .select("slug")
+    .eq("owner_id", userId)
+    .order("criado_em", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  if (error) {
+    console.error("[billing/checkout] select restaurante by owner:", error.message);
+    return { ok: false, error: "Não foi possível verificar seu restaurante.", status: 500 };
+  }
+
+  if (existing?.slug && isValidSlug(existing.slug)) {
+    return { ok: true, slug: existing.slug };
+  }
+
+  return { ok: true, slug: null };
+}
+
 /**
  * Valida dados e cria sessão Stripe Checkout (modo assinatura).
  * Não persiste restaurante nem assinatura — isso ocorre no webhook após pagamento.
  */
 export async function createSubscriptionCheckoutSession(
   admin: SupabaseClient,
-  input: CreateSubscriptionCheckoutInput
+  input: CreateSubscriptionCheckoutInput,
 ): Promise<CreateSubscriptionCheckoutResult> {
   const plan = getPlanByPriceId(input.priceId);
   if (!plan) {
@@ -51,21 +95,13 @@ export async function createSubscriptionCheckoutSession(
     };
   }
 
-  const slug = normalizeSlugInput(input.slug);
-  if (!isValidSlug(slug)) {
-    return {
-      ok: false,
-      error: "Slug inválido. Use letras minúsculas, números e hífens (mín. 3 caracteres).",
-      status: 400,
-    };
+  const slugResolved = await resolveCheckoutSlug(admin, input.userId, input.slug);
+  if (!slugResolved.ok) {
+    return slugResolved;
   }
+  const slug = slugResolved.slug;
 
-  const available = await isSlugAvailable(admin, slug, input.userId);
-  if (!available) {
-    return { ok: false, error: "Este endereço do cardápio já está em uso. Escolha outro slug.", status: 409 };
-  }
-
-  const restaurantName = (input.restaurantName ?? "").trim() || slug;
+  const restaurantName = (input.restaurantName ?? "").trim() || slug || "Restaurante";
   const whatsapp = input.whatsapp?.trim() ?? "";
 
   const origin = resolveStripeCheckoutOrigin();
@@ -86,11 +122,20 @@ export async function createSubscriptionCheckoutSession(
 
   const metadata: Stripe.MetadataParam = {
     supabase_user_id: input.userId,
-    slug,
     restaurant_name: restaurantName,
     whatsapp,
     price_id: input.priceId,
   };
+  if (slug) {
+    metadata.slug = slug;
+  }
+
+  const subscriptionMetadata: Stripe.MetadataParam = {
+    supabase_user_id: input.userId,
+  };
+  if (slug) {
+    subscriptionMetadata.slug = slug;
+  }
 
   try {
     const success = new URL("/admin", origin);
@@ -98,9 +143,6 @@ export async function createSubscriptionCheckoutSession(
     success.searchParams.set("success", "true");
     const cancel = new URL("/assinar", origin);
     cancel.searchParams.set("canceled", "true");
-
-    const success_url = success.href;
-    const cancel_url = cancel.href;
 
     const idem =
       typeof input.idempotencyKey === "string" && input.idempotencyKey.trim().length > 0
@@ -113,14 +155,11 @@ export async function createSubscriptionCheckoutSession(
         locale: "pt-BR",
         customer_email: input.userEmail,
         line_items: [{ price: input.priceId, quantity: 1 }],
-        success_url,
-        cancel_url,
+        success_url: success.href,
+        cancel_url: cancel.href,
         metadata,
         subscription_data: {
-          metadata: {
-            supabase_user_id: input.userId,
-            slug,
-          },
+          metadata: subscriptionMetadata,
         },
       },
       idem ? { idempotencyKey: idem } : undefined,

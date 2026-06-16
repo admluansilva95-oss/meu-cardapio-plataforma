@@ -126,14 +126,8 @@ export async function POST(request: NextRequest) {
           return applyAuthCookies(res, authCookieWrites);
         }
 
-        if (!slug || typeof slug !== "string") {
-          const res = jsonWithRequestId(
-            requestId,
-            { error: "slug é obrigatório." },
-            400,
-          );
-          return applyAuthCookies(res, authCookieWrites);
-        }
+        const slugResolved =
+          typeof slug === "string" && slug.trim().length > 0 ? slug : undefined;
 
         const restaurantNameResolved =
           typeof restaurantName === "string" ? restaurantName : "";
@@ -227,7 +221,7 @@ export async function POST(request: NextRequest) {
           userId: user.id,
           userEmail: user.email,
           priceId,
-          slug,
+          slug: slugResolved,
           restaurantName: restaurantNameResolved,
           whatsapp: typeof whatsapp === "string" ? whatsapp : undefined,
           idempotencyKey,

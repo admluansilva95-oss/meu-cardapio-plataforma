@@ -1,11 +1,11 @@
 /**
- * Estado mínimo pós-cadastro (plano + restaurante) embutido na URL em um único
+ * Estado mínimo pós-cadastro (plano + opcionais) embutido na URL em um único
  * parâmetro `ob`, para sobreviver à confirmação por e-mail em outro dispositivo.
  */
 export type PostSignupCarryPayload = {
   priceId: string;
-  slug: string;
-  /** Legado (cadastro antigo); o nome público fica no painel de configuração. */
+  /** Legado — slug agora é definido no painel admin após pagamento. */
+  slug?: string;
   restaurantName?: string;
   whatsapp?: string;
 };
@@ -13,8 +13,10 @@ export type PostSignupCarryPayload = {
 export function buildAssinarPathWithCarry(payload: PostSignupCarryPayload): string {
   const compact: Record<string, string> = {
     priceId: payload.priceId,
-    slug: payload.slug,
   };
+  if (payload.slug?.trim()) {
+    compact.slug = payload.slug.trim();
+  }
   if (payload.restaurantName?.trim()) {
     compact.restaurantName = payload.restaurantName.trim();
   }
@@ -30,12 +32,12 @@ export function parseCarryFromObParam(ob: string | null): PostSignupCarryPayload
   try {
     const raw = decodeURIComponent(ob);
     const v = JSON.parse(raw) as Record<string, unknown>;
-    if (typeof v.priceId !== "string" || typeof v.slug !== "string") {
+    if (typeof v.priceId !== "string") {
       return null;
     }
     return {
       priceId: v.priceId,
-      slug: v.slug,
+      ...(typeof v.slug === "string" && v.slug.trim() ? { slug: v.slug.trim() } : {}),
       ...(typeof v.restaurantName === "string" ? { restaurantName: v.restaurantName } : {}),
       ...(typeof v.whatsapp === "string" && v.whatsapp.trim() ? { whatsapp: v.whatsapp } : {}),
     };

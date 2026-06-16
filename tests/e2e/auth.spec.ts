@@ -45,20 +45,8 @@ test.describe("Cadastro (sign-up) — validação client-side e e-mail duplicado
     await expect(page.getByTestId("cadastro-form")).toBeVisible({ timeout: 20_000 });
   });
 
-  test("slug inválido (curto demais) mostra mensagem", async ({ page }) => {
-    const form = page.getByTestId("cadastro-form");
-    await fillWhenHydrated(form.locator("#slug"), "ab");
-    await fillWhenHydrated(form.locator("#email"), "valid@example.com");
-    await fillWhenHydrated(form.locator("#password"), "senha123");
-    await submitCadastroForm(page);
-    await expect(page.getByTestId("cadastro-error")).toContainText(/Endereço do cardápio inválido/i, {
-      timeout: 15_000,
-    });
-  });
-
   test("e-mail com formato inválido", async ({ page }) => {
     const form = page.getByTestId("cadastro-form");
-    await fillWhenHydrated(form.locator("#slug"), "meu-restaurante-e2e");
     await fillWhenHydrated(form.locator("#email"), "nao-e-um-email");
     await fillWhenHydrated(form.locator("#password"), "senha123");
     await submitCadastroForm(page);
@@ -67,7 +55,6 @@ test.describe("Cadastro (sign-up) — validação client-side e e-mail duplicado
 
   test("senha fraca (< 6 caracteres)", async ({ page }) => {
     const form = page.getByTestId("cadastro-form");
-    await fillWhenHydrated(form.locator("#slug"), "meu-restaurante-e2e");
     await fillWhenHydrated(form.locator("#email"), "user@example.com");
     await fillWhenHydrated(form.locator("#password"), "12345");
     await submitCadastroForm(page);
@@ -100,7 +87,6 @@ test.describe("Cadastro (sign-up) — validação client-side e e-mail duplicado
     });
 
     const form = page.getByTestId("cadastro-form");
-    await fillWhenHydrated(form.locator("#slug"), "rest-e2e-auto-confirm");
     await fillWhenHydrated(form.locator("#email"), email);
     await fillWhenHydrated(form.locator("#password"), "senha123");
     await submitCadastroForm(page);
@@ -121,7 +107,6 @@ test.describe("Cadastro (sign-up) — validação client-side e e-mail duplicado
     });
 
     const form = page.getByTestId("cadastro-form");
-    await fillWhenHydrated(form.locator("#slug"), "rest-e2e-null-session");
     await fillWhenHydrated(form.locator("#email"), "legacy-null-session@example.com");
     await fillWhenHydrated(form.locator("#password"), "senha123");
     await submitCadastroForm(page);
@@ -131,7 +116,7 @@ test.describe("Cadastro (sign-up) — validação client-side e e-mail duplicado
     const nextRaw = u.searchParams.get("next");
     expect(nextRaw).toBeTruthy();
     expect(decodeURIComponent(nextRaw ?? "")).toMatch(/^\/assinar\?/);
-    await expect(page.getByText(/Conta criada\. Confirme o e-mail/i)).toBeVisible();
+    await expect(page.getByText(/Enviamos um e-mail de confirmação/i)).toBeVisible();
   });
 
   test("erro de e-mail já cadastrado (resposta Supabase simulada)", async ({ page }) => {
@@ -148,7 +133,6 @@ test.describe("Cadastro (sign-up) — validação client-side e e-mail duplicado
     });
 
     const form = page.getByTestId("cadastro-form");
-    await fillWhenHydrated(form.locator("#slug"), "slug-novo-e2e");
     await fillWhenHydrated(form.locator("#email"), "existente@example.com");
     await fillWhenHydrated(form.locator("#password"), "senha123");
     await submitCadastroForm(page);
