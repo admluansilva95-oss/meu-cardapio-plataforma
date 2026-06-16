@@ -2093,12 +2093,7 @@ function AdminPageInner() {
     [restaurante, supabase, loadData],
   );
 
-  const atualizarColunaPedido = async (
-    pedidoId: string,
-    nova: KanbanCol,
-    /** Só no arrastar Pronto → Entregue: separador preparado no `onDrop` (mesmo gesto), igual ao botão “Finalizar…”. */
-    preWaEntrega?: { tab: Window | null; href: string } | null,
-  ) => {
+  const atualizarColunaPedido = async (pedidoId: string, nova: KanbanCol) => {
     if (pedidoBusyId || !restaurante?.id) return;
     const anterior = pedidos.find((p) => p.id === pedidoId);
     if (!anterior || anterior.coluna === nova) return;
@@ -2120,30 +2115,13 @@ function AdminPageInner() {
         setPedidos((lista) =>
           lista.map((p) => (p.id === pedidoId ? { ...p, coluna: anterior.coluna } : p)),
         );
-        if (preWaEntrega?.tab) {
-          try {
-            preWaEntrega.tab.close();
-          } catch {
-            /* ignore */
-          }
-        }
         return;
-      }
-      if (preWaEntrega?.href) {
-        navigatePreparedTabOrOpen(preWaEntrega.tab, preWaEntrega.href);
       }
     } catch (e) {
       setFetchError(e instanceof Error ? e.message : "Falha de rede ao atualizar o pedido.");
       setPedidos((lista) =>
         lista.map((p) => (p.id === pedidoId ? { ...p, coluna: anterior.coluna } : p)),
       );
-      if (preWaEntrega?.tab) {
-        try {
-          preWaEntrega.tab.close();
-        } catch {
-          /* ignore */
-        }
-      }
     } finally {
       setPedidoBusyId(null);
       setPedidoBusyKind(null);
@@ -2164,10 +2142,15 @@ function AdminPageInner() {
       lista.map((p) => (p.id === id ? { ...p, coluna: destino } : p)),
     );
 
-    /* Igual à vitrine: separador em branco antes do await + URL já montada (mensagem não depende da resposta do Supabase). */
+    /* Separador + URL antes do await. Em `entregue`, navegar já neste turno (mesmo gesto do clique):
+     * após await, vários browsers bloqueiam `popup.location` para outro site e o separador fica em about:blank. */
     const waTab = prepareNewTabForLaterNavigation();
     const msg = mensagemParaColuna(atual, destino);
     const waHref = buildWhatsappSendHref(atual.telefone, msg);
+    const waAntesDoAwait = destino === "entregue";
+    if (waAntesDoAwait) {
+      navigatePreparedTabOrOpen(waTab, waHref);
+    }
 
     try {
       const { error } = await supabase
@@ -2180,24 +2163,30 @@ function AdminPageInner() {
         setPedidos((lista) =>
           lista.map((p) => (p.id === id ? { ...p, coluna: prev } : p)),
         );
-        try {
-          waTab?.close();
-        } catch {
-          /* ignore */
+        if (!waAntesDoAwait) {
+          try {
+            waTab?.close();
+          } catch {
+            /* ignore */
+          }
         }
         return;
       }
 
-      navigatePreparedTabOrOpen(waTab, waHref);
+      if (!waAntesDoAwait) {
+        navigatePreparedTabOrOpen(waTab, waHref);
+      }
     } catch (e) {
       setFetchError(e instanceof Error ? e.message : "Falha de rede ao avançar o pedido.");
       setPedidos((lista) =>
         lista.map((p) => (p.id === id ? { ...p, coluna: prev } : p)),
       );
-      try {
-        waTab?.close();
-      } catch {
-        /* ignore */
+      if (!waAntesDoAwait) {
+        try {
+          waTab?.close();
+        } catch {
+          /* ignore */
+        }
       }
     } finally {
       setPedidoBusyId(null);
@@ -2784,16 +2773,15 @@ function AdminPageInner() {
                               const id = e.dataTransfer.getData(DRAG_MIME);
                               if (!id) return;
                               const arrastado = pedidos.find((p) => p.id === id);
-                              let preWaEntrega: { tab: Window | null; href: string } | undefined;
                               if (arrastado && arrastado.coluna === "pronto" && col.id === "entregue") {
                                 const waTab = prepareNewTabForLaterNavigation();
                                 const waHref = buildWhatsappSendHref(
                                   arrastado.telefone,
                                   mensagemParaColuna(arrastado, "entregue"),
                                 );
-                                preWaEntrega = { tab: waTab, href: waHref };
+                                navigatePreparedTabOrOpen(waTab, waHref);
                               }
-                              void atualizarColunaPedido(id, col.id, preWaEntrega);
+                              void atualizarColunaPedido(id, col.id);
                             }}
                             className={[
                               "flex min-h-[min(70vh,520px)] flex-col rounded-2xl border border-zinc-100 bg-white p-4 shadow-sm transition",

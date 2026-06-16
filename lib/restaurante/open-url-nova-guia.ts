@@ -26,19 +26,26 @@ export function prepareNewTabForLaterNavigation(): Window | null {
   }
 }
 
-/** Navega o separador aberto em `prepareNewTabForLaterNavigation`; se falhar, cai no `<a target="_blank">`. */
+/**
+ * Navega o separador aberto em `prepareNewTabForLaterNavigation`; se falhar, cai no `<a target="_blank">`.
+ * Importante: após um `await`, muitos browsers bloqueiam `prepared.location = url` cross-origin e o `catch`
+ * corria antes — fechava o `about:blank` e o fallback já não tinha gesto do utilizador (só via “flash”).
+ */
 export function navigatePreparedTabOrOpen(prepared: Window | null, href: string): void {
   if (prepared != null && !prepared.closed) {
     try {
       prepared.location.href = href;
       return;
     } catch {
-      try {
-        prepared.close();
-      } catch {
-        /* ignore */
-      }
+      /* tentar fallback antes de fechar o separador em branco */
     }
   }
   openUrlNovaGuia(href);
+  if (prepared != null && !prepared.closed) {
+    try {
+      prepared.close();
+    } catch {
+      /* ignore */
+    }
+  }
 }
