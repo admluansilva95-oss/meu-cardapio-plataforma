@@ -19,7 +19,7 @@ export const dynamic = "force-dynamic";
  * e garante leitura só com cliente anônimo (sem sessão do painel no navegador).
  */
 const RESTAURANTE_COLUNAS =
-  "id, nome, slug, whatsapp, logo, cor_tema, horario_funcionamento, taxa_entrega, vitrine_fechada, mensagem_fechado, funcionamento_semana, taxas_entrega_zonas, entrega_modo, retirada_balcao, cardapio_categorias, mensagem_boas_vindas, texto_vitrine_aberto, texto_vitrine_fechado, mensagem_fora_horario" as const;
+  "id, nome, slug, whatsapp, logo, cor_tema, horario_funcionamento, taxa_entrega, vitrine_fechada, mensagem_fechado, funcionamento_semana, taxas_entrega_zonas, entrega_modo, retirada_balcao, retirada_endereco_balcao, retirada_preparo_estimado, cardapio_categorias, mensagem_boas_vindas, texto_vitrine_aberto, texto_vitrine_fechado, mensagem_fora_horario" as const;
 
 const PRATOS_COLUNAS =
   "id, restaurante_id, nome, preco, descricao, imagem, status, categoria" as const;

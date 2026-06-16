@@ -100,6 +100,8 @@ type RestauranteRow = {
   taxas_entrega_zonas?: unknown;
   entrega_modo?: string | null;
   retirada_balcao?: boolean | null;
+  retirada_endereco_balcao?: string | null;
+  retirada_preparo_estimado?: string | null;
   cardapio_categorias?: unknown;
   mensagem_boas_vindas?: string | null;
   texto_vitrine_aberto?: string | null;
@@ -139,6 +141,8 @@ function mapRestauranteRow(row: RestauranteRow): Restaurante {
     taxas_entrega_zonas: zonasParsed ?? undefined,
     entrega_modo,
     retirada_balcao: row.retirada_balcao === true,
+    retirada_endereco_balcao: row.retirada_endereco_balcao?.trim() || null,
+    retirada_preparo_estimado: row.retirada_preparo_estimado?.trim() || null,
     cardapio_categorias: cardapio_categorias.length > 0 ? cardapio_categorias : null,
     mensagem_boas_vindas: row.mensagem_boas_vindas?.trim() || null,
     texto_vitrine_aberto: row.texto_vitrine_aberto?.trim() || null,

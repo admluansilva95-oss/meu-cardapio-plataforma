@@ -491,12 +491,34 @@ export default function CartDrawer(props: CartDrawerProps) {
                       </div>
                     </div>
                   ) : (
-                    <p className="rounded-2xl border border-emerald-100 bg-emerald-50/60 px-4 py-3 text-sm leading-relaxed text-emerald-900">
-                      <span className="font-semibold">Retirada no balcão</span> — sem taxa de entrega. O pedido entra no
-                      painel do restaurante (esteira em &quot;Pendente&quot;) para preparo e acompanhamento. Quando
-                      estiver pronto, retire no balcão. O WhatsApp abre em seguida para você combinar detalhes com o
-                      local, se precisar.
-                    </p>
+                    <div className="space-y-3 rounded-2xl border border-emerald-100 bg-emerald-50/60 px-4 py-3 text-sm leading-relaxed text-emerald-900">
+                      <p>
+                        <span className="font-semibold">Retirada no balcão</span> — sem taxa de entrega. O pedido entra
+                        no painel do restaurante (esteira em &quot;Pendente&quot;) para preparo e acompanhamento. O
+                        WhatsApp abre em seguida para você combinar detalhes com o local, se precisar.
+                      </p>
+                      {restaurante.retirada_endereco_balcao?.trim() ? (
+                        <div className="rounded-xl border border-emerald-200/80 bg-white/90 px-3 py-2.5">
+                          <p className="text-[11px] font-semibold uppercase tracking-wide text-emerald-800/90">
+                            Endereço para retirada
+                          </p>
+                          <p className="mt-1 whitespace-pre-wrap text-sm font-medium text-emerald-950">
+                            {restaurante.retirada_endereco_balcao.trim()}
+                          </p>
+                        </div>
+                      ) : (
+                        <p className="text-[13px] text-emerald-900/90">
+                          Quando estiver pronto, retire no balcão. Se o endereço não aparecer aqui, o restaurante pode
+                          enviar pelo WhatsApp.
+                        </p>
+                      )}
+                      {restaurante.retirada_preparo_estimado?.trim() ? (
+                        <p className="text-[13px] text-emerald-900/90">
+                          <span className="font-semibold">Tempo estimado de preparo:</span>{" "}
+                          {restaurante.retirada_preparo_estimado.trim()}
+                        </p>
+                      ) : null}
+                    </div>
                   )}
                 </section>
               ) : null}

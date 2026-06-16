@@ -55,6 +55,14 @@ export function buildPedidoTextoWhatsApp(
   ];
   if (tipoEntrega === "retirada" && restaurante.retirada_balcao) {
     blocos.push("*Retirada no balcão*", "");
+    const end = restaurante.retirada_endereco_balcao?.trim();
+    if (end) {
+      blocos.push("*Endereço para retirada:*", end, "");
+    }
+    const prep = restaurante.retirada_preparo_estimado?.trim();
+    if (prep) {
+      blocos.push(`*Preparo estimado:* ${prep}`, "");
+    }
   }
   if (linhaExtra) blocos.push(linhaExtra, "");
   if (taxaAplicada > 0) {
