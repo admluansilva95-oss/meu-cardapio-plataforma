@@ -78,6 +78,7 @@ import {
 import { FuncionamentoSemanalForm } from "@/components/admin/FuncionamentoSemanalForm";
 import { RestauranteLogoUploadField } from "@/components/admin/RestauranteLogoUploadField";
 import { IosToggle } from "@/components/ui/IosToggle";
+import { BotaoGerenciarPlano } from "@/components/BotaoGerenciarPlano";
 
 function formatSlugToDisplayName(slug: string): string {
   const s = slug.trim();
@@ -3094,6 +3095,17 @@ function AdminPageInner() {
 
           {tab === "configuracoes" ? (
             <section className="mx-auto max-w-2xl space-y-6">
+              {/* Card de Gerenciamento de Plano e Assinatura via Stripe */}
+              <div className="rounded-3xl border border-zinc-100 bg-white px-5 py-6 shadow-sm sm:px-7 sm:py-8 mb-6">
+                <h2 className="text-lg font-semibold tracking-tight text-zinc-900">Plano e assinatura</h2>
+                <p className="mt-2 text-sm text-[#6e6e73]">
+                  Faça upgrade ou altere seu plano. O Stripe calcula automaticamente o crédito dos dias já pagos de forma proporcional.
+                </p>
+                <div className="mt-4">
+                  <BotaoGerenciarPlano />
+                </div>
+              </div>
+
               <div className="rounded-3xl border border-zinc-100 bg-white px-5 py-6 shadow-sm sm:px-7 sm:py-8">
                 <p className="text-xs font-medium uppercase tracking-wide text-[#86868b]">Link público</p>
                 <div className="mt-3 flex flex-col gap-3 sm:flex-row sm:items-center">
