@@ -1,5 +1,6 @@
 "use client";
 
+<<<<<<< Updated upstream
 import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
@@ -14,6 +15,11 @@ import { playNewOrderChime } from "@/lib/admin/play-new-order-chime";
 import { imprimirPedidoTermico } from "@/lib/admin/impressao-termica-pedido";
 import { computePedidoKpis } from "@/lib/admin/pedido-kpis";
 import { computePratoRankingFromPedidosLines } from "@/lib/admin/prato-ranking-from-pedidos";
+=======
+import { Suspense, useCallback, useEffect, useMemo, useState } from "react";
+import { useSearchParams } from "next/navigation";
+import type { Prato, PratoStatus, Restaurante } from "../../types";
+>>>>>>> Stashed changes
 import { createBrowserSupabaseClient } from "@/lib/supabase";
 import { clearBrowserAuthArtifacts, performOwnerLogout } from "@/lib/auth/clear-client-auth-state";
 import { setGlobalUnauthorizedHandler } from "@/lib/auth/global-unauthorized";
@@ -88,6 +94,7 @@ function formatSlugToDisplayName(slug: string): string {
     .map((segment) => segment.charAt(0).toUpperCase() + segment.slice(1).toLowerCase())
     .join(" ");
 }
+<<<<<<< Updated upstream
 
 function resolveRestauranteDisplayNome(nome: string | null | undefined, slug: string): string {
   const t = nome?.trim();
@@ -97,6 +104,16 @@ function resolveRestauranteDisplayNome(nome: string | null | undefined, slug: st
 
 type AdminTab = "pedidos" | "cardapio" | "pratos" | "configuracoes";
 type ConfigPainelSecao = "geral" | "retirada";
+=======
+
+function resolveRestauranteDisplayNome(nome: string | null | undefined, slug: string): string {
+  const t = nome?.trim();
+  if (t) return t;
+  return formatSlugToDisplayName(slug);
+}
+
+type AdminTab = "pedidos" | "cardapio" | "configuracoes";
+>>>>>>> Stashed changes
 type KanbanCol = "recebidos" | "cozinha" | "pronto" | "entregue";
 type FormaPagamento = "Pix" | "Cartão" | "Dinheiro";
 
@@ -436,7 +453,10 @@ function mapRestauranteRow(row: {
         : 0;
   return {
     id: row.id,
+<<<<<<< Updated upstream
     rawNome,
+=======
+>>>>>>> Stashed changes
     nome: resolveRestauranteDisplayNome(row.nome, row.slug),
     slug: row.slug,
     whatsapp: row.whatsapp?.trim() || "+5500000000000",
@@ -511,24 +531,32 @@ function mensagemParaColuna(p: Pedido, destino: KanbanCol): string {
       : `Olá ${p.cliente}, seu pedido entrou em preparo!`;
   }
   if (destino === "pronto") {
+<<<<<<< Updated upstream
     if (isPedidoRetiradaBalcao(p)) {
       return `Olá ${p.cliente}, seu pedido está pronto para retirada no balcão. Aguardamos você no estabelecimento. Obrigado pela preferência!`;
     }
+=======
+>>>>>>> Stashed changes
     const m = p.motoboy?.trim() || "nossa equipe";
     return `Olá ${p.cliente}, seu pedido está pronto e já saiu para entrega com o motoboy ${m}. Obrigado pela preferência!`;
   }
   if (destino === "entregue") {
+<<<<<<< Updated upstream
     const ref = formatPedidoId(p.id);
     if (isPedidoRetiradaBalcao(p)) {
       return `Olá, ${p.cliente}! Atendimento finalizado: registramos a retirada do pedido ${ref} no balcão. Obrigado pela preferência!`;
     }
     return `Olá, ${p.cliente}! Atendimento finalizado: seu pedido ${ref} foi entregue. Obrigado pela preferência!`;
+=======
+    return `Olá ${p.cliente}, seu pedido foi entregue. Obrigado pela preferência!`;
+>>>>>>> Stashed changes
   }
   return `Olá ${p.cliente}, atualização do seu pedido.`;
 }
 
 const DRAG_MIME = "application/x-meu-cardapio-pedido-id";
 
+<<<<<<< Updated upstream
 function painelLogsDetalhados(): boolean {
   return (
     typeof process !== "undefined" &&
@@ -546,6 +574,8 @@ function painelError(tag: string, details: Record<string, unknown>): void {
   console.error(`[admin:painel] ${tag}`, details);
 }
 
+=======
+>>>>>>> Stashed changes
 function AdminMissingSlugView() {
   useEffect(() => {
     document.title = "Painel · Cardápio";
@@ -556,6 +586,7 @@ function AdminMissingSlugView() {
       <div className="mx-auto max-w-lg text-center">
         <p className="text-[11px] font-semibold uppercase tracking-[0.28em] text-[#86868b]">Painel</p>
         <h1 className="mt-4 text-2xl font-semibold tracking-tight text-[#1d1d1f] sm:text-3xl">
+<<<<<<< Updated upstream
           Assinatura pendente
         </h1>
         <p className="mt-4 text-[15px] leading-relaxed text-[#6e6e73]">
@@ -568,6 +599,25 @@ function AdminMissingSlugView() {
         >
           Ir para cadastro
         </Link>
+=======
+          Informe o restaurante
+        </h1>
+        <p className="mt-4 text-[15px] leading-relaxed text-[#6e6e73]">
+          O painel multitenant carrega dados do Supabase pelo{" "}
+          <span className="font-medium text-[#424245]">slug</span> do restaurante. Abra esta página com o parâmetro na
+          URL, por exemplo:
+        </p>
+        <p className="mt-6 rounded-2xl border border-black/[0.06] bg-[#fbfbfd] px-4 py-3 font-mono text-xs text-[#424245] shadow-[0_8px_30px_-20px_rgba(0,0,0,0.12)]">
+          /admin?slug=seu-restaurante
+        </p>
+        <p className="mt-5 text-xs leading-relaxed text-[#86868b]">
+          Em deploy na Vercel você pode definir{" "}
+          <code className="rounded bg-black/[0.04] px-1.5 py-0.5 font-mono text-[11px]">
+            NEXT_PUBLIC_ADMIN_RESTAURANT_SLUG
+          </code>{" "}
+          como padrão quando não houver query string.
+        </p>
+>>>>>>> Stashed changes
       </div>
     </div>
   );
@@ -692,7 +742,11 @@ function AdminSidebar(props: {
     },
   ];
   return (
+<<<<<<< Updated upstream
     <aside className="flex w-full shrink-0 flex-col border-b border-zinc-200/80 bg-white/90 backdrop-blur-xl lg:h-screen lg:w-72 lg:border-b-0 lg:border-r lg:border-zinc-200/80">
+=======
+    <aside className="flex w-full shrink-0 flex-col border-b border-black/[0.06] bg-[#f5f5f7]/90 backdrop-blur-xl lg:h-screen lg:w-64 lg:border-b-0 lg:border-r lg:border-black/[0.06]">
+>>>>>>> Stashed changes
       <div className="border-b border-black/[0.06] px-5 py-6">
         <div className="flex items-center gap-3">
           <div
@@ -717,12 +771,17 @@ function AdminSidebar(props: {
               type="button"
               onClick={() => onTab(it.id)}
               className={[
+<<<<<<< Updated upstream
                 "flex min-w-[10.5rem] snap-start flex-col rounded-xl px-3 py-2.5 text-left transition sm:min-w-[9.5rem] lg:min-w-0",
+=======
+                "flex min-w-[8.5rem] flex-col rounded-xl px-3 py-2.5 text-left transition lg:min-w-0",
+>>>>>>> Stashed changes
                 active
                   ? "bg-white text-[#1d1d1f] shadow-[0_1px_3px_rgba(0,0,0,0.08)] ring-1 ring-black/[0.04]"
                   : "text-[#6e6e73] hover:bg-white/70 hover:text-[#1d1d1f]",
               ].join(" ")}
             >
+<<<<<<< Updated upstream
               <span className="flex items-center gap-2">
                 <Icon
                   className={[
@@ -736,10 +795,20 @@ function AdminSidebar(props: {
               <span className="mt-1 pl-6 text-[11px] leading-snug text-[#86868b]">
                 {it.hint}
               </span>
+=======
+              <span className="text-sm font-semibold">{it.label}</span>
+              <span className="text-[11px] text-[#86868b]">{it.hint}</span>
+>>>>>>> Stashed changes
             </button>
           );
         })}
       </nav>
+<<<<<<< Updated upstream
+=======
+      <div className="hidden border-t border-black/[0.06] p-4 text-[11px] text-[#86868b] lg:block">
+        Slug: <span className="font-mono text-[#424245]">{restaurante.slug}</span>
+      </div>
+>>>>>>> Stashed changes
     </aside>
   );
 }
@@ -778,6 +847,7 @@ function PedidoCard(props: {
         e.dataTransfer.effectAllowed = "move";
       }}
       onDragEnd={() => onDragEnd?.()}
+<<<<<<< Updated upstream
       className={[
         "rounded-2xl border border-black/[0.06] bg-white p-4 shadow-[0_8px_30px_-12px_rgba(0,0,0,0.12)] transition hover:shadow-[0_12px_40px_-12px_rgba(0,0,0,0.16)]",
         busy ? "pointer-events-none opacity-[0.72]" : "cursor-grab active:cursor-grabbing",
@@ -797,25 +867,49 @@ function PedidoCard(props: {
             <h3 className="mt-1 text-sm font-semibold tracking-tight text-[#1d1d1f]">{pedido.cliente}</h3>
             <p className="mt-0.5 text-xs text-[#6e6e73]">{pedido.telefone}</p>
           </div>
+=======
+      className="cursor-grab rounded-2xl border border-black/[0.06] bg-white p-4 shadow-[0_8px_30px_-12px_rgba(0,0,0,0.12)] transition hover:shadow-[0_12px_40px_-12px_rgba(0,0,0,0.16)] active:cursor-grabbing"
+    >
+      <div className="flex items-start justify-between gap-2">
+        <div>
+          <p className="text-[11px] font-medium uppercase tracking-wide text-[#86868b]">
+            {formatPedidoId(pedido.id)}
+          </p>
+          <h3 className="mt-1 text-sm font-semibold tracking-tight text-[#1d1d1f]">{pedido.cliente}</h3>
+          <p className="mt-0.5 text-xs text-[#6e6e73]">{pedido.telefone}</p>
+>>>>>>> Stashed changes
         </div>
         <button
           type="button"
           disabled={busy}
           onClick={onCancel}
+<<<<<<< Updated upstream
           className="rounded-lg px-2 py-1 text-[10px] font-medium text-[#86868b] transition hover:bg-red-50 hover:text-red-600 disabled:cursor-not-allowed disabled:opacity-50"
+=======
+          className="rounded-lg px-2 py-1 text-[10px] font-medium text-[#86868b] transition hover:bg-red-50 hover:text-red-600"
+>>>>>>> Stashed changes
         >
           Cancelar
         </button>
       </div>
+<<<<<<< Updated upstream
       <ul className="mt-3 space-y-1.5 border-t border-black/[0.06] pt-3 text-xs text-[#424245]">
         {pedido.itens.map((line, idx) => (
           <li key={`${pedido.id}-${idx}-${line}`} className="flex gap-2">
             <span className="mt-1.5 h-2 w-2 shrink-0 rounded-sm bg-sky-500/85 shadow-sm ring-1 ring-sky-600/20" />
             <span className="font-medium leading-snug">{line}</span>
+=======
+      <ul className="mt-3 space-y-1 border-t border-black/[0.06] pt-3 text-xs text-[#424245]">
+        {pedido.itens.map((line, idx) => (
+          <li key={`${pedido.id}-${idx}-${line}`} className="flex gap-2">
+            <span className="mt-1.5 h-1 w-1 shrink-0 rounded-full bg-[#1d1d1f]/25" />
+            <span>{line}</span>
+>>>>>>> Stashed changes
           </li>
         ))}
       </ul>
       <div className="mt-3 flex flex-wrap gap-2 text-[11px] text-[#6e6e73]">
+<<<<<<< Updated upstream
         <span className="rounded-full bg-[#1d1d1f] px-2.5 py-1 font-bold tabular-nums text-white shadow-sm">
           Total {formatBRL(pedido.total)}
         </span>
@@ -829,6 +923,13 @@ function PedidoCard(props: {
             Retirada no balcão
           </span>
         ) : null}
+=======
+        <span className="rounded-full bg-[#f5f5f7] px-2 py-0.5 font-medium text-[#1d1d1f]">
+          Total {formatBRL(pedido.total)}
+        </span>
+        <span className="rounded-full bg-[#f5f5f7] px-2 py-0.5">{pedido.pagamento}</span>
+        <span className="rounded-full bg-[#f5f5f7] px-2 py-0.5">Motoboy: {pedido.motoboy}</span>
+>>>>>>> Stashed changes
       </div>
       {pedido.observacoes ? (
         <p className="mt-2 rounded-xl bg-[#f5f5f7] px-3 py-2 text-[11px] leading-relaxed text-[#6e6e73]">
@@ -837,6 +938,7 @@ function PedidoCard(props: {
       ) : null}
       <div className="mt-4 flex flex-col gap-2">
         {canAdvance ? (
+<<<<<<< Updated upstream
           waHrefFinalizar ? (
             <a
               href={waHrefFinalizar}
@@ -926,6 +1028,27 @@ function PedidoCard(props: {
             Editar detalhes
           </button>
         )}
+=======
+          <button
+            type="button"
+            onClick={onAdvance}
+            className="w-full rounded-xl bg-[#1d1d1f] px-3 py-2.5 text-xs font-semibold text-white shadow-sm transition hover:bg-black active:scale-[0.99]"
+          >
+            Avançar status + WhatsApp
+          </button>
+        ) : (
+          <p className="rounded-xl border border-dashed border-black/[0.08] bg-[#fafafa] px-3 py-2 text-center text-[11px] text-[#86868b]">
+            Pedido na etapa final da esteira.
+          </p>
+        )}
+        <button
+          type="button"
+          onClick={onEdit}
+          className="w-full rounded-xl border border-black/[0.08] bg-white px-3 py-2 text-xs font-semibold text-[#1d1d1f] shadow-sm transition hover:bg-[#f5f5f7]"
+        >
+          Editar detalhes
+        </button>
+>>>>>>> Stashed changes
       </div>
     </article>
   );
@@ -972,7 +1095,11 @@ function ModalPedido(props: {
             type="button"
             disabled={saving}
             onClick={onClose}
+<<<<<<< Updated upstream
             className="rounded-xl border border-black/[0.08] bg-white px-2 py-1 text-xs text-[#6e6e73] shadow-sm transition hover:bg-[#f5f5f7] disabled:cursor-not-allowed disabled:opacity-50"
+=======
+            className="rounded-xl border border-black/[0.08] bg-white px-2 py-1 text-xs text-[#6e6e73] shadow-sm transition hover:bg-[#f5f5f7]"
+>>>>>>> Stashed changes
           >
             Fechar
           </button>
@@ -1023,15 +1150,24 @@ function ModalPedido(props: {
             type="button"
             disabled={saving}
             onClick={onClose}
+<<<<<<< Updated upstream
             className="rounded-xl border border-black/[0.08] bg-white px-4 py-2 text-xs font-semibold text-[#1d1d1f] shadow-sm transition hover:bg-[#f5f5f7] disabled:cursor-not-allowed disabled:opacity-50"
+=======
+            className="rounded-xl border border-black/[0.08] bg-white px-4 py-2 text-xs font-semibold text-[#1d1d1f] shadow-sm transition hover:bg-[#f5f5f7]"
+>>>>>>> Stashed changes
           >
             Descartar
           </button>
           <button
             type="button"
+<<<<<<< Updated upstream
             disabled={saving}
             onClick={() => void onSave({ motoboy, pagamento, observacaoExtra: obsExtra })}
             className="inline-flex min-w-[7.5rem] items-center justify-center gap-2 rounded-xl bg-[#0071e3] px-4 py-2 text-xs font-semibold text-white shadow-sm transition hover:bg-[#0077ed] disabled:cursor-wait disabled:opacity-80"
+=======
+            onClick={() => onSave({ motoboy, pagamento, observacaoExtra: obsExtra })}
+            className="rounded-xl bg-[#0071e3] px-4 py-2 text-xs font-semibold text-white shadow-sm transition hover:bg-[#0077ed]"
+>>>>>>> Stashed changes
           >
             {saving ? (
               <>
@@ -1158,6 +1294,7 @@ function ModalPrato(props: {
   };
 
   return (
+<<<<<<< Updated upstream
     <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/30 p-4 backdrop-blur-sm sm:items-center">
       <div className="w-full max-w-md rounded-3xl border border-zinc-100 bg-white p-6 shadow-xl">
         <h2 className="text-lg font-semibold tracking-tight text-zinc-900">
@@ -1182,10 +1319,42 @@ function ModalPrato(props: {
           />
           <div className="space-y-1.5">
             <label className="text-xs font-semibold uppercase tracking-wide text-zinc-500">Preço (R$)</label>
+=======
+    <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/25 p-4 backdrop-blur-sm sm:items-center">
+      <div className="w-full max-w-md rounded-2xl border border-black/[0.06] bg-[#fbfbfd] p-6 shadow-[0_24px_80px_-24px_rgba(0,0,0,0.25)]">
+        <h2 className="text-lg font-semibold tracking-tight text-[#1d1d1f]">
+          {mode === "create" ? "Novo prato" : "Editar prato"}
+        </h2>
+        <form onSubmit={handleSubmit} className="mt-4 space-y-3">
+          <div className="space-y-1">
+            <label className="text-xs font-medium text-[#86868b]">Nome</label>
+            <input
+              value={form.nome}
+              onChange={(e) => setForm((f) => ({ ...f, nome: e.target.value }))}
+              className="w-full rounded-xl border border-black/[0.08] bg-white px-3 py-2.5 text-sm text-[#1d1d1f] shadow-[0_1px_0_rgba(0,0,0,0.04)] outline-none transition focus:border-[#0071e3]/40 focus:ring-2 focus:ring-[#0071e3]/15"
+              required
+            />
+          </div>
+          <div className="space-y-1">
+            <label className="text-xs font-medium text-[#86868b]">Categoria</label>
+            <input
+              value={form.categoria}
+              onChange={(e) => setForm((f) => ({ ...f, categoria: e.target.value }))}
+              placeholder="Ex.: Entradas, Burgers, Bebidas"
+              className="w-full rounded-xl border border-black/[0.08] bg-white px-3 py-2.5 text-sm text-[#1d1d1f] shadow-[0_1px_0_rgba(0,0,0,0.04)] outline-none transition placeholder:text-[#aeaeb2] focus:border-[#0071e3]/40 focus:ring-2 focus:ring-[#0071e3]/15"
+            />
+            <p className="text-[11px] leading-relaxed text-[#86868b]">
+              Aparece agrupada na vitrine pública. Deixe em branco para ir em &quot;Cardápio&quot;.
+            </p>
+          </div>
+          <div className="space-y-1">
+            <label className="text-xs font-medium text-[#86868b]">Preço (R$)</label>
+>>>>>>> Stashed changes
             <input
               type="text"
               inputMode="decimal"
               value={form.preco}
+<<<<<<< Updated upstream
               onChange={(e) =>
                 setForm((f) => ({ ...f, preco: sanitizePrecoBrInput(e.target.value) }))
               }
@@ -1198,6 +1367,10 @@ function ModalPrato(props: {
               }
               placeholder="Ex.: 24,90"
               className="w-full rounded-2xl border border-zinc-200 bg-zinc-50/50 px-4 py-3 text-sm text-zinc-900 outline-none transition focus:border-transparent focus:ring-2 focus:ring-zinc-900"
+=======
+              onChange={(e) => setForm((f) => ({ ...f, preco: e.target.value }))}
+              className="w-full rounded-xl border border-black/[0.08] bg-white px-3 py-2.5 text-sm text-[#1d1d1f] shadow-[0_1px_0_rgba(0,0,0,0.04)] outline-none transition focus:border-[#0071e3]/40 focus:ring-2 focus:ring-[#0071e3]/15"
+>>>>>>> Stashed changes
               required
             />
             <p className="text-[11px] leading-relaxed text-zinc-500">
@@ -1205,17 +1378,30 @@ function ModalPrato(props: {
               casas decimais.
             </p>
           </div>
+<<<<<<< Updated upstream
           <div className="space-y-1.5">
             <label className="text-xs font-semibold uppercase tracking-wide text-zinc-500">Descrição</label>
+=======
+          <div className="space-y-1">
+            <label className="text-xs font-medium text-[#86868b]">Descrição</label>
+>>>>>>> Stashed changes
             <textarea
               value={form.descricao}
               onChange={(e) => setForm((f) => ({ ...f, descricao: e.target.value }))}
               rows={3}
+<<<<<<< Updated upstream
               className="w-full resize-none rounded-2xl border border-zinc-200 bg-zinc-50/50 px-4 py-3 text-sm text-zinc-900 outline-none transition focus:border-transparent focus:ring-2 focus:ring-zinc-900"
             />
           </div>
           <div className="space-y-1.5">
             <label className="text-xs font-semibold uppercase tracking-wide text-zinc-500" htmlFor="prato-imagem-arquivo">
+=======
+              className="w-full resize-none rounded-xl border border-black/[0.08] bg-white px-3 py-2.5 text-sm text-[#1d1d1f] shadow-[0_1px_0_rgba(0,0,0,0.04)] outline-none transition focus:border-[#0071e3]/40 focus:ring-2 focus:ring-[#0071e3]/15"
+            />
+          </div>
+          <div className="space-y-1">
+            <label className="text-xs font-medium text-[#86868b]" htmlFor="prato-imagem-arquivo">
+>>>>>>> Stashed changes
               Foto do prato
             </label>
             <input
@@ -1227,6 +1413,7 @@ function ModalPrato(props: {
                 const f = e.target.files?.[0] ?? null;
                 setArquivoImagem(f);
               }}
+<<<<<<< Updated upstream
               className="block w-full text-xs text-zinc-500 file:mr-3 file:rounded-xl file:border-0 file:bg-zinc-100 file:px-3 file:py-2 file:text-xs file:font-semibold file:text-zinc-900 hover:file:bg-zinc-200"
             />
             {previewUrl || imagemPreviewPublica ? (
@@ -1241,10 +1428,17 @@ function ModalPrato(props: {
             ) : null}
             {mode === "edit" && imagemPreviewPublica && !arquivoImagem ? (
               <p className="text-[11px] text-zinc-500">
+=======
+              className="block w-full text-xs text-[#6e6e73] file:mr-3 file:rounded-lg file:border-0 file:bg-[#f5f5f7] file:px-3 file:py-1.5 file:text-xs file:font-medium file:text-[#1d1d1f] hover:file:bg-[#e8e8ed]"
+            />
+            {mode === "edit" && initial?.imagem && !arquivoImagem ? (
+              <p className="text-[11px] text-[#86868b]">
+>>>>>>> Stashed changes
                 Imagem atual no cardápio. Envie um arquivo acima para substituir.
               </p>
             ) : null}
             {arquivoImagem ? (
+<<<<<<< Updated upstream
               <p className="truncate text-[11px] text-zinc-500" title={arquivoImagem.name}>
                 Novo arquivo: {arquivoImagem.name}
               </p>
@@ -1261,20 +1455,45 @@ function ModalPrato(props: {
               onChange={(on) => setForm((f) => ({ ...f, status: on ? "ativo" : "pausado" }))}
               aria-label={form.status === "ativo" ? "Prato ativo" : "Prato pausado"}
             />
+=======
+              <p className="truncate text-[11px] text-[#6e6e73]" title={arquivoImagem.name}>
+                Selecionado: {arquivoImagem.name}
+              </p>
+            ) : null}
+          </div>
+          <div className="space-y-1">
+            <label className="text-xs font-medium text-[#86868b]">Status</label>
+            <select
+              value={form.status}
+              onChange={(e) => setForm((f) => ({ ...f, status: e.target.value as PratoStatus }))}
+              className="w-full rounded-xl border border-black/[0.08] bg-white px-3 py-2.5 text-sm text-[#1d1d1f] shadow-[0_1px_0_rgba(0,0,0,0.04)] outline-none transition focus:border-[#0071e3]/40 focus:ring-2 focus:ring-[#0071e3]/15"
+            >
+              <option value="ativo">Ativo</option>
+              <option value="pausado">Pausado</option>
+            </select>
+>>>>>>> Stashed changes
           </div>
           <div className="flex justify-end gap-2 pt-2">
             <button
               type="button"
               onClick={onClose}
               disabled={submitting}
+<<<<<<< Updated upstream
               className="rounded-full border border-zinc-200 bg-white px-5 py-2.5 text-sm font-medium text-zinc-700 shadow-sm transition hover:bg-zinc-50 disabled:opacity-50"
+=======
+              className="rounded-xl border border-black/[0.08] bg-white px-4 py-2 text-xs font-medium text-[#1d1d1f] shadow-sm transition hover:bg-[#f5f5f7] disabled:opacity-50"
+>>>>>>> Stashed changes
             >
               Cancelar
             </button>
             <button
               type="submit"
               disabled={submitting}
+<<<<<<< Updated upstream
               className="rounded-full bg-zinc-900 px-5 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-zinc-800 disabled:opacity-50"
+=======
+              className="rounded-xl bg-[#0071e3] px-4 py-2 text-xs font-semibold text-white shadow-sm transition hover:bg-[#0077ed] disabled:opacity-50"
+>>>>>>> Stashed changes
             >
               {submitting ? "Salvando…" : "Salvar"}
             </button>
@@ -1290,13 +1509,24 @@ function ModalPrato(props: {
   );
 }
 
+<<<<<<< Updated upstream
 const TOAST_ALTERACOES_SALVAS = "Suas alterações foram salvas.";
 const TOAST_PEDIDO_REMOVIDO = "Pedido removido.";
 const TOAST_ITEM_CARDAPIO_REMOVIDO = "Item removido do cardápio.";
 
 function AdminPageInner() {
   const router = useRouter();
+=======
+function AdminPageInner() {
+>>>>>>> Stashed changes
   const supabase = useMemo(() => createBrowserSupabaseClient(), []);
+  const searchParams = useSearchParams();
+
+  const tenantSlug = useMemo(() => {
+    const q = searchParams.get("slug")?.trim() ?? "";
+    if (q.length > 0) return q;
+    return (process.env.NEXT_PUBLIC_ADMIN_RESTAURANT_SLUG ?? "").trim();
+  }, [searchParams]);
 
   useEffect(() => {
     setGlobalUnauthorizedHandler(async () => {
@@ -1331,6 +1561,7 @@ function AdminPageInner() {
   const [resolvingSlug, setResolvingSlug] = useState(false);
   const [cardapioLinkCopied, setCardapioLinkCopied] = useState(false);
 
+<<<<<<< Updated upstream
   const [tenantSaving, setTenantSaving] = useState(false);
   const [cfgNome, setCfgNome] = useState("");
   const [cfgWhatsapp, setCfgWhatsapp] = useState("");
@@ -1557,6 +1788,26 @@ function AdminPageInner() {
         });
         return;
       }
+=======
+  const loadData = useCallback(async () => {
+    if (!tenantSlug) {
+      setLoading(false);
+      setFetchError(null);
+      setRestaurante(null);
+      setPratos([]);
+      setPedidos([]);
+      return;
+    }
+
+    setLoading(true);
+    setFetchError(null);
+    try {
+      const { data: restRow, error: restErr } = await supabase
+        .from("restaurantes")
+        .select("id, nome, slug, whatsapp, logo, cor_tema")
+        .eq("slug", tenantSlug)
+        .maybeSingle();
+>>>>>>> Stashed changes
 
       if (restErr) {
         setFetchError(restErr.message);
@@ -1568,6 +1819,7 @@ function AdminPageInner() {
       if (!restRow) {
         setFetchError(
           "Não encontramos um restaurante com o slug informado. Verifique o link ou cadastre o tenant no Supabase.",
+<<<<<<< Updated upstream
         );
         setRestaurante(null);
         setPratos([]);
@@ -1618,6 +1870,8 @@ function AdminPageInner() {
           rowOwner == null
             ? "Este cardápio ainda não está vinculado a uma conta (owner_id em branco no banco). Associe o restaurante ao seu usuário no Supabase ou conclua o fluxo de cadastro."
             : "Este cardápio não pertence à sua sessão. Abra o painel pelo menu ou pelo link sem alterar o slug na barra de endereço.",
+=======
+>>>>>>> Stashed changes
         );
         setRestaurante(null);
         setPratos([]);
@@ -1705,6 +1959,7 @@ function AdminPageInner() {
   }, [loadData]);
 
   useEffect(() => {
+<<<<<<< Updated upstream
     const {
       data: { subscription },
     } = supabase.auth.onAuthStateChange((event, session) => {
@@ -2132,6 +2387,8 @@ function AdminPageInner() {
   }, [supabase, restaurante?.id]);
 
   useEffect(() => {
+=======
+>>>>>>> Stashed changes
     if (restaurante?.nome) {
       document.title = `${restaurante.nome} · Painel`;
     } else {
@@ -2289,6 +2546,13 @@ function AdminPageInner() {
       setPedidoBusyId(null);
       setPedidoBusyKind(null);
     }
+<<<<<<< Updated upstream
+=======
+
+    const msg = mensagemParaColuna(atual, destino);
+    const url = waMeUrl(atual.telefone, msg);
+    window.open(url, "_blank", "noopener,noreferrer");
+>>>>>>> Stashed changes
   };
 
   const cancelarPedido = async (id: string) => {
@@ -2431,7 +2695,22 @@ function AdminPageInner() {
       }
     }
 
+<<<<<<< Updated upstream
     const imagemParaDb = imagemUrlSeguraParaColuna(imagemFinal);
+=======
+    if (payload.id) {
+      const { error } = await supabase
+        .from("pratos")
+        .update({
+          nome: payload.nome,
+          preco: payload.preco,
+          descricao: payload.descricao,
+          categoria: payload.categoria,
+          status: payload.status,
+          imagem: imagemFinal,
+        })
+        .eq("id", payload.id);
+>>>>>>> Stashed changes
 
     const nomeDb = sanitizeDbPlainText(payload.nome, 200);
     const descricaoDb = sanitizeDbPlainTextNullable(payload.descricao, 4000);
@@ -2555,8 +2834,47 @@ function AdminPageInner() {
           }
         }
       }
+<<<<<<< Updated upstream
       if (dbErr instanceof Error) throw dbErr;
       throw new Error("Falha ao salvar o prato.");
+=======
+      setPratos((lista) =>
+        lista.map((p) =>
+          p.id === payload.id
+            ? {
+                ...p,
+                nome: payload.nome,
+                preco: payload.preco,
+                descricao: payload.descricao,
+                categoria: payload.categoria,
+                status: payload.status,
+                imagem: imagemFinal,
+              }
+            : p,
+        ),
+      );
+    } else {
+      const { data, error } = await supabase
+        .from("pratos")
+        .insert({
+          restaurante_id: payload.restaurante_id,
+          nome: payload.nome,
+          preco: payload.preco,
+          descricao: payload.descricao,
+          categoria: payload.categoria,
+          status: payload.status,
+          imagem: imagemFinal,
+        })
+        .select("id, restaurante_id, nome, preco, descricao, imagem, status, categoria")
+        .single();
+
+      if (error) {
+        setFetchError(error.message);
+        throw error;
+      }
+      const mapped = mapPratoRow(data as Parameters<typeof mapPratoRow>[0]);
+      if (mapped) setPratos((lista) => [mapped, ...lista]);
+>>>>>>> Stashed changes
     }
   };
 
@@ -2615,6 +2933,7 @@ function AdminPageInner() {
     { id: "entregue", title: "Entregue", accent: "from-zinc-400/10 to-transparent" },
   ];
 
+<<<<<<< Updated upstream
   const moverSecaoCardapio = (idx: number, delta: number) => {
     setCfgCardapioCategorias((prev) => {
       const j = idx + delta;
@@ -2649,11 +2968,22 @@ function AdminPageInner() {
         </div>
       );
     }
+=======
+  if (!tenantSlug) {
+>>>>>>> Stashed changes
     return <AdminMissingSlugView />;
   }
 
   if (loading && !restaurante) {
+<<<<<<< Updated upstream
     return <PedidosDashboardSkeleton variant="full" dataTestId="admin-dashboard-loading" />;
+=======
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-[#f5f5f7] font-sans text-[#6e6e73] antialiased">
+        <p className="text-sm font-medium">Carregando painel…</p>
+      </div>
+    );
+>>>>>>> Stashed changes
   }
 
   if (!restaurante) {
@@ -2672,6 +3002,7 @@ function AdminPageInner() {
   }
 
   return (
+<<<<<<< Updated upstream
     <div className="flex min-h-screen bg-zinc-50 font-sans text-zinc-900 antialiased">
       <AdminSidebar restaurante={restaurante} tab={tab} onTab={setTab} />
 
@@ -2738,6 +3069,27 @@ function AdminPageInner() {
                     ) : null}
                   </>
                 )}
+=======
+    <div className="flex min-h-screen bg-[#f5f5f7] font-sans text-[#1d1d1f] antialiased">
+      <AdminSidebar restaurante={restaurante} tab={tab} onTab={setTab} />
+
+      <main className="flex min-h-0 flex-1 flex-col">
+        <header className="border-b border-black/[0.06] bg-[#fbfbfd]/95 px-5 py-5 backdrop-blur-xl sm:px-8">
+          <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+            <div>
+              <h1 className="text-xl font-semibold tracking-tight text-[#1d1d1f]">
+                {tab === "pedidos"
+                  ? "Esteira de pedidos"
+                  : tab === "cardapio"
+                    ? "Cardápio"
+                    : "Configurações"}
+              </h1>
+              <p className="mt-1 text-sm text-[#86868b]">
+                Tenant: <span className="font-medium text-[#424245]">{restaurante.nome}</span>
+                {loading ? (
+                  <span className="ml-2 text-xs text-[#aeaeb2]">· sincronizando…</span>
+                ) : null}
+>>>>>>> Stashed changes
               </p>
             </div>
             <div className="flex shrink-0 flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center sm:justify-end sm:gap-3">
@@ -2831,6 +3183,7 @@ function AdminPageInner() {
 
         <div className="flex-1 overflow-auto px-4 py-6 sm:px-8">
           {tab === "pedidos" ? (
+<<<<<<< Updated upstream
             loading ? (
               <PedidosDashboardSkeleton variant="embedded" />
             ) : (
@@ -3018,6 +3371,73 @@ function AdminPageInner() {
                 {cfgCardapioCategorias.length === 0 ? (
                   <p className="mt-3 text-xs text-zinc-500">
                     Nenhuma seção ainda. Adicione um nome abaixo ou cadastre pratos com categoria em Pratos.
+=======
+            <div className="grid grid-cols-1 gap-5 md:grid-cols-2 xl:grid-cols-4">
+              {colunas.map((col) => (
+                <section
+                  key={col.id}
+                  onDragOver={(e) => {
+                    e.preventDefault();
+                    e.dataTransfer.dropEffect = "move";
+                    setDragOverCol(col.id);
+                  }}
+                  onDrop={(e) => {
+                    e.preventDefault();
+                    setDragOverCol(null);
+                    const id = e.dataTransfer.getData(DRAG_MIME);
+                    if (!id) return;
+                    void atualizarColunaPedido(id, col.id);
+                  }}
+                  className={[
+                    "flex min-h-[420px] flex-col rounded-2xl border border-black/[0.06] bg-white p-4 shadow-[0_8px_30px_-16px_rgba(0,0,0,0.12)] transition",
+                    dragOverCol === col.id
+                      ? "ring-2 ring-[#0071e3]/25 border-[#0071e3]/30"
+                      : "",
+                  ].join(" ")}
+                >
+                  <div
+                    className={`mb-4 rounded-xl bg-gradient-to-r ${col.accent} px-3 py-3 ring-1 ring-black/[0.04]`}
+                  >
+                    <div className="flex items-center justify-between gap-2">
+                      <h2 className="text-sm font-semibold tracking-tight text-[#1d1d1f]">{col.title}</h2>
+                      <span className="rounded-full bg-[#f5f5f7] px-2 py-0.5 text-[11px] font-medium text-[#6e6e73]">
+                        {porColuna[col.id].length}
+                      </span>
+                    </div>
+                  </div>
+                  <div className="flex flex-1 flex-col gap-3 overflow-y-auto pr-0.5">
+                    {porColuna[col.id].map((p) => (
+                      <PedidoCard
+                        key={p.id}
+                        pedido={p}
+                        canAdvance={nextColuna(p.coluna) !== null}
+                        onAdvance={() => void avancarPedido(p.id)}
+                        onEdit={() => setPedidoModal(p)}
+                        onCancel={() => void cancelarPedido(p.id)}
+                        onDragEnd={() => setDragOverCol(null)}
+                      />
+                    ))}
+                    {porColuna[col.id].length === 0 ? (
+                      <p className="rounded-2xl border border-dashed border-black/[0.08] bg-[#fafafa] px-4 py-10 text-center text-xs text-[#86868b]">
+                        Nenhum pedido nesta coluna. Arraste um card de outra coluna ou crie pedidos no
+                        Supabase.
+                      </p>
+                    ) : null}
+                  </div>
+                </section>
+              ))}
+            </div>
+          ) : null}
+
+          {tab === "cardapio" ? (
+            <div className="overflow-hidden rounded-2xl border border-black/[0.06] bg-white shadow-[0_8px_30px_-16px_rgba(0,0,0,0.12)]">
+              <div className="flex flex-wrap items-center justify-between gap-3 border-b border-black/[0.06] px-5 py-4">
+                <div>
+                  <h2 className="text-sm font-semibold tracking-tight text-[#1d1d1f]">Pratos</h2>
+                  <p className="text-xs text-[#86868b]">
+                    Dados ao vivo do Supabase · slug{" "}
+                    <span className="font-mono text-[#424245]">{restaurante.slug}</span>
+>>>>>>> Stashed changes
                   </p>
                 ) : null}
                 <div className="mt-4 flex flex-col gap-2 sm:flex-row sm:items-center">
@@ -3043,6 +3463,7 @@ function AdminPageInner() {
                     Adicionar seção
                   </button>
                 </div>
+<<<<<<< Updated upstream
               </div>
 
               {cfgMsg ? (
@@ -3087,12 +3508,81 @@ function AdminPageInner() {
                     />
                   </div>
                 </div>
+=======
+                <span className="rounded-full bg-[#f5f5f7] px-3 py-1 text-xs font-medium text-[#6e6e73]">
+                  {pratosRows.length} {pratosRows.length === 1 ? "item" : "itens"}
+                </span>
+              </div>
+              <div className="overflow-x-auto">
+                <table className="min-w-full divide-y divide-black/[0.06] text-left text-sm">
+                  <thead className="bg-[#fafafa] text-[11px] font-semibold uppercase tracking-wide text-[#86868b]">
+                    <tr>
+                      <th className="px-5 py-3 font-medium">Nome</th>
+                      <th className="px-5 py-3 font-medium">Categoria</th>
+                      <th className="px-5 py-3 font-medium">Preço</th>
+                      <th className="px-5 py-3 font-medium">Status</th>
+                      <th className="px-5 py-3 text-right font-medium">Ações</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-black/[0.06]">
+                    {pratosRows.map((prato) => (
+                      <tr key={prato.id} className="transition hover:bg-[#fafafa]/80">
+                        <td className="px-5 py-3">
+                          <div className="font-medium text-[#1d1d1f]">{prato.nome}</div>
+                          {prato.descricao ? (
+                            <div className="mt-0.5 line-clamp-2 text-xs text-[#86868b]">
+                              {prato.descricao}
+                            </div>
+                          ) : null}
+                        </td>
+                        <td className="whitespace-nowrap px-5 py-3 text-[#424245]">
+                          {prato.categoria?.trim() ? prato.categoria : (
+                            <span className="text-[#aeaeb2]">—</span>
+                          )}
+                        </td>
+                        <td className="whitespace-nowrap px-5 py-3 text-[#424245]">
+                          {formatBRL(prato.preco)}
+                        </td>
+                        <td className="px-5 py-3">
+                          <span
+                            className={[
+                              "inline-flex rounded-full px-2.5 py-0.5 text-xs font-medium",
+                              prato.status === "ativo"
+                                ? "bg-emerald-50 text-emerald-800 ring-1 ring-emerald-200/60"
+                                : "bg-amber-50 text-amber-900 ring-1 ring-amber-200/60",
+                            ].join(" ")}
+                          >
+                            {prato.status === "ativo" ? "Ativo" : "Pausado"}
+                          </span>
+                        </td>
+                        <td className="whitespace-nowrap px-5 py-3 text-right">
+                          <button
+                            type="button"
+                            onClick={() => openEditPrato(prato)}
+                            className="mr-2 rounded-lg px-2 py-1 text-xs font-semibold text-[#0071e3] transition hover:bg-[#0071e3]/8"
+                          >
+                            Editar
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => void handleDeletePrato(prato)}
+                            className="rounded-lg px-2 py-1 text-xs font-semibold text-red-600 transition hover:bg-red-50"
+                          >
+                            Excluir
+                          </button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+>>>>>>> Stashed changes
               </div>
               <AdminOperacionalPainelLateral kpis={kpisPedidos} rankingLinhas={rankingPratos} />
             </div>
           ) : null}
 
           {tab === "configuracoes" ? (
+<<<<<<< Updated upstream
             <section className="mx-auto max-w-2xl space-y-6">
               <div className="rounded-3xl border border-zinc-100 bg-white px-5 py-6 shadow-sm sm:px-7 sm:py-8">
                 <p className="text-xs font-medium uppercase tracking-wide text-[#86868b]">Link público</p>
@@ -3229,6 +3719,28 @@ function AdminPageInner() {
                       onChange={(e) => setCfgNome(e.target.value)}
                       className="w-full rounded-xl border border-zinc-200 bg-zinc-50/50 px-3 py-2.5 text-sm text-zinc-900 outline-none transition focus:border-transparent focus:ring-2 focus:ring-zinc-900"
                       autoComplete="organization"
+=======
+            <section className="max-w-2xl rounded-2xl border border-black/[0.06] bg-white p-6 shadow-[0_8px_30px_-16px_rgba(0,0,0,0.12)]">
+              <h2 className="text-sm font-semibold tracking-tight text-[#1d1d1f]">Configurações do tenant</h2>
+              <p className="mt-3 text-sm leading-relaxed text-[#6e6e73]">
+                Marca, horários de funcionamento, taxa de entrega e integrações (Supabase, WhatsApp
+                Business, etc.) ficam centralizados aqui. Os dados exibidos na barra lateral e na
+                esteira devem refletir o registro carregado do backend por{" "}
+                <code className="rounded-md bg-[#f5f5f7] px-1.5 py-0.5 font-mono text-xs text-[#424245]">slug</code>{" "}
+                ou sessão autenticada.
+              </p>
+              <dl className="mt-6 grid gap-3 text-sm text-[#424245] sm:grid-cols-2">
+                <div className="rounded-xl border border-black/[0.06] bg-[#fafafa] p-4">
+                  <dt className="text-xs font-medium uppercase tracking-wide text-[#86868b]">WhatsApp cadastro</dt>
+                  <dd className="mt-1 font-medium text-[#1d1d1f]">{restaurante.whatsapp}</dd>
+                </div>
+                <div className="rounded-xl border border-black/[0.06] bg-[#fafafa] p-4">
+                  <dt className="text-xs font-medium uppercase tracking-wide text-[#86868b]">Cor do tema</dt>
+                  <dd className="mt-1 flex items-center gap-2 font-medium text-[#1d1d1f]">
+                    <span
+                      className="h-4 w-4 rounded-full ring-2 ring-black/[0.06]"
+                      style={{ backgroundColor: restaurante.cor_tema }}
+>>>>>>> Stashed changes
                     />
                   </div>
 

@@ -23,7 +23,7 @@ create table if not exists public.restaurantes (
 create index if not exists idx_restaurantes_slug on public.restaurantes (slug);
 
 comment on table public.restaurantes is 'Tenant do cardápio (um registro por restaurante).';
-comment on column public.restaurantes.slug is 'Identificador único na URL (ex.: casa-do-sabor).';
+comment on column public.restaurantes.slug is 'Identificador único na URL (path público do cardápio).';
 
 alter table public.restaurantes
   add column if not exists horario_funcionamento text null;
@@ -73,7 +73,7 @@ comment on column public.pratos.categoria is 'Seção do cardápio na vitrine p�
 -- -----------------------------------------------------------------------------
 -- pedidos (esteira / Kanban no admin)
 -- -----------------------------------------------------------------------------
--- coluna: etapa da esteira (recebidos | cozinha | pronto)
+-- coluna: etapa da esteira (recebidos | cozinha | pronto | entregue)
 -- itens: linhas do pedido em JSON, ex.: ["2x Bowl Mediterrâneo","1x Smoothie Verde"]
 -- motoboy: usado no painel e nas mensagens de WhatsApp
 create table if not exists public.pedidos (
@@ -83,7 +83,7 @@ create table if not exists public.pedidos (
   telefone text not null,
   total numeric(10, 2) not null check (total >= 0),
   pagamento text not null check (pagamento in ('Pix', 'Cartão', 'Dinheiro')),
-  coluna text not null default 'recebidos' check (coluna in ('recebidos', 'cozinha', 'pronto')),
+  coluna text not null default 'recebidos' check (coluna in ('recebidos', 'cozinha', 'pronto', 'entregue')),
   observacoes text not null default '',
   itens jsonb not null default '[]'::jsonb,
   motoboy text not null default '',
@@ -95,7 +95,7 @@ create index if not exists idx_pedidos_coluna on public.pedidos (coluna);
 create index if not exists idx_pedidos_criado_em on public.pedidos (criado_em desc);
 
 comment on table public.pedidos is 'Pedidos da cozinha / entrega, por restaurante.';
-comment on column public.pedidos.coluna is 'Coluna da esteira Kanban: recebidos, cozinha ou pronto.';
+comment on column public.pedidos.coluna is 'Coluna da esteira Kanban: recebidos, cozinha, pronto ou entregue.';
 
 -- -----------------------------------------------------------------------------
 -- Row Level Security (RLS) — ajuste antes de produção
@@ -156,24 +156,5 @@ create policy "restaurantes_dev_write_anon"
   with check (true);
 
 -- -----------------------------------------------------------------------------
--- Dados de exemplo (opcional — idempotente por slug / nome)
+-- Sem seed de restaurantes fictícios: cadastre tenants reais pelo painel ou SQL.
 -- -----------------------------------------------------------------------------
-insert into public.restaurantes (nome, slug, whatsapp, cor_tema)
-select 'Casa do Sabor', 'casa-do-sabor', '+55 11 91234-5678', '#0d9488'
-where not exists (select 1 from public.restaurantes where slug = 'casa-do-sabor');
-
-insert into public.pratos (restaurante_id, nome, preco, descricao, status)
-select r.id, 'Bowl Mediterrâneo', 32.90, 'Grão-de-bico, hummus, tomate confit e falafel.', 'ativo'
-from public.restaurantes r
-where r.slug = 'casa-do-sabor'
-  and not exists (
-    select 1 from public.pratos p where p.restaurante_id = r.id and p.nome = 'Bowl Mediterrâneo'
-  );
-
-insert into public.pratos (restaurante_id, nome, preco, descricao, status)
-select r.id, 'Smoothie Verde', 18.00, 'Couve, abacate, limão e água de coco.', 'ativo'
-from public.restaurantes r
-where r.slug = 'casa-do-sabor'
-  and not exists (
-    select 1 from public.pratos p where p.restaurante_id = r.id and p.nome = 'Smoothie Verde'
-  );
