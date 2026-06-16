@@ -25,9 +25,15 @@ function normalizarDigitosWhatsappBr(dRaw: string): string {
   return d;
 }
 
+/** Telefone do cliente (mascarado ou não) após normalização BR para WhatsApp. */
+export function telefoneWhatsappClienteValidoParaWa(telefoneRaw: string): boolean {
+  const d = normalizarDigitosWhatsappBr(telefoneRaw);
+  return d.length >= 12 && d.length <= 15 && /^\d+$/.test(d);
+}
+
 /**
- * URL só com ASCII para abrir conversa com o número informado.
- * Por padrão usa api.whatsapp.com (vitrine); use `{ host: "wa" }` no painel após `about:blank` + await.
+ * URL absoluta para abrir conversa no WhatsApp (só ASCII na query).
+ * Usa `URL`/`searchParams` para não corromper o `text` (evita abrir URL errada / site local).
  */
 export function buildWhatsappSendHref(
   telefone: string,
@@ -35,10 +41,15 @@ export function buildWhatsappSendHref(
   opts?: BuildWhatsappSendHrefOptions,
 ): string {
   const d = normalizarDigitosWhatsappBr(telefone);
-  const text = encodeURIComponent(expandLatin1UserText(message));
+  const plain = expandLatin1UserText(message);
   const host = opts?.host ?? "api";
   if (host === "wa") {
-    return `https://wa.me/${d}?text=${text}`;
+    const u = new URL(`https://wa.me/${d}`);
+    u.searchParams.set("text", plain);
+    return u.toString();
   }
-  return `https://api.whatsapp.com/send?phone=${d}&text=${text}`;
+  const u = new URL("https://api.whatsapp.com/send");
+  u.searchParams.set("phone", d);
+  u.searchParams.set("text", plain);
+  return u.toString();
 }

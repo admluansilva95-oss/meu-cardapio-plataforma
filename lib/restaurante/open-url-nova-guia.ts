@@ -28,9 +28,14 @@ export function prepareNewTabForLaterNavigation(): Window | null {
 
 /** Navega o separador aberto em `prepareNewTabForLaterNavigation`; se falhar, cai no `<a target="_blank">`. */
 export function navigatePreparedTabOrOpen(prepared: Window | null, href: string): void {
+  const abs = href.trim();
+  if (!/^https:\/\//i.test(abs)) {
+    openUrlNovaGuia(abs);
+    return;
+  }
   if (prepared != null && !prepared.closed) {
     try {
-      prepared.location.replace(href);
+      prepared.location.href = abs;
       return;
     } catch {
       try {
@@ -40,5 +45,5 @@ export function navigatePreparedTabOrOpen(prepared: Window | null, href: string)
       }
     }
   }
-  openUrlNovaGuia(href);
+  openUrlNovaGuia(abs);
 }

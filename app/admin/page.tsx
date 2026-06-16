@@ -30,7 +30,7 @@ import {
 } from "@/lib/utils/sanitize-strings";
 import { sanitizeDbPlainText, sanitizeDbPlainTextNullable } from "@/lib/db/sanitize-persist";
 import { navigatePreparedTabOrOpen, prepareNewTabForLaterNavigation } from "@/lib/restaurante/open-url-nova-guia";
-import { buildWhatsappSendHref } from "@/lib/restaurante/whatsapp-href";
+import { buildWhatsappSendHref, telefoneWhatsappClienteValidoParaWa } from "@/lib/restaurante/whatsapp-href";
 import { fetchAppApiResilient, parseAppApiJsonResponse } from "@/lib/http/fetch-app-api";
 import { sanitizeFetchInit } from "@/lib/fetch-latin1-safe";
 import { postJsonComBearer } from "@/lib/restaurante/post-json-bearer-client";
@@ -2164,8 +2164,18 @@ function AdminPageInner() {
       }
 
       const msg = mensagemParaColuna(atual, destino);
-      /** `wa.me` costuma carregar corretamente após `about:blank` + await; `api.whatsapp.com` às vezes parecia “reabrir” o fluxo de novo pedido. */
-      navigatePreparedTabOrOpen(waTab, buildWhatsappSendHref(atual.telefone, msg, { host: "wa" }));
+      if (!telefoneWhatsappClienteValidoParaWa(atual.telefone)) {
+        setFetchError(
+          "O telefone do cliente neste pedido não está em formato válido para abrir o WhatsApp automaticamente. Use o número no card para contatar manualmente.",
+        );
+        try {
+          waTab?.close();
+        } catch {
+          /* ignore */
+        }
+        return;
+      }
+      navigatePreparedTabOrOpen(waTab, buildWhatsappSendHref(atual.telefone, msg));
     } catch (e) {
       setFetchError(e instanceof Error ? e.message : "Falha de rede ao avançar o pedido.");
       setPedidos((lista) =>
