@@ -29,7 +29,11 @@ import {
   sanitizeUserFreeText,
 } from "@/lib/utils/sanitize-strings";
 import { sanitizeDbPlainText, sanitizeDbPlainTextNullable } from "@/lib/db/sanitize-persist";
-import { navigatePreparedTabOrOpen, prepareNewTabForLaterNavigation } from "@/lib/restaurante/open-url-nova-guia";
+import {
+  navigatePreparedTabOrOpen,
+  openUrlNovaGuia,
+  prepareNewTabForLaterNavigation,
+} from "@/lib/restaurante/open-url-nova-guia";
 import { buildWhatsappSendHref } from "@/lib/restaurante/whatsapp-href";
 import { fetchAppApiResilient, parseAppApiJsonResponse } from "@/lib/http/fetch-app-api";
 import { sanitizeFetchInit } from "@/lib/fetch-latin1-safe";
@@ -734,7 +738,8 @@ function AdminSidebar(props: {
 
 function PedidoCard(props: {
   pedido: Pedido;
-  onAdvance: () => void;
+  /** `skipOpenWhatsapp`: clique veio de `<a target="_blank">` que já abriu o WhatsApp. */
+  onAdvance: (opts?: { skipOpenWhatsapp?: boolean }) => void;
   onEdit: () => void;
   onCancel: () => void;
   canAdvance: boolean;
@@ -744,6 +749,13 @@ function PedidoCard(props: {
   busyLabel?: string;
 }) {
   const { pedido, onAdvance, onEdit, onCancel, canAdvance, onDragEnd, busy, busyLabel } = props;
+  const waHrefFinalizar =
+    canAdvance && pedido.coluna === "pronto"
+      ? buildWhatsappSendHref(pedido.telefone, mensagemParaColuna(pedido, "entregue"))
+      : null;
+  const advanceButtonClass =
+    "flex w-full items-center justify-center gap-2 rounded-xl bg-[#1d1d1f] px-3 py-2.5 text-xs font-semibold text-white shadow-sm transition hover:bg-black active:scale-[0.99] disabled:cursor-wait disabled:opacity-80";
+
   return (
     <article
       draggable={!busy}
@@ -815,24 +827,58 @@ function PedidoCard(props: {
       ) : null}
       <div className="mt-4 flex flex-col gap-2">
         {canAdvance ? (
-          <button
-            type="button"
-            disabled={busy}
-            onClick={onAdvance}
-            className="flex w-full items-center justify-center gap-2 rounded-xl bg-[#1d1d1f] px-3 py-2.5 text-xs font-semibold text-white shadow-sm transition hover:bg-black active:scale-[0.99] disabled:cursor-wait disabled:opacity-80"
-          >
-            {busy ? (
-              <>
-                <span
-                  className="h-3.5 w-3.5 shrink-0 animate-spin rounded-full border-2 border-white/25 border-t-white"
-                  aria-hidden
-                />
-                {busyLabel ?? "Atualizando…"}
-              </>
-            ) : (
-              textoBotaoAvancarComWhatsApp(pedido)
-            )}
-          </button>
+          waHrefFinalizar ? (
+            <a
+              href={waHrefFinalizar}
+              target="_blank"
+              rel="noopener noreferrer"
+              draggable={false}
+              aria-disabled={busy || undefined}
+              className={advanceButtonClass}
+              onAuxClick={(e) => {
+                if (e.button !== 1 || busy) return;
+                onAdvance({ skipOpenWhatsapp: true });
+              }}
+              onClick={(e) => {
+                if (busy) {
+                  e.preventDefault();
+                  return;
+                }
+                onAdvance({ skipOpenWhatsapp: true });
+              }}
+            >
+              {busy ? (
+                <>
+                  <span
+                    className="h-3.5 w-3.5 shrink-0 animate-spin rounded-full border-2 border-white/25 border-t-white"
+                    aria-hidden
+                  />
+                  {busyLabel ?? "Atualizando…"}
+                </>
+              ) : (
+                textoBotaoAvancarComWhatsApp(pedido)
+              )}
+            </a>
+          ) : (
+            <button
+              type="button"
+              disabled={busy}
+              onClick={() => onAdvance()}
+              className={advanceButtonClass}
+            >
+              {busy ? (
+                <>
+                  <span
+                    className="h-3.5 w-3.5 shrink-0 animate-spin rounded-full border-2 border-white/25 border-t-white"
+                    aria-hidden
+                  />
+                  {busyLabel ?? "Atualizando…"}
+                </>
+              ) : (
+                textoBotaoAvancarComWhatsApp(pedido)
+              )}
+            </button>
+          )
         ) : (
           <p className="rounded-xl border border-dashed border-black/[0.08] bg-[#fafafa] px-3 py-2 text-center text-[11px] text-[#86868b]">
             {textoEtapaFinalKanban(pedido)}
@@ -2128,7 +2174,10 @@ function AdminPageInner() {
     }
   };
 
-  const avancarPedido = async (id: string) => {
+  const avancarPedido = async (
+    id: string,
+    opts?: { skipOpenWhatsapp?: boolean },
+  ) => {
     if (pedidoBusyId || !restaurante?.id) return;
     const atual = pedidos.find((p) => p.id === id);
     if (!atual) return;
@@ -2142,14 +2191,13 @@ function AdminPageInner() {
       lista.map((p) => (p.id === id ? { ...p, coluna: destino } : p)),
     );
 
-    /* Separador + URL antes do await. Em `entregue`, navegar já neste turno (mesmo gesto do clique):
-     * após await, vários browsers bloqueiam `popup.location` para outro site e o separador fica em about:blank. */
-    const waTab = prepareNewTabForLaterNavigation();
     const msg = mensagemParaColuna(atual, destino);
     const waHref = buildWhatsappSendHref(atual.telefone, msg);
-    const waAntesDoAwait = destino === "entregue";
-    if (waAntesDoAwait) {
-      navigatePreparedTabOrOpen(waTab, waHref);
+    const entrega = destino === "entregue";
+    /* Pronto→Entregue: o botão é um <a target="_blank"> (gesto real do browser). Arrastar usa openUrlNovaGuia no drop. */
+    const waTab = entrega ? null : prepareNewTabForLaterNavigation();
+    if (entrega && !opts?.skipOpenWhatsapp) {
+      openUrlNovaGuia(waHref);
     }
 
     try {
@@ -2163,7 +2211,7 @@ function AdminPageInner() {
         setPedidos((lista) =>
           lista.map((p) => (p.id === id ? { ...p, coluna: prev } : p)),
         );
-        if (!waAntesDoAwait) {
+        if (!entrega) {
           try {
             waTab?.close();
           } catch {
@@ -2173,7 +2221,7 @@ function AdminPageInner() {
         return;
       }
 
-      if (!waAntesDoAwait) {
+      if (!entrega) {
         navigatePreparedTabOrOpen(waTab, waHref);
       }
     } catch (e) {
@@ -2181,7 +2229,7 @@ function AdminPageInner() {
       setPedidos((lista) =>
         lista.map((p) => (p.id === id ? { ...p, coluna: prev } : p)),
       );
-      if (!waAntesDoAwait) {
+      if (!entrega) {
         try {
           waTab?.close();
         } catch {
@@ -2774,12 +2822,12 @@ function AdminPageInner() {
                               if (!id) return;
                               const arrastado = pedidos.find((p) => p.id === id);
                               if (arrastado && arrastado.coluna === "pronto" && col.id === "entregue") {
-                                const waTab = prepareNewTabForLaterNavigation();
-                                const waHref = buildWhatsappSendHref(
-                                  arrastado.telefone,
-                                  mensagemParaColuna(arrastado, "entregue"),
+                                openUrlNovaGuia(
+                                  buildWhatsappSendHref(
+                                    arrastado.telefone,
+                                    mensagemParaColuna(arrastado, "entregue"),
+                                  ),
                                 );
-                                navigatePreparedTabOrOpen(waTab, waHref);
                               }
                               void atualizarColunaPedido(id, col.id);
                             }}
@@ -2804,7 +2852,7 @@ function AdminPageInner() {
                                   key={p.id}
                                   pedido={p}
                                   canAdvance={nextColuna(p.coluna) !== null}
-                                  onAdvance={() => void avancarPedido(p.id)}
+                                  onAdvance={(o) => void avancarPedido(p.id, o)}
                                   onEdit={() => setPedidoModal(p)}
                                   onCancel={() => void cancelarPedido(p.id)}
                                   onDragEnd={() => setDragOverCol(null)}
