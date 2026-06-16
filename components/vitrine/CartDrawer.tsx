@@ -1,5 +1,6 @@
 "use client";
 
+import { useEffect, useState } from "react";
 import type { CarrinhoItem, Restaurante } from "@/types";
 import type { TipoEntregaPedido } from "@/lib/restaurante/pedido-texto-whatsapp";
 import type { FormaPagamentoPedidoCliente } from "@/lib/restaurante/pedido-whatsapp-formatado";
@@ -94,6 +95,13 @@ export default function CartDrawer(props: CartDrawerProps) {
     onSetQty,
     onSetItemObservacoes,
   } = props;
+
+  const [zonasListaExpandida, setZonasListaExpandida] = useState(true);
+
+  useEffect(() => {
+    if (!open) return;
+    setZonasListaExpandida(zonaEntregaId == null);
+  }, [open, zonaEntregaId]);
 
   if (!open) return null;
 
@@ -294,110 +302,157 @@ export default function CartDrawer(props: CartDrawerProps) {
                       </div>
 
                       {zonasEntrega.length > 1 ? (
-                        <div className="space-y-2">
-                          <div className="flex rounded-2xl border border-zinc-200 bg-zinc-100/80 p-1">
-                            <button
-                              type="button"
-                              onClick={() => onEntregaBairroModoChange("digitar")}
-                              className={[
-                                "flex-1 rounded-xl py-2.5 text-sm font-semibold transition-all",
-                                entregaBairroModo === "digitar"
-                                  ? "bg-white text-zinc-900 shadow-sm ring-1 ring-zinc-200/80"
-                                  : "text-zinc-500 hover:text-zinc-800",
-                              ].join(" ")}
-                            >
-                              Digitar bairro
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => onEntregaBairroModoChange("lista")}
-                              className={[
-                                "flex-1 rounded-xl py-2.5 text-sm font-semibold transition-all",
-                                entregaBairroModo === "lista"
-                                  ? "bg-white text-zinc-900 shadow-sm ring-1 ring-zinc-200/80"
-                                  : "text-zinc-500 hover:text-zinc-800",
-                              ].join(" ")}
-                            >
-                              Ver lista
-                            </button>
-                          </div>
-
-                          {entregaBairroModo === "digitar" ? (
-                            <div className="space-y-2">
-                              <label className="text-[11px] font-medium text-zinc-500" htmlFor="checkout-bairro-busca">
-                                Buscar nas regiões do restaurante
-                              </label>
-                              <input
-                                id="checkout-bairro-busca"
-                                type="text"
-                                value={bairroBuscaTexto}
-                                onChange={(e) => onBairroBuscaTextoChange(e.target.value.slice(0, 80))}
-                                placeholder="Ex.: Centro, Jardim…"
-                                className="w-full rounded-xl border border-zinc-200 bg-white px-4 py-3 text-sm text-zinc-900 outline-none transition focus:ring-2 focus:ring-zinc-950"
-                              />
-                              <div className="max-h-[min(52vh,22rem)] space-y-1 overflow-y-auto overscroll-contain rounded-xl border border-zinc-100 bg-zinc-50/50 p-1 [-webkit-overflow-scrolling:touch]">
-                                {zonasFiltradasPorBusca.length === 0 ? (
-                                  <p className="px-3 py-2 text-xs leading-relaxed text-zinc-500">
-                                    Nenhuma região encontrada com esse texto. Ajuste a busca ou use a aba
-                                    &quot;Ver lista&quot;.
-                                  </p>
-                                ) : (
-                                  zonasFiltradasPorBusca.map((z) => (
-                                    <button
-                                      key={z.id}
-                                      type="button"
-                                      onClick={() => onZonaEntregaIdChange(z.id)}
-                                      className={[
-                                        "flex w-full items-center justify-between rounded-lg px-3 py-2.5 text-left text-sm font-medium transition",
-                                        zonaEntregaId === z.id ? "bg-zinc-900 text-white" : "text-zinc-800 hover:bg-white",
-                                      ].join(" ")}
-                                    >
-                                      <span>{z.nome}</span>
-                                      <span className="tabular-nums text-xs opacity-90">{formatBRL(z.valor)}</span>
-                                    </button>
-                                  ))
-                                )}
-                              </div>
-                              {zonaEntregaId ? (
-                                <p className="text-[11px] text-zinc-500">
-                                  Selecionado:{" "}
-                                  <span className="font-semibold text-zinc-800">
-                                    {zonasEntrega.find((z) => z.id === zonaEntregaId)?.nome}
+                        <div className="min-h-0 space-y-2">
+                          {!zonasListaExpandida && zonaEntregaId ? (
+                            <div className="flex items-center justify-between gap-3 rounded-2xl border border-zinc-200 bg-zinc-50/80 px-4 py-3">
+                              <div className="min-w-0 flex-1 text-left">
+                                <p className="text-[11px] font-medium text-zinc-500">Bairro / região</p>
+                                <p className="mt-0.5 truncate text-sm font-semibold text-zinc-900">
+                                  {zonasEntrega.find((z) => z.id === zonaEntregaId)?.nome ?? "—"}
+                                  <span className="ml-2 font-normal tabular-nums text-zinc-600">
+                                    — {formatBRL(zonasEntrega.find((z) => z.id === zonaEntregaId)?.valor ?? 0)}
                                   </span>
                                 </p>
-                              ) : (
-                                <p className="text-[11px] text-zinc-500">Toque em uma região para definir a taxa.</p>
-                              )}
+                              </div>
+                              <button
+                                type="button"
+                                onClick={() => setZonasListaExpandida(true)}
+                                className="shrink-0 rounded-full border border-zinc-200 bg-white px-4 py-2 text-xs font-semibold text-zinc-800 shadow-sm transition hover:bg-zinc-50 active:scale-[0.98]"
+                              >
+                                Alterar
+                              </button>
                             </div>
                           ) : (
-                            <div className="space-y-2">
-                              <p className="text-[11px] font-medium text-zinc-500">Bairro / região</p>
-                              <div
-                                className="max-h-[min(52vh,22rem)] space-y-1 overflow-y-auto overscroll-contain rounded-xl border border-zinc-100 bg-zinc-50/50 p-1 [-webkit-overflow-scrolling:touch]"
-                                role="listbox"
-                                aria-label="Lista de bairros e taxas"
-                              >
-                                {zonasEntrega.map((z) => (
-                                  <button
-                                    key={z.id}
-                                    type="button"
-                                    role="option"
-                                    aria-selected={zonaEntregaId === z.id}
-                                    onClick={() => onZonaEntregaIdChange(z.id)}
-                                    className={[
-                                      "flex w-full items-center justify-between rounded-lg px-3 py-2.5 text-left text-sm font-medium transition",
-                                      zonaEntregaId === z.id ? "bg-zinc-900 text-white" : "text-zinc-800 hover:bg-white",
-                                    ].join(" ")}
-                                  >
-                                    <span className="min-w-0 pr-2">{z.nome}</span>
-                                    <span className="shrink-0 tabular-nums text-xs opacity-90">{formatBRL(z.valor)}</span>
-                                  </button>
-                                ))}
+                            <>
+                              <div className="flex rounded-2xl border border-zinc-200 bg-zinc-100/80 p-1">
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    onEntregaBairroModoChange("digitar");
+                                    setZonasListaExpandida(true);
+                                  }}
+                                  className={[
+                                    "flex-1 rounded-xl py-2.5 text-sm font-semibold transition-all",
+                                    entregaBairroModo === "digitar"
+                                      ? "bg-white text-zinc-900 shadow-sm ring-1 ring-zinc-200/80"
+                                      : "text-zinc-500 hover:text-zinc-800",
+                                  ].join(" ")}
+                                >
+                                  Digitar bairro
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    onEntregaBairroModoChange("lista");
+                                    setZonasListaExpandida(true);
+                                  }}
+                                  className={[
+                                    "flex-1 rounded-xl py-2.5 text-sm font-semibold transition-all",
+                                    entregaBairroModo === "lista"
+                                      ? "bg-white text-zinc-900 shadow-sm ring-1 ring-zinc-200/80"
+                                      : "text-zinc-500 hover:text-zinc-800",
+                                  ].join(" ")}
+                                >
+                                  Ver lista
+                                </button>
                               </div>
-                              {!zonaEntregaId ? (
-                                <p className="text-[11px] text-zinc-500">Toque em uma região para definir a taxa.</p>
-                              ) : null}
-                            </div>
+
+                              {entregaBairroModo === "digitar" ? (
+                                <div className="min-h-0 space-y-2">
+                                  <label className="text-[11px] font-medium text-zinc-500" htmlFor="checkout-bairro-busca">
+                                    Buscar nas regiões do restaurante
+                                  </label>
+                                  <input
+                                    id="checkout-bairro-busca"
+                                    type="text"
+                                    value={bairroBuscaTexto}
+                                    onChange={(e) => onBairroBuscaTextoChange(e.target.value.slice(0, 80))}
+                                    placeholder="Ex.: Centro, Jardim…"
+                                    className="w-full rounded-xl border border-zinc-200 bg-white px-4 py-3 text-sm text-zinc-900 outline-none transition focus:ring-2 focus:ring-zinc-950"
+                                  />
+                                  <div className="min-h-0 overflow-hidden rounded-xl border border-zinc-100 bg-zinc-50/50">
+                                    <div
+                                      className="max-h-44 space-y-1 overflow-y-auto overflow-x-hidden overscroll-y-contain scroll-smooth p-1 [-webkit-overflow-scrolling:touch] sm:max-h-52"
+                                      role="listbox"
+                                      aria-label="Resultados da busca por bairro"
+                                    >
+                                      {zonasFiltradasPorBusca.length === 0 ? (
+                                        <p className="px-3 py-2 text-xs leading-relaxed text-zinc-500">
+                                          Nenhuma região encontrada com esse texto. Ajuste a busca ou use a aba
+                                          &quot;Ver lista&quot;.
+                                        </p>
+                                      ) : (
+                                        zonasFiltradasPorBusca.map((z) => (
+                                          <button
+                                            key={z.id}
+                                            type="button"
+                                            role="option"
+                                            aria-selected={zonaEntregaId === z.id}
+                                            onClick={() => onZonaEntregaIdChange(z.id)}
+                                            className={[
+                                              "flex w-full items-center justify-between rounded-lg px-3 py-2.5 text-left text-sm font-medium transition",
+                                              zonaEntregaId === z.id
+                                                ? "bg-zinc-900 text-white"
+                                                : "text-zinc-800 hover:bg-white",
+                                            ].join(" ")}
+                                          >
+                                            <span className="min-w-0 pr-2">{z.nome}</span>
+                                            <span className="shrink-0 tabular-nums text-xs opacity-90">
+                                              {formatBRL(z.valor)}
+                                            </span>
+                                          </button>
+                                        ))
+                                      )}
+                                    </div>
+                                  </div>
+                                  {zonaEntregaId ? (
+                                    <p className="text-[11px] text-zinc-500">
+                                      Selecionado:{" "}
+                                      <span className="font-semibold text-zinc-800">
+                                        {zonasEntrega.find((z) => z.id === zonaEntregaId)?.nome}
+                                      </span>
+                                    </p>
+                                  ) : (
+                                    <p className="text-[11px] text-zinc-500">Toque em uma região para definir a taxa.</p>
+                                  )}
+                                </div>
+                              ) : (
+                                <div className="min-h-0 space-y-2">
+                                  <p className="text-[11px] font-medium text-zinc-500">Bairro / região</p>
+                                  <div className="min-h-0 overflow-hidden rounded-xl border border-zinc-100 bg-zinc-50/50">
+                                    <div
+                                      className="max-h-44 space-y-1 overflow-y-auto overflow-x-hidden overscroll-y-contain scroll-smooth p-1 [-webkit-overflow-scrolling:touch] sm:max-h-52"
+                                      role="listbox"
+                                      aria-label="Lista de bairros e taxas"
+                                    >
+                                      {zonasEntrega.map((z) => (
+                                        <button
+                                          key={z.id}
+                                          type="button"
+                                          role="option"
+                                          aria-selected={zonaEntregaId === z.id}
+                                          onClick={() => onZonaEntregaIdChange(z.id)}
+                                          className={[
+                                            "flex w-full items-center justify-between rounded-lg px-3 py-2.5 text-left text-sm font-medium transition",
+                                            zonaEntregaId === z.id
+                                              ? "bg-zinc-900 text-white"
+                                              : "text-zinc-800 hover:bg-white",
+                                          ].join(" ")}
+                                        >
+                                          <span className="min-w-0 pr-2">{z.nome}</span>
+                                          <span className="shrink-0 tabular-nums text-xs opacity-90">
+                                            {formatBRL(z.valor)}
+                                          </span>
+                                        </button>
+                                      ))}
+                                    </div>
+                                  </div>
+                                  {!zonaEntregaId ? (
+                                    <p className="text-[11px] text-zinc-500">Toque em uma região para definir a taxa.</p>
+                                  ) : null}
+                                </div>
+                              )}
+                            </>
                           )}
                         </div>
                       ) : null}

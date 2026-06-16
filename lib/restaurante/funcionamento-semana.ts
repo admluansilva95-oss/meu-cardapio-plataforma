@@ -52,6 +52,51 @@ function padHhMm(s: string): string {
   return "18:00";
 }
 
+/**
+ * Fuso civil usado para comparar a agenda (horários do painel) na vitrine e na API de pedidos.
+ * Sem isso, o servidor (UTC) e o navegador no Brasil divergem em “aberto/fechado”.
+ */
+export const FUSO_HORARIO_AGENDA_VITRINE = "America/Sao_Paulo";
+
+const WEEKDAY_EN_SHORT_TO_DIA: Record<string, DiaAgendaKey> = {
+  sun: "dom",
+  mon: "seg",
+  tue: "ter",
+  wed: "qua",
+  thu: "qui",
+  fri: "sex",
+  sat: "sab",
+};
+
+/** Dia da agenda + HH:mm civis no fuso informado (padrão: Brasil). */
+export function diaEHoraCivisNaAgenda(
+  instant: Date,
+  timeZone: string = FUSO_HORARIO_AGENDA_VITRINE,
+): { diaKey: DiaAgendaKey; hhmm: string } {
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone,
+    weekday: "short",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  }).formatToParts(instant);
+  let wdRaw = "";
+  let hh = "00";
+  let mm = "00";
+  for (const p of parts) {
+    if (p.type === "weekday") wdRaw = p.value;
+    else if (p.type === "hour") hh = p.value;
+    else if (p.type === "minute") mm = p.value;
+  }
+  const wd = wdRaw
+    .replace(/\.$/, "")
+    .trim()
+    .slice(0, 3)
+    .toLowerCase();
+  const diaKey = WEEKDAY_EN_SHORT_TO_DIA[wd] ?? "dom";
+  return { diaKey, hhmm: `${hh.padStart(2, "0")}:${mm.padStart(2, "0")}` };
+}
+
 export function criarFuncionamentoSemanaVazio(): FuncionamentoSemana {
   const base: Partial<FuncionamentoSemana> = {};
   for (const { key } of DIAS_AGENDA) {
@@ -126,12 +171,11 @@ export function diaAgendaKeyFromDate(date: Date): DiaAgendaKey {
   return order[n] ?? "dom";
 }
 
-/** Considera apenas o primeiro turno do dia (mesma regra do formulário admin). */
+/** Considera turnos do dia no fuso {@link FUSO_HORARIO_AGENDA_VITRINE} (mesma regra na vitrine e na API). */
 export function estaAbertoNoHorarioLocal(f: FuncionamentoSemana, quando: Date = new Date()): boolean {
-  const key = diaAgendaKeyFromDate(quando);
+  const { diaKey: key, hhmm: hm } = diaEHoraCivisNaAgenda(quando);
   const d = f[key];
   if (!d?.ativo || !d.faixas?.length) return false;
-  const hm = `${String(quando.getHours()).padStart(2, "0")}:${String(quando.getMinutes()).padStart(2, "0")}`;
   return d.faixas.some(({ abertura, fechamento }) => {
     const a = padHhMm(abertura);
     const b = padHhMm(fechamento);
@@ -157,10 +201,6 @@ function minutosDesdeMeiaNoiteHhMm(hm: string): number {
   return h * 60 + m;
 }
 
-function horarioLocalHhMm(date: Date): string {
-  return `${String(date.getHours()).padStart(2, "0")}:${String(date.getMinutes()).padStart(2, "0")}`;
-}
-
 function labelDiaAberturaRelativo(offsetDias: number, key: DiaAgendaKey): string {
   if (offsetDias === 0) return "hoje";
   if (offsetDias === 1) return "amanhã";
@@ -177,12 +217,11 @@ export function proximaAberturaTextoPt(f: FuncionamentoSemana, agora: Date = new
   if (!agendaTemDiaAberto(f)) return null;
   if (estaAbertoNoHorarioLocal(f, agora)) return null;
 
-  const startMin = minutosDesdeMeiaNoiteHhMm(horarioLocalHhMm(agora));
+  const startMin = minutosDesdeMeiaNoiteHhMm(diaEHoraCivisNaAgenda(agora).hhmm);
 
   for (let offset = 0; offset < 7; offset++) {
-    const d = new Date(agora);
-    d.setDate(d.getDate() + offset);
-    const key = diaAgendaKeyFromDate(d);
+    const t = new Date(agora.getTime() + offset * 86400000);
+    const key = diaEHoraCivisNaAgenda(t).diaKey;
     const dia = f[key];
     if (!dia?.ativo || !dia.faixas?.length) continue;
 
