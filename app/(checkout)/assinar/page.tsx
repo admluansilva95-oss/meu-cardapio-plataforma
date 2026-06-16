@@ -2,6 +2,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { SubscribeButton } from "@/components/checkout/SubscribeButton";
 import { getPlanById, PLANS } from "@/lib/plans";
+import { stripeKeyModeLabel } from "@/lib/stripe/user-facing-errors";
 import { Check } from "lucide-react";
 
 type PageProps = {
@@ -15,6 +16,7 @@ export default async function AssinarPage({ searchParams }: PageProps) {
     ? PLANS.find((p) => p.priceId === params.priceId)
     : undefined;
   const plan = planFromQuery ?? planFromPriceId ?? PLANS[0];
+  const stripeMode = stripeKeyModeLabel();
 
   if (!plan) {
     notFound();
@@ -44,6 +46,14 @@ export default async function AssinarPage({ searchParams }: PageProps) {
           Plano {plan.name}
         </h1>
         <p className="mt-3 text-zinc-600">{plan.description}</p>
+
+        {stripeMode === "live" ? (
+          <p className="mt-6 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm leading-relaxed text-amber-950">
+            Pagamento processado pelo Stripe (cartão, Apple Pay e Google Pay quando liberados). Se
+            Cartões ainda estiver «pendente» no Dashboard Live, o checkout só funciona após a Stripe
+            aprovar sua conta — aguarde o e-mail de confirmação.
+          </p>
+        ) : null}
 
         <div className="mt-10 rounded-3xl border border-zinc-200 bg-white p-8 shadow-sm">
           <div className="flex items-baseline justify-between gap-4 border-b border-zinc-100 pb-8">

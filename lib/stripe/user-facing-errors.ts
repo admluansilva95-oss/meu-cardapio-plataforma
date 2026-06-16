@@ -57,10 +57,17 @@ export function mapStripeErrorForUser(
   }
 
   if (lower.includes("no valid payment method types") || lower.includes("payment_method_types")) {
+    if (mode === "live") {
+      return (
+        "Pagamentos reais ainda não estão liberados: no Stripe (modo Live), Cartões aparece como " +
+        "«pendente de aprovação». Você já enviou os documentos — aguarde a análise da Stripe " +
+        "(e-mail quando for aprovado). Isso não é falha do site. Para testar o fluxo agora, " +
+        "use chaves sk_test_ e preços de Test na Vercel."
+      );
+    }
     return (
-      "Nenhum método de pagamento ativo no Stripe para assinaturas em BRL. " +
-      "No Dashboard (modo Live), abra Settings → Payment methods e ative **Cartões**. " +
-      "Confirme também que o preço do plano está em BRL (R$)."
+      "Nenhum método de pagamento ativo no Stripe (modo test). " +
+      "Abra Settings → Payment methods no Dashboard (Test) e ative Cartões."
     );
   }
 
