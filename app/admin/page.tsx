@@ -30,7 +30,7 @@ import {
 } from "@/lib/utils/sanitize-strings";
 import { sanitizeDbPlainText, sanitizeDbPlainTextNullable } from "@/lib/db/sanitize-persist";
 import { navigatePreparedTabOrOpen, prepareNewTabForLaterNavigation } from "@/lib/restaurante/open-url-nova-guia";
-import { buildWhatsappSendHref, telefoneWhatsappClienteValidoParaWa } from "@/lib/restaurante/whatsapp-href";
+import { buildWhatsappSendHref } from "@/lib/restaurante/whatsapp-href";
 import { fetchAppApiResilient, parseAppApiJsonResponse } from "@/lib/http/fetch-app-api";
 import { sanitizeFetchInit } from "@/lib/fetch-latin1-safe";
 import { postJsonComBearer } from "@/lib/restaurante/post-json-bearer-client";
@@ -2141,8 +2141,10 @@ function AdminPageInner() {
       lista.map((p) => (p.id === id ? { ...p, coluna: destino } : p)),
     );
 
-    /* Antes do primeiro `await`: mantém ativação do utilizador para o WhatsApp não ser bloqueado como pop-up. */
+    /* Igual à vitrine: separador em branco antes do await + URL já montada (mensagem não depende da resposta do Supabase). */
     const waTab = prepareNewTabForLaterNavigation();
+    const msg = mensagemParaColuna(atual, destino);
+    const waHref = buildWhatsappSendHref(atual.telefone, msg);
 
     try {
       const { error } = await supabase
@@ -2163,19 +2165,7 @@ function AdminPageInner() {
         return;
       }
 
-      const msg = mensagemParaColuna(atual, destino);
-      if (!telefoneWhatsappClienteValidoParaWa(atual.telefone)) {
-        setFetchError(
-          "O telefone do cliente neste pedido não está em formato válido para abrir o WhatsApp automaticamente. Use o número no card para contatar manualmente.",
-        );
-        try {
-          waTab?.close();
-        } catch {
-          /* ignore */
-        }
-        return;
-      }
-      navigatePreparedTabOrOpen(waTab, buildWhatsappSendHref(atual.telefone, msg));
+      navigatePreparedTabOrOpen(waTab, waHref);
     } catch (e) {
       setFetchError(e instanceof Error ? e.message : "Falha de rede ao avançar o pedido.");
       setPedidos((lista) =>
