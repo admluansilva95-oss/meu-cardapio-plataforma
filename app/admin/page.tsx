@@ -473,6 +473,9 @@ function textoBotaoAvancarComWhatsApp(p: Pedido): string {
   if (p.coluna === "pronto" && isPedidoRetiradaBalcao(p)) {
     return "Registrar retirada + WhatsApp";
   }
+  if (p.coluna === "pronto") {
+    return "Finalizar atendimento + WhatsApp";
+  }
   return "Avançar status + WhatsApp";
 }
 
@@ -503,10 +506,11 @@ function mensagemParaColuna(p: Pedido, destino: KanbanCol): string {
     return `Olá ${p.cliente}, seu pedido está pronto e já saiu para entrega com o motoboy ${m}. Obrigado pela preferência!`;
   }
   if (destino === "entregue") {
+    const ref = formatPedidoId(p.id);
     if (isPedidoRetiradaBalcao(p)) {
-      return `Olá ${p.cliente}, registramos a retirada do seu pedido no balcão. Obrigado pela preferência!`;
+      return `Olá, ${p.cliente}! Atendimento finalizado: registramos a retirada do pedido ${ref} no balcão. Obrigado pela preferência!`;
     }
-    return `Olá ${p.cliente}, seu pedido foi entregue. Obrigado pela preferência!`;
+    return `Olá, ${p.cliente}! Atendimento finalizado: seu pedido ${ref} foi entregue. Obrigado pela preferência!`;
   }
   return `Olá ${p.cliente}, atualização do seu pedido.`;
 }
@@ -2160,7 +2164,8 @@ function AdminPageInner() {
       }
 
       const msg = mensagemParaColuna(atual, destino);
-      navigatePreparedTabOrOpen(waTab, buildWhatsappSendHref(atual.telefone, msg));
+      /** `wa.me` costuma carregar corretamente após `about:blank` + await; `api.whatsapp.com` às vezes parecia “reabrir” o fluxo de novo pedido. */
+      navigatePreparedTabOrOpen(waTab, buildWhatsappSendHref(atual.telefone, msg, { host: "wa" }));
     } catch (e) {
       setFetchError(e instanceof Error ? e.message : "Falha de rede ao avançar o pedido.");
       setPedidos((lista) =>
@@ -2730,7 +2735,9 @@ function AdminPageInner() {
                       → tabela <code className="rounded bg-zinc-100 px-1 py-0.5 font-mono text-[10px]">pedidos</code>).
                       Ao avançar na esteira, abrimos o WhatsApp do{" "}
                       <span className="font-medium text-zinc-700">cliente</span> com o número que ele informou no
-                      fechamento.
+                      fechamento. Na etapa <span className="font-medium text-zinc-700">Pronto</span>, o botão envia um
+                      texto de <span className="font-medium text-zinc-700">atendimento finalizado</span> (não reabre o
+                      resumo longo do pedido).
                     </p>
                     {pedidos.length === 0 ? (
                       <div className="mt-4">

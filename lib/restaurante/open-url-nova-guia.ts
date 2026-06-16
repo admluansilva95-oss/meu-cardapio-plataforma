@@ -30,7 +30,7 @@ export function prepareNewTabForLaterNavigation(): Window | null {
 export function navigatePreparedTabOrOpen(prepared: Window | null, href: string): void {
   if (prepared != null && !prepared.closed) {
     try {
-      prepared.location.href = href;
+      prepared.location.replace(href);
       return;
     } catch {
       try {
