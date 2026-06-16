@@ -68,6 +68,8 @@ type ConfigBody = {
   taxas_entrega_zonas?: TaxaEntregaZona[] | null;
   cardapio_categorias?: string[] | null;
   retirada_balcao?: boolean;
+  retirada_endereco_balcao?: string | null;
+  retirada_preparo_estimado?: string | null;
   entrega_modo?: "fixa" | "zonas";
   mensagem_boas_vindas?: string | null;
   texto_vitrine_aberto?: string | null;
@@ -155,6 +157,8 @@ async function applyLegacyExtras(
     texto_vitrine_aberto?: string | null;
     texto_vitrine_fechado?: string | null;
     mensagem_fora_horario?: string | null;
+    retirada_endereco_balcao?: string | null;
+    retirada_preparo_estimado?: string | null;
   },
 ): Promise<
   | { ok: true; skipped?: boolean }
@@ -173,6 +177,10 @@ async function applyLegacyExtras(
     payload.texto_vitrine_fechado = extras.texto_vitrine_fechado;
   if ("mensagem_fora_horario" in extras)
     payload.mensagem_fora_horario = extras.mensagem_fora_horario;
+  if ("retirada_endereco_balcao" in extras)
+    payload.retirada_endereco_balcao = extras.retirada_endereco_balcao;
+  if ("retirada_preparo_estimado" in extras)
+    payload.retirada_preparo_estimado = extras.retirada_preparo_estimado;
   const res = await runUpdate(client, opts, payload);
   if (!res.error) {
     const r = interpretUpdate(res);
@@ -514,6 +522,8 @@ export async function POST(request: NextRequest) {
           vitrine_fechada: vitrineFechada,
           mensagem_fechado: vitrineFechada ? mensagem_fechado : null,
           mensagem_boas_vindas,
+          retirada_endereco_balcao: normTxt(body.retirada_endereco_balcao, 500),
+          retirada_preparo_estimado: normTxt(body.retirada_preparo_estimado, 80),
           ...legacyVitrineOpcional,
         };
 

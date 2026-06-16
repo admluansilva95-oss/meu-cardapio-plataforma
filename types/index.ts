@@ -39,6 +39,10 @@ export interface Restaurante {
   entrega_modo?: EntregaModo;
   /** Cliente pode escolher retirada no balcão (sem taxa de entrega). */
   retirada_balcao?: boolean;
+  /** Endereço para retirada no balcão (opcional). */
+  retirada_endereco_balcao?: string | null;
+  /** Tempo estimado de preparo para retirada (texto livre, ex.: 20–30 min). */
+  retirada_preparo_estimado?: string | null;
   /** Ordem das seções do cardápio público (nomes de categoria). */
   cardapio_categorias?: string[] | null;
   /** Frase curta de destaque na vitrine pública (abaixo do status); opcional. */

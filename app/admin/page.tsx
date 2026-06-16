@@ -66,8 +66,10 @@ import {
 import { EntregaComercialSection, taxaFixaInicialDeRestaurante, taxaFixaParaPersistir } from "@/components/admin/EntregaComercialSection";
 import { CategoriaPratoField } from "@/components/admin/CategoriaPratoField";
 import {
+  Building2,
   ClipboardList,
   ListOrdered,
+  Package,
   Palette,
   UtensilsCrossed,
   type LucideIcon,
@@ -93,6 +95,7 @@ function resolveRestauranteDisplayNome(nome: string | null | undefined, slug: st
 }
 
 type AdminTab = "pedidos" | "cardapio" | "pratos" | "configuracoes";
+type ConfigPainelSecao = "geral" | "retirada";
 type KanbanCol = "recebidos" | "cozinha" | "pronto" | "entregue";
 type FormaPagamento = "Pix" | "Cartão" | "Dinheiro";
 
@@ -399,6 +402,8 @@ function mapRestauranteRow(row: {
   taxas_entrega_zonas?: unknown;
   entrega_modo?: string | null;
   retirada_balcao?: boolean | null;
+  retirada_endereco_balcao?: string | null;
+  retirada_preparo_estimado?: string | null;
   cardapio_categorias?: unknown;
   mensagem_boas_vindas?: string | null;
   texto_vitrine_aberto?: string | null;
@@ -444,6 +449,8 @@ function mapRestauranteRow(row: {
     taxas_entrega_zonas: zonasParsed ?? undefined,
     entrega_modo,
     retirada_balcao: row.retirada_balcao === true,
+    retirada_endereco_balcao: row.retirada_endereco_balcao?.trim() || null,
+    retirada_preparo_estimado: row.retirada_preparo_estimado?.trim() || null,
     cardapio_categorias: cardapio_categorias.length > 0 ? cardapio_categorias : null,
     mensagem_boas_vindas: row.mensagem_boas_vindas?.trim() || null,
     texto_vitrine_aberto: row.texto_vitrine_aberto?.trim() || null,
@@ -1308,6 +1315,9 @@ function AdminPageInner() {
   const [cfgEntregaModo, setCfgEntregaModo] = useState<EntregaModo>("fixa");
   const [cfgTaxaFixaTexto, setCfgTaxaFixaTexto] = useState("");
   const [cfgRetiradaBalcao, setCfgRetiradaBalcao] = useState(false);
+  const [cfgRetiradaEnderecoBalcao, setCfgRetiradaEnderecoBalcao] = useState("");
+  const [cfgRetiradaPreparoEstimado, setCfgRetiradaPreparoEstimado] = useState("");
+  const [cfgPainelSecao, setCfgPainelSecao] = useState<ConfigPainelSecao>("geral");
   const [cfgCardapioCategorias, setCfgCardapioCategorias] = useState<string[]>([]);
   const [cfgVitrineFechada, setCfgVitrineFechada] = useState(false);
   const [cfgMensagemFechado, setCfgMensagemFechado] = useState("");
@@ -1338,6 +1348,8 @@ function AdminPageInner() {
       tz: restaurante.taxas_entrega_zonas,
       em: restaurante.entrega_modo,
       rb: restaurante.retirada_balcao,
+      re: restaurante.retirada_endereco_balcao,
+      rp: restaurante.retirada_preparo_estimado,
       vf: restaurante.vitrine_fechada,
       mf: restaurante.mensagem_fechado,
       mb: restaurante.mensagem_boas_vindas,
@@ -1715,6 +1727,8 @@ function AdminPageInner() {
     setCfgCardapioCategorias([...new Set([...ord, ...extra])]);
 
     setCfgRetiradaBalcao(restaurante.retirada_balcao === true);
+    setCfgRetiradaEnderecoBalcao(restaurante.retirada_endereco_balcao ?? "");
+    setCfgRetiradaPreparoEstimado(restaurante.retirada_preparo_estimado ?? "");
     setCfgCor(restaurante.cor_tema);
     setCfgLogoUrl(restaurante.logo?.trim() || null);
     setCfgLogoFile(null);
@@ -1726,6 +1740,10 @@ function AdminPageInner() {
       setCfgMsg(null);
     }
   }, [tab, restaurante, pratos, marcaVitrineDadosSyncKey]);
+
+  useEffect(() => {
+    if (tab !== "configuracoes") setCfgPainelSecao("geral");
+  }, [tab]);
 
   useEffect(() => {
     if (!restaurante) {
@@ -1917,6 +1935,8 @@ function AdminPageInner() {
           funcionamento_semana: cfgFuncionamento,
           taxas_entrega_zonas: zonasApi,
           retirada_balcao: cfgRetiradaBalcao,
+          retirada_endereco_balcao: sanitizeDbPlainTextNullable(cfgRetiradaEnderecoBalcao.trim(), 500),
+          retirada_preparo_estimado: sanitizeDbPlainTextNullable(cfgRetiradaPreparoEstimado.trim(), 80),
           entrega_modo: cfgEntregaModo,
           cardapio_categorias: cfgCardapioCategorias,
           logo: logoOut,
@@ -1984,6 +2004,8 @@ function AdminPageInner() {
     cfgEntregaModo,
     cfgTaxaFixaTexto,
     cfgRetiradaBalcao,
+    cfgRetiradaEnderecoBalcao,
+    cfgRetiradaPreparoEstimado,
     cfgCardapioCategorias,
     cfgCor,
     cfgVitrineFechada,
@@ -3090,10 +3112,66 @@ function AdminPageInner() {
                   </button>
                 </div>
 
+                <nav
+                  className="mt-5 flex flex-wrap gap-1.5"
+                  aria-label="Sub-seções do estabelecimento"
+                >
+                  <button
+                    type="button"
+                    onClick={() => setCfgPainelSecao("geral")}
+                    className={[
+                      "flex min-w-[10.5rem] flex-1 flex-col rounded-xl px-3 py-2.5 text-left transition sm:min-w-[9.5rem]",
+                      cfgPainelSecao === "geral"
+                        ? "bg-white text-[#1d1d1f] shadow-[0_1px_3px_rgba(0,0,0,0.08)] ring-1 ring-black/[0.04]"
+                        : "text-[#6e6e73] hover:bg-white/70 hover:text-[#1d1d1f]",
+                    ].join(" ")}
+                  >
+                    <span className="flex items-center gap-2">
+                      <Building2
+                        className={[
+                          "h-4 w-4 shrink-0",
+                          cfgPainelSecao === "geral" ? "text-[#0071e3]" : "text-[#86868b]",
+                        ].join(" ")}
+                        aria-hidden
+                      />
+                      <span className="text-sm font-semibold leading-tight">Geral</span>
+                    </span>
+                    <span className="mt-1 pl-6 text-[11px] leading-snug text-[#86868b]">
+                      Nome, WhatsApp, horários, entrega e marca
+                    </span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setCfgPainelSecao("retirada")}
+                    className={[
+                      "flex min-w-[10.5rem] flex-1 flex-col rounded-xl px-3 py-2.5 text-left transition sm:min-w-[9.5rem]",
+                      cfgPainelSecao === "retirada"
+                        ? "bg-white text-[#1d1d1f] shadow-[0_1px_3px_rgba(0,0,0,0.08)] ring-1 ring-black/[0.04]"
+                        : "text-[#6e6e73] hover:bg-white/70 hover:text-[#1d1d1f]",
+                    ].join(" ")}
+                  >
+                    <span className="flex items-center gap-2">
+                      <Package
+                        className={[
+                          "h-4 w-4 shrink-0",
+                          cfgPainelSecao === "retirada" ? "text-[#0071e3]" : "text-[#86868b]",
+                        ].join(" ")}
+                        aria-hidden
+                      />
+                      <span className="text-sm font-semibold leading-tight">Retirada</span>
+                    </span>
+                    <span className="mt-1 pl-6 text-[11px] leading-snug text-[#86868b]">
+                      Endereço e tempo no balcão
+                    </span>
+                  </button>
+                </nav>
+
                 <fieldset
                   disabled={tenantSaving}
                   className="mt-6 min-w-0 space-y-8 border-0 p-0 disabled:pointer-events-none disabled:opacity-[0.72]"
                 >
+                  {cfgPainelSecao === "geral" ? (
+                    <>
                   <div className="space-y-2">
                     <label className="text-xs font-semibold uppercase tracking-wide text-zinc-500">Nome</label>
                     <p className="text-[11px] leading-relaxed text-zinc-500">
@@ -3221,6 +3299,38 @@ function AdminPageInner() {
                       />
                     </div>
                   </div>
+                    </>
+                  ) : (
+                    <div className="space-y-8">
+                      <div className="space-y-2">
+                        <label className="text-xs font-semibold uppercase tracking-wide text-zinc-500">
+                          Endereço para Retirada no Balcão
+                        </label>
+                        <input
+                          type="text"
+                          value={cfgRetiradaEnderecoBalcao}
+                          onChange={(e) => setCfgRetiradaEnderecoBalcao(e.target.value.slice(0, 500))}
+                          maxLength={500}
+                          placeholder="Ex: Av. Principal, 123 - Centro"
+                          autoComplete="street-address"
+                          className="w-full rounded-xl border border-zinc-200 bg-zinc-50/50 px-3 py-2.5 text-sm text-zinc-900 outline-none transition placeholder:text-zinc-400 focus:border-transparent focus:ring-2 focus:ring-zinc-900"
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <label className="text-xs font-semibold uppercase tracking-wide text-zinc-500">
+                          Tempo Estimado de Preparo (minutos)
+                        </label>
+                        <input
+                          type="text"
+                          value={cfgRetiradaPreparoEstimado}
+                          onChange={(e) => setCfgRetiradaPreparoEstimado(e.target.value.slice(0, 80))}
+                          maxLength={80}
+                          placeholder="Ex: 20-30"
+                          className="w-full rounded-xl border border-zinc-200 bg-zinc-50/50 px-3 py-2.5 text-sm text-zinc-900 outline-none transition placeholder:text-zinc-400 focus:border-transparent focus:ring-2 focus:ring-zinc-900"
+                        />
+                      </div>
+                    </div>
+                  )}
 
                   {cfgMsg ? (
                     <p
