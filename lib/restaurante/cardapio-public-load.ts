@@ -7,7 +7,8 @@ type CardapioPayload = {
 
 type CacheEntry = { data: CardapioPayload; fetchedAt: number };
 
-const STALE_MS = 45_000;
+/** Curto o suficiente para refletir alterações no painel (ex.: endereço de retirada) sem martelar a API. */
+const STALE_MS = 12_000;
 const cache = new Map<string, CacheEntry>();
 const inflight = new Map<string, Promise<CardapioPayload>>();
 

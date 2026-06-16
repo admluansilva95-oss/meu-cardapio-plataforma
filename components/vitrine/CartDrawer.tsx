@@ -492,11 +492,6 @@ export default function CartDrawer(props: CartDrawerProps) {
                     </div>
                   ) : (
                     <div className="space-y-3 rounded-2xl border border-emerald-100 bg-emerald-50/60 px-4 py-3 text-sm leading-relaxed text-emerald-900">
-                      <p>
-                        <span className="font-semibold">Retirada no balcão</span> — sem taxa de entrega. O pedido entra
-                        no painel do restaurante (esteira em &quot;Pendente&quot;) para preparo e acompanhamento. O
-                        WhatsApp abre em seguida para você combinar detalhes com o local, se precisar.
-                      </p>
                       {restaurante.retirada_endereco_balcao?.trim() ? (
                         <div className="rounded-xl border border-emerald-200/80 bg-white/90 px-3 py-2.5">
                           <p className="text-[11px] font-semibold uppercase tracking-wide text-emerald-800/90">
@@ -507,17 +502,22 @@ export default function CartDrawer(props: CartDrawerProps) {
                           </p>
                         </div>
                       ) : (
-                        <p className="text-[13px] text-emerald-900/90">
-                          Quando estiver pronto, retire no balcão. Se o endereço não aparecer aqui, o restaurante pode
-                          enviar pelo WhatsApp.
-                        </p>
+                        <div className="rounded-xl border border-amber-200/90 bg-amber-50/90 px-3 py-2.5 text-[13px] font-medium text-amber-950">
+                          O restaurante ainda não informou o endereço de retirada aqui. Confirme o local pelo WhatsApp
+                          ao enviar o pedido.
+                        </div>
                       )}
                       {restaurante.retirada_preparo_estimado?.trim() ? (
-                        <p className="text-[13px] text-emerald-900/90">
+                        <p className="text-[13px] text-emerald-900/95">
                           <span className="font-semibold">Tempo estimado de preparo:</span>{" "}
                           {restaurante.retirada_preparo_estimado.trim()}
                         </p>
                       ) : null}
+                      <p className="text-[12px] leading-relaxed text-emerald-900/85">
+                        <span className="font-semibold">Retirada no balcão</span> — sem taxa de entrega. O pedido segue
+                        para a esteira do restaurante (inicia em &quot;Pendente&quot;). Na sequência abrimos o WhatsApp
+                        para você combinar detalhes com o local, se precisar.
+                      </p>
                     </div>
                   )}
                 </section>

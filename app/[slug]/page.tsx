@@ -32,7 +32,10 @@ import { Clock, UtensilsCrossed } from "lucide-react";
 import { isValidSlug } from "@/lib/billing/slug";
 import { normalizeCorTema } from "@/lib/restaurante/cor-tema";
 import { expandLatin1UserText } from "@/lib/restaurante/json-latin1-wire";
-import { fetchPublicCardapioDeduped } from "@/lib/restaurante/cardapio-public-load";
+import {
+  fetchPublicCardapioDeduped,
+  invalidatePublicCardapioCache,
+} from "@/lib/restaurante/cardapio-public-load";
 import { registrarPedidoVitrineNaApi } from "@/lib/restaurante/registrar-pedido-vitrine-client";
 import { buildWhatsappSendHref } from "@/lib/restaurante/whatsapp-href";
 import { navigatePreparedTabOrOpen, prepareNewTabForLaterNavigation } from "@/lib/restaurante/open-url-nova-guia";
@@ -310,7 +313,7 @@ export default function PublicCardapioPage() {
     return () => window.clearInterval(id);
   }, []);
 
-  const load = useCallback(async () => {
+  const load = useCallback(async (opts?: { background?: boolean }) => {
     if (!slug || !isValidSlug(slug)) {
       setLoading(false);
       setError(null);
@@ -323,7 +326,10 @@ export default function PublicCardapioPage() {
     const ac = new AbortController();
     fetchAbort.current = ac;
 
-    setLoading(true);
+    const background = opts?.background === true;
+    if (!background) {
+      setLoading(true);
+    }
     setError(null);
 
     try {
@@ -359,17 +365,21 @@ export default function PublicCardapioPage() {
       if (result.error?.message === "aborted") return;
 
       if (result.error) {
-        setError(mensagemErroCardapioParaCliente(result.error.message ?? "Erro ao carregar."));
-        setRestaurante(null);
-        setPratos([]);
+        if (!background) {
+          setError(mensagemErroCardapioParaCliente(result.error.message ?? "Erro ao carregar."));
+          setRestaurante(null);
+          setPratos([]);
+        }
         return;
       }
 
       const payload = result.data;
       if (!payload?.restaurante) {
-        setError(null);
-        setRestaurante(null);
-        setPratos([]);
+        if (!background) {
+          setError(null);
+          setRestaurante(null);
+          setPratos([]);
+        }
         return;
       }
 
@@ -381,14 +391,14 @@ export default function PublicCardapioPage() {
         .filter((p): p is Prato => p !== null);
       setPratos(mapped);
     } catch (e) {
-      if (!ac.signal.aborted) {
+      if (!ac.signal.aborted && !background) {
         const raw = e instanceof Error ? e.message : "Erro ao carregar o cardápio.";
         setError(mensagemErroCardapioParaCliente(raw));
         setRestaurante(null);
         setPratos([]);
       }
     } finally {
-      if (!ac.signal.aborted) setLoading(false);
+      if (!ac.signal.aborted && !background) setLoading(false);
     }
   }, [slug]);
 
@@ -396,6 +406,12 @@ export default function PublicCardapioPage() {
     void load();
     return () => fetchAbort.current?.abort();
   }, [load]);
+
+  useEffect(() => {
+    if (!cartOpen || !slug) return;
+    invalidatePublicCardapioCache(slug);
+    void load({ background: true });
+  }, [cartOpen, slug, load]);
 
   useEffect(() => {
     if (!slug || loading || !restaurante?.id) return;
