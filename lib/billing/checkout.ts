@@ -6,6 +6,11 @@ import { getStripe } from "@/lib/stripe/client";
 import { isValidSlug, normalizeSlugInput } from "@/lib/billing/slug";
 import { isSlugAvailable } from "@/lib/billing/restaurantes";
 import { resolveStripeCheckoutOrigin } from "@/lib/site-url";
+import {
+  isPlaceholderStripePriceId,
+  mapStripeErrorForUser,
+  stripeKeyModeLabel,
+} from "@/lib/stripe/user-facing-errors";
 
 export type CreateSubscriptionCheckoutInput = {
   userId: string;
@@ -34,6 +39,16 @@ export async function createSubscriptionCheckoutSession(
   const plan = getPlanByPriceId(input.priceId);
   if (!plan) {
     return { ok: false, error: "Plano inválido para o priceId informado.", status: 400 };
+  }
+
+  if (isPlaceholderStripePriceId(input.priceId)) {
+    return {
+      ok: false,
+      error:
+        "Price ID do Stripe não configurado. Defina NEXT_PUBLIC_STRIPE_PRICE_ESSENCIAL e " +
+        "NEXT_PUBLIC_STRIPE_PRICE_PREMIUM na Vercel (ou .env.local) com os IDs price_… do Dashboard.",
+      status: 503,
+    };
   }
 
   const slug = normalizeSlugInput(input.slug);
@@ -119,7 +134,17 @@ export async function createSubscriptionCheckoutSession(
   } catch (err) {
     logStructured("error", "billing.checkout.sessions_create", {
       message: err instanceof Error ? err.message : String(err),
+      code:
+        err && typeof err === "object" && "code" in err
+          ? String((err as { code?: unknown }).code)
+          : null,
+      stripeMode: stripeKeyModeLabel(),
+      priceId: input.priceId,
     });
-    return { ok: false, error: "Erro ao criar sessão de checkout no Stripe.", status: 500 };
+    return {
+      ok: false,
+      error: mapStripeErrorForUser(err, "checkout"),
+      status: 500,
+    };
   }
 }

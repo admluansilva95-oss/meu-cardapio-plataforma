@@ -3,6 +3,11 @@ import { cookies } from "next/headers";
 import { NextResponse, type NextRequest } from "next/server";
 import type Stripe from "stripe";
 import {
+  buildPayloadFromSubscription,
+  resolveStripeId,
+  upsertAssinatura,
+} from "@/lib/billing/assinaturas";
+import {
   getOwnerAuthStorageOptions,
   getSupabaseServerCookieOptions,
 } from "@/lib/auth/supabase-session-cookies";
@@ -12,7 +17,10 @@ import { getPublicAppUrl } from "@/lib/site-url";
 import { requireAdminSupabaseClient } from "@/lib/supabase/admin";
 import { serverLatin1SafeFetch } from "@/lib/http/server-latin1-fetch";
 import { getPublicSupabaseProjectUrl } from "@/lib/supabase/normalize-public-supabase-url";
-import { resolveStripeId } from "@/lib/billing/assinaturas";
+import {
+  mapStripeErrorForUser,
+  stripeKeyModeLabel,
+} from "@/lib/stripe/user-facing-errors";
 
 export const dynamic = "force-dynamic";
 
@@ -23,6 +31,18 @@ type AssinaturaBillingRow = {
   stripe_customer_id: string | null;
   stripe_subscription_id: string | null;
 };
+
+type ResolvedBilling = {
+  customerId: string;
+  subscription: Stripe.Subscription | null;
+};
+
+const ACTIVE_SUBSCRIPTION_STATUSES = new Set<Stripe.Subscription.Status>([
+  "active",
+  "trialing",
+  "past_due",
+  "unpaid",
+]);
 
 function isStripeMissingCustomerError(error: unknown): boolean {
   if (!error || typeof error !== "object") return false;
@@ -100,81 +120,138 @@ async function customerExists(stripe: Stripe, customerId: string): Promise<boole
   }
 }
 
-async function resolveCustomerFromSubscription(
+function pickPreferredSubscription(
+  subscriptions: Stripe.Subscription[],
+): Stripe.Subscription | null {
+  if (subscriptions.length === 0) return null;
+  return (
+    subscriptions.find((subscription) => ACTIVE_SUBSCRIPTION_STATUSES.has(subscription.status)) ??
+    subscriptions[0] ??
+    null
+  );
+}
+
+async function resolveFromSubscriptionId(
   stripe: Stripe,
   subscriptionId: string,
-): Promise<string | null> {
+): Promise<ResolvedBilling | null> {
   try {
     const subscription = await stripe.subscriptions.retrieve(subscriptionId);
-    return resolveStripeId(subscription.customer);
+    const customerId = resolveStripeId(subscription.customer);
+    if (!customerId || !(await customerExists(stripe, customerId))) return null;
+    return { customerId, subscription };
   } catch (error) {
     console.warn("[api/stripe/portal] assinatura Stripe inválida:", subscriptionId, error);
     return null;
   }
 }
 
-async function resolveCustomerByEmail(
+async function resolveFromSubscriptionSearch(
   stripe: Stripe,
-  email: string,
   userId: string,
-): Promise<string | null> {
-  const customers = await stripe.customers.list({ email, limit: 10 });
-  if (customers.data.length === 0) return null;
+): Promise<ResolvedBilling | null> {
+  try {
+    const result = await stripe.subscriptions.search({
+      query: `metadata['supabase_user_id']:'${userId}'`,
+      limit: 10,
+    });
+    const subscription = pickPreferredSubscription(result.data);
+    if (!subscription) return null;
 
-  const byMetadata = customers.data.find(
-    (customer) => customer.metadata?.supabase_user_id === userId,
-  );
-  if (byMetadata) return byMetadata.id;
-
-  return customers.data[0]?.id ?? null;
-}
-
-async function syncStripeCustomerId(
-  admin: ReturnType<typeof requireAdminSupabaseClient>,
-  assinaturaId: string,
-  customerId: string,
-  storedCustomerId: string | null,
-) {
-  if (storedCustomerId === customerId) return;
-
-  const { error } = await admin
-    .from("assinaturas")
-    .update({ stripe_customer_id: customerId })
-    .eq("id", assinaturaId);
-
-  if (error) {
-    console.warn("[api/stripe/portal] falha ao sincronizar stripe_customer_id:", error.message);
+    const customerId = resolveStripeId(subscription.customer);
+    if (!customerId || !(await customerExists(stripe, customerId))) return null;
+    return { customerId, subscription };
+  } catch (error) {
+    console.warn("[api/stripe/portal] busca de assinatura por metadata falhou:", error);
+    return null;
   }
 }
 
-async function resolveStripeCustomerId(
+async function resolveFromEmail(
+  stripe: Stripe,
+  email: string,
+  userId: string,
+): Promise<ResolvedBilling | null> {
+  const customers = await stripe.customers.list({ email, limit: 10 });
+  if (customers.data.length === 0) return null;
+
+  const orderedCustomers = [
+    ...customers.data.filter((customer) => customer.metadata?.supabase_user_id === userId),
+    ...customers.data.filter((customer) => customer.metadata?.supabase_user_id !== userId),
+  ];
+
+  for (const customer of orderedCustomers) {
+    const subscriptions = await stripe.subscriptions.list({
+      customer: customer.id,
+      status: "all",
+      limit: 10,
+    });
+    const subscription = pickPreferredSubscription(subscriptions.data);
+    if (subscription) {
+      return { customerId: customer.id, subscription };
+    }
+  }
+
+  const fallbackCustomer = orderedCustomers[0];
+  if (fallbackCustomer && (await customerExists(stripe, fallbackCustomer.id))) {
+    return { customerId: fallbackCustomer.id, subscription: null };
+  }
+
+  return null;
+}
+
+async function resolveStripeBilling(
   stripe: Stripe,
   assinatura: AssinaturaBillingRow | null,
   user: { id: string; email?: string | null },
-): Promise<string | null> {
+): Promise<ResolvedBilling | null> {
   if (assinatura?.stripe_subscription_id) {
-    const fromSubscription = await resolveCustomerFromSubscription(
+    const fromDbSubscription = await resolveFromSubscriptionId(
       stripe,
       assinatura.stripe_subscription_id,
     );
-    if (fromSubscription && (await customerExists(stripe, fromSubscription))) {
-      return fromSubscription;
-    }
+    if (fromDbSubscription) return fromDbSubscription;
   }
 
   const storedCustomerId = assinatura?.stripe_customer_id?.trim() || null;
   if (storedCustomerId && (await customerExists(stripe, storedCustomerId))) {
-    return storedCustomerId;
+    const subscriptions = await stripe.subscriptions.list({
+      customer: storedCustomerId,
+      status: "all",
+      limit: 10,
+    });
+    return {
+      customerId: storedCustomerId,
+      subscription: pickPreferredSubscription(subscriptions.data),
+    };
   }
 
+  const fromMetadataSearch = await resolveFromSubscriptionSearch(stripe, user.id);
+  if (fromMetadataSearch) return fromMetadataSearch;
+
   if (user.email) {
-    const fromEmail = await resolveCustomerByEmail(stripe, user.email, user.id);
-    if (fromEmail && (await customerExists(stripe, fromEmail))) {
-      return fromEmail;
-    }
+    return resolveFromEmail(stripe, user.email, user.id);
   }
 
   return null;
+}
+
+async function syncAssinaturaFromStripe(
+  admin: ReturnType<typeof requireAdminSupabaseClient>,
+  userId: string,
+  resolved: ResolvedBilling,
+) {
+  if (resolved.subscription) {
+    const payload = buildPayloadFromSubscription(resolved.subscription, userId);
+    await upsertAssinatura(admin, payload);
+    return;
+  }
+
+  await upsertAssinatura(admin, {
+    user_id: userId,
+    stripe_customer_id: resolved.customerId,
+    status: "active",
+  });
 }
 
 export async function POST(request: NextRequest) {
@@ -203,31 +280,25 @@ export async function POST(request: NextRequest) {
     }
 
     const stripe = getStripe();
-    const customerId = await resolveStripeCustomerId(stripe, assinatura, user);
+    const resolved = await resolveStripeBilling(stripe, assinatura, user);
 
-    if (!customerId) {
+    if (!resolved) {
+      const mode = stripeKeyModeLabel();
       return NextResponse.json(
         {
           error:
-            "Não encontramos um cliente Stripe válido para sua conta. " +
-            "Isso costuma ocorrer quando a chave STRIPE_SECRET_KEY (test/live) não corresponde " +
-            "ao ambiente em que você assinou. Confira as variáveis de ambiente ou refaça o checkout.",
+            `Não encontramos assinatura Stripe para sua conta (modo atual da API: ${mode}). ` +
+            "Confira se STRIPE_SECRET_KEY e NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY estão no mesmo ambiente " +
+            "(test ou live) em que você pagou. Se acabou de assinar, aguarde alguns segundos e tente de novo.",
         },
         { status: 404 },
       );
     }
 
-    if (assinatura?.id) {
-      await syncStripeCustomerId(
-        admin,
-        assinatura.id,
-        customerId,
-        assinatura.stripe_customer_id,
-      );
-    }
+    await syncAssinaturaFromStripe(admin, user.id, resolved);
 
     const session = await stripe.billingPortal.sessions.create({
-      customer: customerId,
+      customer: resolved.customerId,
       return_url: `${getPublicAppUrl()}/admin`,
     });
 
@@ -247,14 +318,14 @@ export async function POST(request: NextRequest) {
         {
           error:
             "O cliente Stripe salvo no banco não existe nesta conta Stripe. " +
-            "Verifique se STRIPE_SECRET_KEY está no mesmo modo (test ou live) da assinatura original.",
+            `Modo atual da API: ${stripeKeyModeLabel()}. ` +
+            "Verifique se as chaves Stripe (test/live) correspondem ao ambiente da assinatura.",
         },
         { status: 409 },
       );
     }
 
-    const message =
-      error instanceof Error ? error.message : "Erro interno do servidor";
+    const message = mapStripeErrorForUser(error, "portal");
     return NextResponse.json({ error: message }, { status: 500 });
   }
 }
