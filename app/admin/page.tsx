@@ -72,7 +72,6 @@ import {
   ListOrdered,
   Package,
   Palette,
-  Printer,
   UtensilsCrossed,
   type LucideIcon,
 } from "lucide-react";
@@ -752,7 +751,7 @@ function PedidoCard(props: {
   onEdit: () => void;
   onCancel: () => void;
   /** Impressão térmica (Web USB / Bluetooth); não altera o pedido. */
-  onImprimir?: () => void;
+  onImprimir?: (pedido: Pedido) => void;
   canAdvance: boolean;
   onDragEnd?: () => void;
   /** Bloqueia ações durante mutação (evita clique duplo / corrida com Realtime). */
@@ -896,24 +895,37 @@ function PedidoCard(props: {
           </p>
         )}
         {onImprimir ? (
+          <div className="flex flex-col gap-2 sm:flex-row sm:items-stretch">
+            <button
+              type="button"
+              disabled={busy}
+              onClick={onEdit}
+              className="w-full rounded-xl border border-black/[0.08] bg-white px-3 py-2.5 text-xs font-semibold text-[#1d1d1f] shadow-sm transition hover:bg-[#f5f5f7] disabled:cursor-not-allowed disabled:opacity-50 sm:flex-1"
+            >
+              Editar detalhes
+            </button>
+            <button
+              type="button"
+              disabled={busy}
+              onClick={() => onImprimir(pedido)}
+              className="inline-flex w-full items-center justify-center gap-2 rounded-xl border border-sky-600/25 bg-sky-600 px-3 py-2.5 text-xs font-semibold text-white shadow-sm ring-1 ring-sky-700/15 transition hover:bg-sky-700 active:scale-[0.99] disabled:cursor-not-allowed disabled:opacity-50 sm:flex-1"
+            >
+              <span className="text-[15px] leading-none" aria-hidden>
+                🖨️
+              </span>
+              Imprimir
+            </button>
+          </div>
+        ) : (
           <button
             type="button"
             disabled={busy}
-            onClick={() => onImprimir()}
-            className="inline-flex w-full items-center justify-center gap-2 rounded-xl border border-sky-600/30 bg-sky-600 px-3 py-2.5 text-xs font-semibold text-white shadow-sm transition hover:bg-sky-700 active:scale-[0.99] disabled:cursor-not-allowed disabled:opacity-50"
+            onClick={onEdit}
+            className="w-full rounded-xl border border-black/[0.08] bg-white px-3 py-2.5 text-xs font-semibold text-[#1d1d1f] shadow-sm transition hover:bg-[#f5f5f7] disabled:cursor-not-allowed disabled:opacity-50"
           >
-            <Printer className="h-4 w-4 shrink-0" aria-hidden />
-            Imprimir pedido
+            Editar detalhes
           </button>
-        ) : null}
-        <button
-          type="button"
-          disabled={busy}
-          onClick={onEdit}
-          className="w-full rounded-xl border border-black/[0.08] bg-white px-3 py-2 text-xs font-semibold text-[#1d1d1f] shadow-sm transition hover:bg-[#f5f5f7] disabled:cursor-not-allowed disabled:opacity-50"
-        >
-          Editar detalhes
-        </button>
+        )}
       </div>
     </article>
   );
@@ -2892,17 +2904,17 @@ function AdminPageInner() {
                                   onAdvance={(o) => void avancarPedido(p.id, o)}
                                   onEdit={() => setPedidoModal(p)}
                                   onCancel={() => void cancelarPedido(p.id)}
-                                  onImprimir={() =>
+                                  onImprimir={(pedido) =>
                                     void imprimirPedidoTermico({
-                                      id: p.id,
-                                      cliente: p.cliente,
-                                      telefone: p.telefone,
-                                      itens: p.itens,
-                                      total: p.total,
-                                      pagamento: p.pagamento,
-                                      observacoes: p.observacoes,
-                                      motoboy: p.motoboy,
-                                      criado_em: p.criado_em,
+                                      id: pedido.id,
+                                      cliente: pedido.cliente,
+                                      telefone: pedido.telefone,
+                                      itens: pedido.itens,
+                                      total: pedido.total,
+                                      pagamento: pedido.pagamento,
+                                      observacoes: pedido.observacoes,
+                                      motoboy: pedido.motoboy,
+                                      criado_em: pedido.criado_em,
                                       nomeEstabelecimento: restaurante.nome,
                                       enderecoRetiradaBalcao: restaurante.retirada_endereco_balcao ?? null,
                                     }).catch((err) =>
