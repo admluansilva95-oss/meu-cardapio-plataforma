@@ -514,9 +514,10 @@ export default function CartDrawer(props: CartDrawerProps) {
                         </p>
                       ) : null}
                       <p className="text-[12px] leading-relaxed text-emerald-900/85">
-                        <span className="font-semibold">Retirada no balcão</span> — sem taxa de entrega. O pedido segue
-                        para a esteira do restaurante (inicia em &quot;Pendente&quot;). Na sequência abrimos o WhatsApp
-                        para você combinar detalhes com o local, se precisar.
+                        <span className="font-semibold">Retirada no balcão</span> — sem taxa de entrega. Ao finalizar,
+                        abrimos o WhatsApp do restaurante com o resumo do seu pedido: é por lá que eles confirmam o
+                        preparo e qualquer detalhe (horário de retirada, pagamento no local etc.). Você só precisa ir
+                        buscar quando combinarem.
                       </p>
                     </div>
                   )}
