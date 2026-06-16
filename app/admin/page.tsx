@@ -2093,7 +2093,12 @@ function AdminPageInner() {
     [restaurante, supabase, loadData],
   );
 
-  const atualizarColunaPedido = async (pedidoId: string, nova: KanbanCol) => {
+  const atualizarColunaPedido = async (
+    pedidoId: string,
+    nova: KanbanCol,
+    /** Só no arrastar Pronto → Entregue: separador preparado no `onDrop` (mesmo gesto), igual ao botão “Finalizar…”. */
+    preWaEntrega?: { tab: Window | null; href: string } | null,
+  ) => {
     if (pedidoBusyId || !restaurante?.id) return;
     const anterior = pedidos.find((p) => p.id === pedidoId);
     if (!anterior || anterior.coluna === nova) return;
@@ -2115,12 +2120,30 @@ function AdminPageInner() {
         setPedidos((lista) =>
           lista.map((p) => (p.id === pedidoId ? { ...p, coluna: anterior.coluna } : p)),
         );
+        if (preWaEntrega?.tab) {
+          try {
+            preWaEntrega.tab.close();
+          } catch {
+            /* ignore */
+          }
+        }
+        return;
+      }
+      if (preWaEntrega?.href) {
+        navigatePreparedTabOrOpen(preWaEntrega.tab, preWaEntrega.href);
       }
     } catch (e) {
       setFetchError(e instanceof Error ? e.message : "Falha de rede ao atualizar o pedido.");
       setPedidos((lista) =>
         lista.map((p) => (p.id === pedidoId ? { ...p, coluna: anterior.coluna } : p)),
       );
+      if (preWaEntrega?.tab) {
+        try {
+          preWaEntrega.tab.close();
+        } catch {
+          /* ignore */
+        }
+      }
     } finally {
       setPedidoBusyId(null);
       setPedidoBusyKind(null);
@@ -2735,9 +2758,10 @@ function AdminPageInner() {
                       → tabela <code className="rounded bg-zinc-100 px-1 py-0.5 font-mono text-[10px]">pedidos</code>).
                       Ao avançar na esteira, abrimos o WhatsApp do{" "}
                       <span className="font-medium text-zinc-700">cliente</span> com o número que ele informou no
-                      fechamento. Na etapa <span className="font-medium text-zinc-700">Pronto</span>, o botão envia um
-                      texto de <span className="font-medium text-zinc-700">atendimento finalizado</span> (não reabre o
-                      resumo longo do pedido).
+                      fechamento.                       Na etapa <span className="font-medium text-zinc-700">Pronto</span>, use o botão
+                      <span className="font-medium text-zinc-700"> Finalizar atendimento + WhatsApp</span> ou arraste o
+                      card para <span className="font-medium text-zinc-700">Entregue</span> — nos dois casos abrimos o
+                      WhatsApp do cliente com a mensagem de atendimento finalizado.
                     </p>
                     {pedidos.length === 0 ? (
                       <div className="mt-4">
@@ -2759,7 +2783,17 @@ function AdminPageInner() {
                               if (pedidoBusyId) return;
                               const id = e.dataTransfer.getData(DRAG_MIME);
                               if (!id) return;
-                              void atualizarColunaPedido(id, col.id);
+                              const arrastado = pedidos.find((p) => p.id === id);
+                              let preWaEntrega: { tab: Window | null; href: string } | undefined;
+                              if (arrastado && arrastado.coluna === "pronto" && col.id === "entregue") {
+                                const waTab = prepareNewTabForLaterNavigation();
+                                const waHref = buildWhatsappSendHref(
+                                  arrastado.telefone,
+                                  mensagemParaColuna(arrastado, "entregue"),
+                                );
+                                preWaEntrega = { tab: waTab, href: waHref };
+                              }
+                              void atualizarColunaPedido(id, col.id, preWaEntrega);
                             }}
                             className={[
                               "flex min-h-[min(70vh,520px)] flex-col rounded-2xl border border-zinc-100 bg-white p-4 shadow-sm transition",
