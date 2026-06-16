@@ -2,6 +2,7 @@ import { createClient } from "@supabase/supabase-js";
 import { type NextRequest } from "next/server";
 import { isValidSlug } from "@/lib/billing/slug";
 import { serverLatin1SafeFetch } from "@/lib/http/server-latin1-fetch";
+import { checkRateLimit, clientIpFromRequest } from "@/lib/http/rate-limit";
 import { jsonWithRequestId } from "@/lib/http/json-with-request-id";
 import { logStructured } from "@/lib/logging/structured-log";
 import {
@@ -38,6 +39,20 @@ export async function GET(request: NextRequest) {
       const slug = req.nextUrl.searchParams.get("slug")?.trim() ?? "";
       if (!slug || !isValidSlug(slug)) {
         return jsonWithRequestId(requestId, { error: "Slug inválido." }, 400);
+      }
+
+      const rate = checkRateLimit(
+        `cardapio:${clientIpFromRequest(request)}:${slug}`,
+        90,
+        60_000,
+      );
+      if (!rate.ok) {
+        return jsonWithRequestId(
+          requestId,
+          { error: "Muitas requisições. Aguarde um momento." },
+          429,
+          { "Retry-After": String(rate.retryAfterSec) },
+        );
       }
 
       const url = getPublicSupabaseProjectUrl();

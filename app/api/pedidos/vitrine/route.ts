@@ -1,3 +1,5 @@
+import { assertPodeRegistrarPedidoVitrine } from "@/lib/billing/restaurante-plan";
+import { checkRateLimit, clientIpFromRequest } from "@/lib/http/rate-limit";
 import { logStructured } from "@/lib/logging/structured-log";
 import { parseFuncionamentoSemana } from "@/lib/restaurante/funcionamento-semana";
 import { statusAberturaPorRelogio } from "@/lib/restaurante/horario-vitrine";
@@ -347,6 +349,20 @@ export async function POST(request: Request) {
     "api.pedidos.vitrine.fatal",
     async ({ request, requestId }) => {
       try {
+      const rate = checkRateLimit(
+        `pedidos-vitrine:${clientIpFromRequest(request)}`,
+        30,
+        60_000,
+      );
+      if (!rate.ok) {
+        return jsonWithRequestId(
+          requestId,
+          { error: "Muitas requisições. Aguarde um momento." },
+          429,
+          { "Retry-After": String(rate.retryAfterSec) },
+        );
+      }
+
       const admin = createAdminSupabaseClient();
       if (!admin) {
         logStructured("error", "api.pedidos.vitrine.no_service_role", { requestId });
@@ -497,6 +513,15 @@ export async function POST(request: Request) {
         );
       }
       const row = restLoaded.row;
+
+      const planGate = await assertPodeRegistrarPedidoVitrine(restauranteId);
+      if (!planGate.ok) {
+        logStructured("warn", "api.pedidos.vitrine.plan_limit", {
+          restauranteId,
+          requestId,
+        });
+        return jsonWithRequestId(requestId, { error: planGate.error }, planGate.status);
+      }
 
       if (row.vitrine_fechada === true) {
         return jsonWithRequestId(

@@ -1,6 +1,10 @@
 -- =============================================================================
 -- meu-cardapio — schema inicial (Supabase / PostgreSQL)
 -- Rode este script no SQL Editor do painel Supabase (Database → SQL Editor).
+--
+-- ATENÇÃO — PRODUÇÃO: prefira `supabase/init-completo.sql` + arquivos em
+-- `supabase/migrations/`. Este `schema.sql` raiz pode conter políticas amplas
+-- para desenvolvimento. Não use só este arquivo em ambiente com clientes reais.
 -- =============================================================================
 
 -- Extensões úteis (gen_random_uuid já existe no Postgres 13+; pgcrypto opcional)

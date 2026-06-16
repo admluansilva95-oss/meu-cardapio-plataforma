@@ -1,5 +1,6 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { createAdminSupabaseClient } from "@/lib/supabase/admin";
+import { checkRateLimit, clientIpFromRequest } from "@/lib/http/rate-limit";
 import { logStructured } from "@/lib/logging/structured-log";
 import { runApiWithAccessLog } from "@/lib/http/run-api-with-access-log";
 
@@ -27,6 +28,18 @@ export async function POST(request: NextRequest) {
     "/api/analytics",
     "api.analytics.fatal",
     async ({ request: req, requestId }) => {
+      const rate = checkRateLimit(
+        `analytics:${clientIpFromRequest(req)}`,
+        120,
+        60_000,
+      );
+      if (!rate.ok) {
+        return new NextResponse(null, {
+          status: 429,
+          headers: { "Retry-After": String(rate.retryAfterSec) },
+        });
+      }
+
       const raw = await req.text();
       if (raw.length > MAX_BODY_BYTES) {
         return new NextResponse(null, { status: 413 });

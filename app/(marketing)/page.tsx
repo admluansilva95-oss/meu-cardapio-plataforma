@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { MarketingNav } from "@/components/marketing/MarketingNav";
+import { MarketingFooter } from "@/components/marketing/MarketingFooter";
 import { InteractiveDemo } from "@/components/marketing/InteractiveDemo";
 import { PricingTable } from "@/components/marketing/PricingTable";
 import { ArrowRight, Sparkles } from "lucide-react";
@@ -102,9 +103,7 @@ export default function MarketingHomePage() {
         </section>
       </main>
 
-      <footer className="border-t border-zinc-200 py-10 text-center text-xs text-zinc-500">
-        © {new Date().getFullYear()} Meu Cardápio · Cardápio digital SaaS
-      </footer>
+      <MarketingFooter />
     </div>
   );
 }

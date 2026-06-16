@@ -259,6 +259,17 @@ export function CadastroForm({ defaultEssencialPriceId }: CadastroFormProps) {
                   : "Criando conta…"
                 : "Criar conta e pagar no Stripe"}
             </button>
+            <p className="text-center text-[11px] leading-relaxed text-zinc-500">
+              Ao criar conta, você concorda com os{" "}
+              <Link href="/termos" className="text-teal-300/90 hover:underline">
+                Termos de uso
+              </Link>{" "}
+              e a{" "}
+              <Link href="/privacidade" className="text-teal-300/90 hover:underline">
+                Política de privacidade
+              </Link>
+              .
+            </p>
           </form>
 
           <p
