@@ -1,3 +1,13 @@
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
+
+@layer utilities {
+  /** Vitrine pública: entrada suave ao rolar (respeita prefers-reduced-motion). */
+  .reveal-scroll {
+    @apply translate-y-2 opacity-0 transition-[opacity,transform] duration-500 ease-out motion-reduce:translate-y-0 motion-reduce:opacity-100;
+  }
+  .reveal-scroll.reveal-scroll--in {
+    @apply translate-y-0 opacity-100;
+  }
+}

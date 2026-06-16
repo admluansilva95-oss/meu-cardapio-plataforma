@@ -149,6 +149,66 @@ export function formatarHoraCurta(hm: string): string {
   return `${h}h${String(m).padStart(2, "0")}`;
 }
 
+function minutosDesdeMeiaNoiteHhMm(hm: string): number {
+  const [hStr, mStr] = padHhMm(hm).split(":");
+  const h = Number(hStr);
+  const m = Number(mStr);
+  if (!Number.isFinite(h) || !Number.isFinite(m)) return 0;
+  return h * 60 + m;
+}
+
+function horarioLocalHhMm(date: Date): string {
+  return `${String(date.getHours()).padStart(2, "0")}:${String(date.getMinutes()).padStart(2, "0")}`;
+}
+
+function labelDiaAberturaRelativo(offsetDias: number, key: DiaAgendaKey): string {
+  if (offsetDias === 0) return "hoje";
+  if (offsetDias === 1) return "amanhã";
+  const meta = DIAS_AGENDA.find((x) => x.key === key);
+  return meta?.labelLong ?? key;
+}
+
+/**
+ * Quando a loja está fechada pelo relógio (agenda ativa), descreve a próxima abertura em pt-BR.
+ * Ex.: "Abre hoje às 18h", "Abre amanhã às 11h30", "Abre Terça-feira às 11h30".
+ * Retorna `null` se não há agenda, se já está aberto, ou se não há próximo turno nos 7 dias.
+ */
+export function proximaAberturaTextoPt(f: FuncionamentoSemana, agora: Date = new Date()): string | null {
+  if (!agendaTemDiaAberto(f)) return null;
+  if (estaAbertoNoHorarioLocal(f, agora)) return null;
+
+  const startMin = minutosDesdeMeiaNoiteHhMm(horarioLocalHhMm(agora));
+
+  for (let offset = 0; offset < 7; offset++) {
+    const d = new Date(agora);
+    d.setDate(d.getDate() + offset);
+    const key = diaAgendaKeyFromDate(d);
+    const dia = f[key];
+    if (!dia?.ativo || !dia.faixas?.length) continue;
+
+    const faixas = [...dia.faixas].sort(
+      (a, b) => minutosDesdeMeiaNoiteHhMm(a.abertura) - minutosDesdeMeiaNoiteHhMm(b.abertura),
+    );
+
+    if (offset === 0) {
+      for (const fa of faixas) {
+        const ab = minutosDesdeMeiaNoiteHhMm(fa.abertura);
+        const fe = minutosDesdeMeiaNoiteHhMm(fa.fechamento);
+        if (startMin < ab) {
+          return `Abre ${labelDiaAberturaRelativo(0, key)} às ${formatarHoraCurta(fa.abertura)}`;
+        }
+        if (startMin >= ab && startMin <= fe) return null;
+      }
+      continue;
+    }
+
+    const fa0 = faixas[0];
+    return `Abre ${labelDiaAberturaRelativo(offset, key)} às ${formatarHoraCurta(fa0.abertura)}`;
+  }
+
+  return null;
+}
+
 export function formatFuncionamentoResumo(f: FuncionamentoSemana | null): string {
   if (!f) return "";
   const partes: string[] = [];

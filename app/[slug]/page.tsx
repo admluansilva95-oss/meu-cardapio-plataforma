@@ -16,7 +16,7 @@ import {
   statusAberturaPorRelogio,
   vitrineHorarioExibicao,
 } from "@/lib/restaurante/horario-vitrine";
-import { parseFuncionamentoSemana } from "@/lib/restaurante/funcionamento-semana";
+import { parseFuncionamentoSemana, proximaAberturaTextoPt } from "@/lib/restaurante/funcionamento-semana";
 import { parseTaxasEntregaZonas } from "@/lib/restaurante/taxas-entrega-zonas";
 import {
   ordenarSecoesCardapio,
@@ -28,7 +28,7 @@ import Link from "next/link";
 import dynamic from "next/dynamic";
 import { useParams } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { UtensilsCrossed } from "lucide-react";
+import { Clock, UtensilsCrossed } from "lucide-react";
 import { isValidSlug } from "@/lib/billing/slug";
 import { normalizeCorTema } from "@/lib/restaurante/cor-tema";
 import { expandLatin1UserText } from "@/lib/restaurante/json-latin1-wire";
@@ -292,6 +292,7 @@ export default function PublicCardapioPage() {
   const [trocoParaInput, setTrocoParaInput] = useState("");
   const [checkoutErro, setCheckoutErro] = useState<string | null>(null);
   const [checkoutSubmitting, setCheckoutSubmitting] = useState(false);
+  const [modalCheckoutFechadoOpen, setModalCheckoutFechadoOpen] = useState(false);
 
   const fetchAbort = useRef<AbortController | null>(null);
   /** Evita duplo envio (duplo clique) antes e durante o registro do pedido. */
@@ -567,6 +568,16 @@ export default function PublicCardapioPage() {
     [restaurante?.vitrine_fechada, foraDoHorario],
   );
 
+  const proximaAberturaLinha = useMemo(() => {
+    if (!restaurante) return null;
+    const manual = restaurante.vitrine_fechada === true;
+    const sr = statusAberturaPorRelogio(restaurante, relogio);
+    if (manual || sr !== "fechado") return null;
+    const f = restaurante.funcionamento_semana;
+    if (!f) return null;
+    return proximaAberturaTextoPt(f, relogio);
+  }, [restaurante, relogio]);
+
   useEffect(() => {
     if (categorias.length === 0) return;
     setActiveCategoriaId((prev) => prev ?? `sec-${slugifySecaoCardapio(categorias[0].titulo)}`);
@@ -592,6 +603,22 @@ export default function PublicCardapioPage() {
     elements.forEach((el) => obs.observe(el));
     return () => obs.disconnect();
   }, [slug, restaurante?.id, categorias, pratos.length]);
+
+  useEffect(() => {
+    if (loading || !restaurante || pratos.length === 0) return;
+    const articles = document.querySelectorAll<HTMLElement>("main [data-reveal-scroll]");
+    if (!articles.length) return;
+    const io = new IntersectionObserver(
+      (entries) => {
+        entries.forEach((en) => {
+          if (en.isIntersecting) en.target.classList.add("reveal-scroll--in");
+        });
+      },
+      { threshold: 0.07, rootMargin: "0px 0px -8% 0px" },
+    );
+    articles.forEach((el) => io.observe(el));
+    return () => io.disconnect();
+  }, [loading, restaurante?.id, pratos.length, categorias.length]);
 
   const subtotalCarrinho = useMemo(
     () => cart.reduce((acc, { prato, quantidade }) => acc + prato.preco * quantidade, 0),
@@ -630,7 +657,6 @@ export default function PublicCardapioPage() {
   const accent = restaurante ? normalizeCorTema(restaurante.cor_tema) : "#1d1d1f";
 
   const addToCart = (prato: Prato) => {
-    if (restaurante && pedidosBloqueados) return;
     void trackItemAdicionado(slug, prato.id);
     setCart((prev) => {
       const idx = prev.findIndex((x) => x.prato.id === prato.id);
@@ -651,10 +677,6 @@ export default function PublicCardapioPage() {
   };
 
   const setQty = (pratoId: string, quantidade: number) => {
-    if (restaurante && pedidosBloqueados) {
-      const atual = cart.find((x) => x.prato.id === pratoId)?.quantidade ?? 0;
-      if (quantidade > atual) return;
-    }
     if (quantidade < 1) {
       setCart((prev) => prev.filter((x) => x.prato.id !== pratoId));
       return;
@@ -675,9 +697,8 @@ export default function PublicCardapioPage() {
         return;
       }
       if (pedidosBloqueados) {
-        setCheckoutErro(
-          "O restaurante não está aceitando pedidos pelo cardápio neste momento (fechado ou fora do horário).",
-        );
+        setCheckoutErro(null);
+        setModalCheckoutFechadoOpen(true);
         return;
       }
       if (digitsOnly(restaurante.whatsapp).length < 10) {
@@ -936,11 +957,8 @@ export default function PublicCardapioPage() {
   const fechadoManual = vitrineFechada;
 
   const textoVitrineAbertoPadrao = "Faça seu pedido e receba em instantes.";
-  /** Mensagem longa na faixa superior quando a vitrine está pausada manualmente (sem duplicar o badge). */
-  const textoVitrineFechadoPadrao = "No momento estamos fechados. Veja nosso cardápio!";
-  /** Faixa padrão quando fora do horário da agenda (sem dizer “fechados” no sentido de pausa manual). */
-  const textoForaHorarioFaixaPadrao =
-    "Estamos fora do horário de atendimento. O cardápio continua disponível para consulta.";
+  /** Mensagem curta quando a vitrine está pausada manualmente (complemento ao banner). */
+  const textoVitrineFechadoPadrao = "No momento não enviamos pelo cardápio — você ainda pode explorar o menu.";
   /** Linha curta ao lado de “Fechado” no badge quando não há texto customizado em texto_vitrine_fechado. */
   const textoVitrineFechadoBadgePadraoManual = "Pedidos pausados pelo estabelecimento.";
   const textoVitrineFechadoBadgePadraoHorario = "Fora do horário de atendimento.";
@@ -968,15 +986,22 @@ export default function PublicCardapioPage() {
 
   const boasVindasTexto =
     restaurante.mensagem_boas_vindas?.trim() ||
-    `Bem-vindo ao cardápio de ${restaurante.nome}.`;
+    `👋 Olá! Seja muito bem-vindo ao ${restaurante.nome}. Escolha seus favoritos abaixo!`;
 
-  /** Faixa âmbar: mensagem operacional custom ou texto longo padrão (uma vez), sem duplicar o badge. */
-  const faixaAlertaTexto = pedidosBloqueados
-    ? vitrineFechada
-      ? mensagemFechadoCustom || (!pillVitrineFechadoCustom ? textoVitrineFechadoPadrao : "")
-      : restaurante.mensagem_fora_horario?.trim() ||
-        (!pillVitrineFechadoCustom ? textoForaHorarioFaixaPadrao : "")
-    : "";
+  const bannerLinhaPrincipal = fechadoManual
+    ? pillVitrineFechadoCustom || "Pedidos pelo cardápio pausados no momento"
+    : [
+        "Fechado no momento",
+        proximaAberturaLinha,
+        pillVitrineFechadoCustom || null,
+      ]
+        .filter((x): x is string => Boolean(x && x.trim()))
+        .join(" · ");
+
+  const bannerLinhaSecundaria = fechadoManual
+    ? mensagemFechadoCustom || textoVitrineFechadoPadrao
+    : restaurante.mensagem_fora_horario?.trim() ||
+      "Explore o cardápio à vontade — você pode montar seu carrinho e finalizar pelo WhatsApp quando abrirmos.";
 
   const zonasTx = restaurante.taxas_entrega_zonas ?? [];
 
@@ -988,13 +1013,28 @@ export default function PublicCardapioPage() {
 
   return (
     <div className={`${shellClass} pb-28 sm:pb-32`}>
-      {pedidosBloqueados && faixaAlertaTexto ? (
+      {pedidosBloqueados ? (
         <div
-          role="alert"
-          className="border-b border-amber-200/55 bg-amber-50/92 backdrop-blur-md supports-[backdrop-filter]:bg-amber-50/78"
+          role="status"
+          aria-live="polite"
+          className="border-b border-amber-200/40 bg-gradient-to-b from-amber-50/98 via-amber-50/92 to-amber-50/85 shadow-[0_1px_0_rgba(251,191,36,0.12)] backdrop-blur-md supports-[backdrop-filter]:from-amber-50/90"
         >
-          <div className="mx-auto max-w-3xl px-5 py-3.5 text-center sm:px-8">
-            <p className="text-[13px] font-medium leading-relaxed text-amber-950/95">{faixaAlertaTexto}</p>
+          <div className="mx-auto flex max-w-3xl items-start gap-2.5 px-4 py-2.5 sm:items-center sm:gap-3 sm:px-6 sm:py-2.5">
+            <Clock
+              className="mt-0.5 h-4 w-4 shrink-0 text-amber-700/85 sm:mt-0 sm:h-[1.05rem] sm:w-[1.05rem]"
+              strokeWidth={2}
+              aria-hidden
+            />
+            <div className="min-w-0 flex-1 text-left">
+              <p className="text-[12.5px] font-semibold leading-snug text-amber-950/95 sm:text-[13px]">
+                {bannerLinhaPrincipal}
+              </p>
+              {bannerLinhaSecundaria ? (
+                <p className="mt-0.5 text-[11.5px] font-medium leading-relaxed text-amber-900/75 sm:text-xs">
+                  {bannerLinhaSecundaria}
+                </p>
+              ) : null}
+            </div>
           </div>
         </div>
       ) : null}
@@ -1042,9 +1082,11 @@ export default function PublicCardapioPage() {
             <div
               title={tituloTooltipStatus}
               className={[
-                "inline-flex max-w-full cursor-default select-none items-center gap-2.5 rounded-full border px-5 py-2.5 text-left shadow-lg sm:gap-3 sm:px-7 sm:py-3",
+                "inline-flex max-w-full cursor-default select-none items-center gap-2.5 rounded-full border px-5 py-2.5 text-left shadow-md sm:gap-3 sm:px-7 sm:py-3",
                 pedidosBloqueados
-                  ? "border-red-800/25 bg-red-600 text-white shadow-red-600/35 ring-1 ring-white/15"
+                  ? fechadoPorHorario
+                    ? "border-amber-200/90 bg-gradient-to-br from-amber-50 to-orange-50/90 text-amber-950 shadow-amber-900/10 ring-1 ring-amber-100/80"
+                    : "border-zinc-300/80 bg-zinc-800 text-white shadow-zinc-900/25 ring-1 ring-white/10"
                   : "border-emerald-800/20 bg-emerald-500 text-white shadow-emerald-600/35 ring-1 ring-white/15",
               ].join(" ")}
             >
@@ -1052,20 +1094,51 @@ export default function PublicCardapioPage() {
               <span className="relative flex h-2.5 w-2.5 shrink-0" aria-hidden>
                 {!pedidosBloqueados ? (
                   <span className="absolute inset-0 animate-ping rounded-full bg-white/50" />
+                ) : fechadoPorHorario ? (
+                  <span className="absolute inset-0 animate-ping rounded-full bg-amber-400/35" />
                 ) : (
-                  <span className="absolute inset-0 animate-ping rounded-full bg-white/40" />
+                  <span className="absolute inset-0 animate-ping rounded-full bg-white/35" />
                 )}
                 <span
                   className={[
-                    "relative inline-flex h-2.5 w-2.5 rounded-full ring-2 ring-white/90",
-                    pedidosBloqueados ? "bg-red-200" : "bg-emerald-100",
+                    "relative inline-flex h-2.5 w-2.5 rounded-full ring-2",
+                    pedidosBloqueados
+                      ? fechadoPorHorario
+                        ? "bg-amber-400 ring-amber-100"
+                        : "bg-amber-100 ring-white/90"
+                      : "bg-emerald-100 ring-white/90",
                   ].join(" ")}
                 />
               </span>
-              <p className="min-w-0 text-[13px] font-semibold leading-snug tracking-tight sm:text-sm">
-                <span className="text-white">{rotuloStatusPrincipal}</span>
-                <span className="mx-1.5 font-light text-white/70">·</span>
-                <span className="font-medium text-white/95">{badgeLinhaStatus}</span>
+              <p
+                className={[
+                  "min-w-0 text-[13px] font-semibold leading-snug tracking-tight sm:text-sm",
+                  pedidosBloqueados && fechadoPorHorario ? "text-amber-950" : "",
+                ].join(" ")}
+              >
+                <span
+                  className={
+                    pedidosBloqueados && fechadoPorHorario ? "text-amber-950" : "text-white"
+                  }
+                >
+                  {rotuloStatusPrincipal}
+                </span>
+                <span
+                  className={[
+                    "mx-1.5 font-light",
+                    pedidosBloqueados && fechadoPorHorario ? "text-amber-800/50" : "text-white/70",
+                  ].join(" ")}
+                >
+                  ·
+                </span>
+                <span
+                  className={[
+                    "font-medium",
+                    pedidosBloqueados && fechadoPorHorario ? "text-amber-900/95" : "text-white/95",
+                  ].join(" ")}
+                >
+                  {badgeLinhaStatus}
+                </span>
               </p>
             </div>
           </div>
@@ -1074,8 +1147,7 @@ export default function PublicCardapioPage() {
             {boasVindasTexto}
           </p>
 
-          {!pedidosBloqueados ? (
-            <div className="mx-auto mt-4 flex max-w-lg flex-wrap justify-center gap-2 sm:mt-5">
+          <div className="mx-auto mt-4 flex max-w-lg flex-wrap justify-center gap-2 sm:mt-5">
               {restaurante.retirada_balcao ? (
                 <span className="inline-flex rounded-full border border-zinc-200/90 bg-white/75 px-3 py-1 text-[11px] font-medium tabular-nums text-zinc-600 backdrop-blur-sm">
                   Retirada
@@ -1098,8 +1170,7 @@ export default function PublicCardapioPage() {
                   {formatBRL(restaurante.taxa_entrega)}
                 </span>
               ) : null}
-            </div>
-          ) : null}
+          </div>
 
           {horarioVitrine ? (
             <div className="mx-auto mt-5 max-w-md sm:mt-6">
@@ -1181,7 +1252,10 @@ export default function PublicCardapioPage() {
                 <ul className="grid grid-cols-1 gap-5 sm:grid-cols-2 sm:gap-6 xl:grid-cols-3 xl:gap-7">
                   {lista.map((prato) => (
                     <li key={prato.id}>
-                      <article className="group flex h-full flex-col overflow-hidden rounded-3xl border border-zinc-200/60 bg-white shadow-[0_2px_24px_-12px_rgba(0,0,0,0.08)] transition duration-300 hover:border-zinc-200 hover:shadow-[0_12px_40px_-16px_rgba(0,0,0,0.12)]">
+                      <article
+                        data-reveal-scroll
+                        className="reveal-scroll group flex h-full flex-col overflow-hidden rounded-3xl border border-zinc-200/60 bg-white shadow-[0_2px_24px_-12px_rgba(0,0,0,0.08)] transition duration-300 hover:border-zinc-200 hover:shadow-[0_12px_40px_-16px_rgba(0,0,0,0.12)]"
+                      >
                         <div className="relative aspect-[4/3] w-full overflow-hidden bg-zinc-50">
                           <PratoCoverImage src={prato.imagem} nome={prato.nome} />
                         </div>
@@ -1200,7 +1274,6 @@ export default function PublicCardapioPage() {
                           <div className="mt-auto flex items-center justify-end gap-1.5 pt-3">
                             {(() => {
                               const qty = cart.find((x) => x.prato.id === prato.id)?.quantidade ?? 0;
-                              const bloqueado = pedidosBloqueados;
                               return (
                                 <>
                                   <button
@@ -1230,25 +1303,9 @@ export default function PublicCardapioPage() {
                                   <button
                                     type="button"
                                     onClick={() => addToCart(prato)}
-                                    disabled={bloqueado}
-                                    title={
-                                      bloqueado
-                                        ? vitrineFechada
-                                          ? "Pedidos pelo cardápio estão pausados."
-                                          : "Fora do horário de pedidos pelo cardápio."
-                                        : undefined
-                                    }
-                                    aria-label={
-                                      bloqueado
-                                        ? "Adicionar indisponível — cardápio só para consulta"
-                                        : `Adicionar ${prato.nome} ao carrinho`
-                                    }
-                                    className={[
-                                      "flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-zinc-900 text-xl font-light leading-none text-white shadow-md transition-transform duration-150 active:scale-95",
-                                      bloqueado
-                                        ? "cursor-not-allowed opacity-35 shadow-none"
-                                        : "hover:bg-zinc-800 hover:shadow-lg",
-                                    ].join(" ")}
+                                    title={`Adicionar ${prato.nome} ao carrinho`}
+                                    aria-label={`Adicionar ${prato.nome} ao carrinho`}
+                                    className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-zinc-900 text-xl font-light leading-none text-white shadow-md transition-transform duration-150 hover:bg-zinc-800 hover:shadow-lg active:scale-95"
                                   >
                                     <span aria-hidden>+</span>
                                   </button>
@@ -1290,6 +1347,47 @@ export default function PublicCardapioPage() {
               {formatBRL(total)}
             </span>
           </button>
+        </div>
+      ) : null}
+
+      {modalCheckoutFechadoOpen ? (
+        <div className="fixed inset-0 z-[60] flex items-end justify-center p-4 pb-[max(1rem,env(safe-area-inset-bottom))] sm:items-center sm:p-6">
+          <button
+            type="button"
+            className="absolute inset-0 bg-zinc-950/40 backdrop-blur-[2px] transition-opacity"
+            aria-label="Fechar aviso"
+            onClick={() => setModalCheckoutFechadoOpen(false)}
+          />
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="modal-fechado-titulo"
+            className="relative w-full max-w-md rounded-[1.35rem] border border-zinc-200/90 bg-white p-6 shadow-[0_24px_64px_-20px_rgba(0,0,0,0.38)] sm:p-7"
+          >
+            <p
+              id="modal-fechado-titulo"
+              className="text-lg font-semibold tracking-tight text-zinc-900 sm:text-xl"
+            >
+              {fechadoManual ? "Pedidos em pausa" : "Quase lá!"}
+            </p>
+            <p className="mt-3 text-[15px] leading-relaxed text-zinc-600">
+              {fechadoManual
+                ? "No momento não estamos recebendo pelo cardápio, mas você pode deixar tudo separado no carrinho — quando voltarmos, é só finalizar por aqui."
+                : "Gostou do prato? No momento estamos fechados, mas você já pode deixar seu carrinho montado para quando abrirmos!"}
+            </p>
+            {proximaAberturaLinha ? (
+              <p className="mt-4 rounded-2xl border border-amber-100/90 bg-amber-50/80 px-4 py-3 text-sm font-medium text-amber-950/95">
+                {proximaAberturaLinha}
+              </p>
+            ) : null}
+            <button
+              type="button"
+              onClick={() => setModalCheckoutFechadoOpen(false)}
+              className="mt-6 w-full rounded-2xl bg-zinc-900 py-3.5 text-sm font-semibold text-white shadow-sm transition hover:bg-zinc-800 active:scale-[0.99]"
+            >
+              Entendi, continuar montando
+            </button>
+          </div>
         </div>
       ) : null}
 

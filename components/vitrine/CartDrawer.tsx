@@ -536,23 +536,19 @@ export default function CartDrawer(props: CartDrawerProps) {
                 </p>
               ) : null}
               {pedidosBloqueados ? (
-                <button
-                  type="button"
-                  disabled
-                  className="flex w-full cursor-not-allowed items-center justify-center rounded-2xl border border-zinc-200 bg-zinc-100 py-3.5 text-sm font-semibold text-zinc-400"
-                >
-                  Pedidos via WhatsApp desativados
-                </button>
-              ) : (
-                <button
-                  type="button"
-                  disabled={checkoutSubmitting}
-                  onClick={() => void onEnviarPedido()}
-                  className="flex w-full items-center justify-center rounded-2xl bg-[#25D366] py-3.5 text-sm font-semibold text-white shadow-[0_12px_32px_-12px_rgba(37,211,102,0.55)] transition hover:bg-[#1ebe5a] enabled:active:scale-[0.99] disabled:cursor-wait disabled:opacity-80"
-                >
-                  {checkoutSubmitting ? "Registrando pedido…" : "Enviar Pedido via WhatsApp"}
-                </button>
-              )}
+                <p className="rounded-xl border border-amber-100/90 bg-amber-50/90 px-3 py-2.5 text-center text-[11.5px] font-medium leading-snug text-amber-950/90">
+                  Monte seu pedido com calma — quando abrirmos, finalize aqui com um toque. Seu carrinho fica salvo neste
+                  aparelho.
+                </p>
+              ) : null}
+              <button
+                type="button"
+                disabled={checkoutSubmitting}
+                onClick={() => void onEnviarPedido()}
+                className="flex w-full items-center justify-center rounded-2xl bg-[#25D366] py-3.5 text-sm font-semibold text-white shadow-[0_12px_32px_-12px_rgba(37,211,102,0.55)] transition hover:bg-[#1ebe5a] enabled:active:scale-[0.99] disabled:cursor-wait disabled:opacity-80"
+              >
+                {checkoutSubmitting ? "Registrando pedido…" : "Enviar Pedido via WhatsApp"}
+              </button>
             </>
           ) : null}
         </div>
