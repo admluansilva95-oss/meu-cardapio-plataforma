@@ -26,7 +26,7 @@ type AssinaturaBillingRow = {
 
 function isStripeMissingCustomerError(error: unknown): boolean {
   if (!error || typeof error !== "object") return false;
-  const stripeError = error as Stripe.errors.StripeError;
+  const stripeError = error as { code?: string; message?: string };
   return (
     stripeError.code === "resource_missing" &&
     typeof stripeError.message === "string" &&
