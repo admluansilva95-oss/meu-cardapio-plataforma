@@ -153,6 +153,8 @@ export async function createSubscriptionCheckoutSession(
       {
         mode: "subscription",
         locale: "pt-BR",
+        // Omite payment_method_types → Stripe usa os métodos ativos no Dashboard
+        // (cartão, Apple Pay, Google Pay, etc.). Ver Settings → Payment methods.
         customer_email: input.userEmail,
         line_items: [{ price: input.priceId, quantity: 1 }],
         success_url: success.href,

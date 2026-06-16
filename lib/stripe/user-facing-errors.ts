@@ -56,6 +56,14 @@ export function mapStripeErrorForUser(
     );
   }
 
+  if (lower.includes("no valid payment method types") || lower.includes("payment_method_types")) {
+    return (
+      "Nenhum método de pagamento ativo no Stripe para assinaturas em BRL. " +
+      "No Dashboard (modo Live), abra Settings → Payment methods e ative **Cartões**. " +
+      "Confirme também que o preço do plano está em BRL (R$)."
+    );
+  }
+
   if (context === "portal" && lower.includes("billing portal")) {
     return (
       "Portal de cobrança não configurado no Stripe. Ative em Dashboard → Settings → Billing → Customer portal."
