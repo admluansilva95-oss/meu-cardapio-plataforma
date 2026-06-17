@@ -513,12 +513,18 @@ export default function CartDrawer(props: CartDrawerProps) {
                           {restaurante.retirada_preparo_estimado.trim()}
                         </p>
                       ) : null}
-                      <p className="text-[12px] leading-relaxed text-emerald-900/85">
-                        <span className="font-semibold">Retirada no balcão</span> — sem taxa de entrega. Ao finalizar,
-                        abrimos o WhatsApp do restaurante com o resumo do seu pedido: é por lá que eles confirmam o
-                        preparo e qualquer detalhe (horário de retirada, pagamento no local etc.). Você só precisa ir
-                        buscar quando combinarem.
-                      </p>
+                      <div className="space-y-2 text-[12px] leading-relaxed text-emerald-900/90">
+                        <p>
+                          <span className="font-semibold">Como funciona:</span> ao tocar em enviar, abrimos o
+                          WhatsApp do restaurante com o resumo do seu pedido. Eles confirmam o preparo e combinam o
+                          horário para você buscar.
+                        </p>
+                        <p>
+                          <span className="font-semibold">Dicas:</span> sem taxa de entrega; leve o celular com este
+                          pedido ou anote o valor total; se pagar no local, confira a forma de pagamento escolhida
+                          abaixo.
+                        </p>
+                      </div>
                     </div>
                   )}
                 </section>

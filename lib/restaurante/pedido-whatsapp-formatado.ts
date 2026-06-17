@@ -20,9 +20,9 @@ function labelFormaPagamento(f: FormaPagamentoPedidoCliente): string {
     case "pix":
       return "Pix";
     case "cartao_debito":
-      return "Cartão de Débito";
+      return "Cartão de débito";
     case "cartao_credito":
-      return "Cartão de Crédito";
+      return "Cartão de crédito";
     default:
       return "Pix";
   }
@@ -44,114 +44,155 @@ export interface PedidoWhatsAppFormatadoInput {
   subtotalItens: number;
   taxaEntrega: number;
   totalGeral: number;
+  /** Opcional — enriquece a mensagem de retirada enviada ao restaurante. */
+  restauranteNome?: string;
+  retiradaEndereco?: string | null;
+  retiradaPreparoEstimado?: string | null;
 }
 
-function linhasItensComMarcador(
-  itens: CarrinhoItem[],
-  marcador: "bullet" | "ascii",
-): string[] {
-  const prefix = "- "; /* sempre ASCII: U+2022 bullet quebra ByteString no Chrome em alguns fluxos */
+function linhasItens(itens: CarrinhoItem[], obsEmItalico: boolean): string[] {
+  const prefix = "- ";
   const linhas: string[] = [];
   for (const { prato, quantidade, observacoes } of itens) {
     const unit = formatBRL(prato.preco);
     linhas.push(`${prefix}${quantidade}x ${prato.nome} (${unit} cada)`);
     const obs = observacoes?.trim();
     if (obs && !categoriaOcultaObservacoesCliente(prato.categoria)) {
-      linhas.push(marcador === "bullet" ? `  _Obs: ${obs}_` : `  Obs: ${obs}`);
+      linhas.push(obsEmItalico ? `  _Obs.: ${obs}_` : `  Obs.: ${obs}`);
     }
   }
   return linhas;
 }
 
+function blocoValoresCliente(p: PedidoWhatsAppFormatadoInput): string[] {
+  if (p.tipoEntrega === "retirada") {
+    return [`- *Total do pedido: ${formatBRL(p.totalGeral)}*`];
+  }
+  const linhas = [`- Subtotal dos itens: ${formatBRL(p.subtotalItens)}`];
+  if (p.taxaEntrega > 0) {
+    linhas.push(`- Taxa de entrega: ${formatBRL(p.taxaEntrega)}`);
+  }
+  linhas.push(`- *Total do pedido: ${formatBRL(p.totalGeral)}*`);
+  return linhas;
+}
+
 /**
- * Resumo do pedido para **persistência / fetch** (painel, API).
- * Sem bullet U+2022, sem emojis: só Latin-1 seguro para corpo JSON e stacks ByteString.
+ * Resumo do pedido para **persistência / API / painel admin** (não vai ao WhatsApp do cliente).
+ * O prefixo interno de retirada é acrescentado em `app/api/pedidos/vitrine/route.ts`.
  */
 export function montarTextoPedidoResumoParaApi(p: PedidoWhatsAppFormatadoInput): string {
   const tipoLabel =
-    p.tipoEntrega === "retirada" ? "Retirada no Balcão" : "Entrega";
+    p.tipoEntrega === "retirada" ? "Retirada no balcão" : "Entrega";
 
   const partes: string[] = [
-    "NOVO PEDIDO (resumo para o painel)",
-  ];
-  if (p.tipoEntrega === "retirada") {
-    partes.push(
-      "*** RETIRADA NO BALCAO — NAO ENVIAR PARA ENTREGA (CLIENTE RETIRA NO LOCAL) ***",
-      "",
-    );
-  }
-  partes.push(
+    "NOVO PEDIDO",
     "--------------------------------",
-    "CLIENTE:",
+    "CLIENTE",
     `- Nome: ${p.nomeCliente.trim()}`,
     `- Telefone: ${p.telefoneCliente.trim()}`,
     "",
-    "ENTREGA / RETIRADA:",
+    "ENTREGA / RETIRADA",
     `- Tipo: ${tipoLabel}`,
-    `- Endereco: ${p.enderecoLinha}`,
+    `- Endereço: ${p.enderecoLinha}`,
     `- Bairro: ${p.bairroLinha}`,
-    `- Ref/Comp: ${p.refCompLinha}`,
+    `- Referência / complemento: ${p.refCompLinha}`,
     "",
-    "ITENS:",
-    ...linhasItensComMarcador(p.itens, "ascii"),
+    "ITENS",
+    ...linhasItens(p.itens, false),
     "",
-    "PAGAMENTO:",
+    "PAGAMENTO",
     `- Forma: ${labelFormaPagamento(p.formaPagamento)}`,
     `- Troco para: ${p.trocoParaTexto}`,
-    `- Valor do Troco: ${formatBRL(Math.max(0, p.valorTrocoReais))}`,
+    `- Valor do troco: ${formatBRL(Math.max(0, p.valorTrocoReais))}`,
     "",
     "--------------------------------",
-    "VALORES:",
-    `- Subtotal Itens: ${formatBRL(p.subtotalItens)}`,
-    `- Taxa de Entrega: ${formatBRL(Math.max(0, p.taxaEntrega))}`,
+    "VALORES",
+    `- Subtotal dos itens: ${formatBRL(p.subtotalItens)}`,
+    `- Taxa de entrega: ${formatBRL(Math.max(0, p.taxaEntrega))}`,
     `- TOTAL GERAL: ${formatBRL(p.totalGeral)}`,
     "--------------------------------",
-  );
+  ];
 
   return expandLatin1UserText(partes.join("\n"));
 }
 
 /**
- * Texto formatado para **abrir no WhatsApp** (`wa.me` / `window.open`).
- * Só caracteres Latin-1 (sem bullet U+2022, sem emojis) para evitar `ByteString` no Chrome.
+ * Mensagem que o **cliente** envia ao restaurante pelo WhatsApp.
+ * Linguagem em primeira pessoa, sem instruções internas do painel/esteira.
  */
 export function montarTextoPedidoWhatsAppFormatado(p: PedidoWhatsAppFormatadoInput): string {
-  const tipoLabel =
-    p.tipoEntrega === "retirada" ? "Retirada no Balcão" : "Entrega";
+  const nomeRest = p.restauranteNome?.trim();
+  const saudacao = nomeRest
+    ? `Olá! Gostaria de fazer um pedido no *${nomeRest}*.`
+    : "Olá! Gostaria de fazer um pedido.";
+
+  if (p.tipoEntrega === "retirada") {
+    const endRetirada = p.retiradaEndereco?.trim();
+    const prepRetirada = p.retiradaPreparoEstimado?.trim();
+
+    const partes: string[] = [
+      saudacao,
+      "",
+      "Modalidade: *retirada no balcão* (vou buscar no estabelecimento).",
+      "",
+      "*Meus dados*",
+      `- Nome: ${p.nomeCliente.trim()}`,
+      `- Telefone: ${p.telefoneCliente.trim()}`,
+      "",
+      "*Itens do pedido*",
+      ...linhasItens(p.itens, true),
+      "",
+      "*Pagamento*",
+      `- Forma: ${labelFormaPagamento(p.formaPagamento)}`,
+      `- Troco para: ${p.trocoParaTexto}`,
+      p.formaPagamento === "dinheiro" && p.valorTrocoReais > 0
+        ? `- Troco necessário: ${formatBRL(p.valorTrocoReais)}`
+        : "",
+      "",
+      "*Valores*",
+      ...blocoValoresCliente(p),
+      "",
+      "*Retirada no balcão*",
+      endRetirada
+        ? `- Endereço para retirada: ${endRetirada}`
+        : "- Endereço para retirada: confirmo o local por este chat.",
+      prepRetirada ? `- Preparo estimado (informado pelo restaurante): ${prepRetirada}` : "",
+      "",
+      "Aguardo a confirmação do pedido e o horário em que ficará pronto para eu retirar. Obrigado!",
+    ].filter((linha) => linha !== "");
+
+    return expandLatin1UserText(partes.join("\n"));
+  }
 
   const partes: string[] = [
-    "*NOVO PEDIDO RECEBIDO!*",
-  ];
-  if (p.tipoEntrega === "retirada") {
-    partes.push("*RETIRADA NO BALCAO* — cliente retira no local (sem entrega).", "");
-  }
-  partes.push(
-    "--------------------------------",
-    "*CLIENTE:*",
+    saudacao,
+    "",
+    "Modalidade: *entrega* no endereço abaixo.",
+    "",
+    "*Meus dados*",
     `- Nome: ${p.nomeCliente.trim()}`,
     `- Telefone: ${p.telefoneCliente.trim()}`,
     "",
-    "*ENTREGA / RETIRADA:*",
-    `- Tipo: ${tipoLabel}`,
-    `- Endereco: ${p.enderecoLinha}`,
+    "*Endereço de entrega*",
+    `- Endereço: ${p.enderecoLinha}`,
     `- Bairro: ${p.bairroLinha}`,
-    `- Ref/Comp: ${p.refCompLinha}`,
+    `- Referência / complemento: ${p.refCompLinha}`,
     "",
-    "*ITENS:*",
-    ...linhasItensComMarcador(p.itens, "ascii"),
+    "*Itens do pedido*",
+    ...linhasItens(p.itens, true),
     "",
-    "*PAGAMENTO:*",
+    "*Pagamento*",
     `- Forma: ${labelFormaPagamento(p.formaPagamento)}`,
     `- Troco para: ${p.trocoParaTexto}`,
-    `- Valor do Troco: ${formatBRL(Math.max(0, p.valorTrocoReais))}`,
+    p.formaPagamento === "dinheiro" && p.valorTrocoReais > 0
+      ? `- Troco necessário: ${formatBRL(p.valorTrocoReais)}`
+      : "",
     "",
-    "--------------------------------",
-    "*VALORES:*",
-    `- Subtotal Itens: ${formatBRL(p.subtotalItens)}`,
-    `- Taxa de Entrega: ${formatBRL(Math.max(0, p.taxaEntrega))}`,
-    `- *TOTAL GERAL: ${formatBRL(p.totalGeral)}*`,
-    "--------------------------------",
-  );
+    "*Valores*",
+    ...blocoValoresCliente(p),
+    "",
+    "Aguardo a confirmação do pedido. Obrigado!",
+  ].filter((linha) => linha !== "");
 
   return expandLatin1UserText(partes.join("\n"));
 }

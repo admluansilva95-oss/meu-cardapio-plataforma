@@ -825,6 +825,9 @@ export default function PublicCardapioPage() {
         subtotalItens: subtotal,
         taxaEntrega: taxaAplicada,
         totalGeral,
+        restauranteNome: restaurante.nome,
+        retiradaEndereco: restaurante.retirada_endereco_balcao ?? null,
+        retiradaPreparoEstimado: restaurante.retirada_preparo_estimado ?? null,
       } as const;
 
       /** Só Latin-1: nunca enviar o modelo com bullet U+2022 no JSON da API. */

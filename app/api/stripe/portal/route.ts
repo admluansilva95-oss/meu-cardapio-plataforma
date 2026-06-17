@@ -17,6 +17,7 @@ import { getPublicAppUrl } from "@/lib/site-url";
 import { requireAdminSupabaseClient } from "@/lib/supabase/admin";
 import { serverLatin1SafeFetch } from "@/lib/http/server-latin1-fetch";
 import { getPublicSupabaseProjectUrl } from "@/lib/supabase/normalize-public-supabase-url";
+import { resolveStripeBillingPortalConfigurationId } from "@/lib/billing/stripe-portal-config";
 import {
   mapStripeErrorForUser,
   stripeKeyModeLabel,
@@ -297,10 +298,34 @@ export async function POST(request: NextRequest) {
 
     await syncAssinaturaFromStripe(admin, user.id, resolved);
 
-    const session = await stripe.billingPortal.sessions.create({
+    const returnUrl = `${getPublicAppUrl()}/admin`;
+    const configurationId = await resolveStripeBillingPortalConfigurationId(stripe);
+
+    const sessionParams: Stripe.BillingPortal.SessionCreateParams = {
       customer: resolved.customerId,
-      return_url: `${getPublicAppUrl()}/admin`,
-    });
+      return_url: returnUrl,
+      locale: "pt-BR",
+    };
+
+    if (configurationId) {
+      sessionParams.configuration = configurationId;
+    }
+
+    const subscriptionId = resolved.subscription?.id;
+    if (subscriptionId && configurationId) {
+      sessionParams.flow_data = {
+        type: "subscription_update",
+        subscription_update: {
+          subscription: subscriptionId,
+        },
+        after_completion: {
+          type: "redirect",
+          redirect: { return_url: returnUrl },
+        },
+      };
+    }
+
+    const session = await stripe.billingPortal.sessions.create(sessionParams);
 
     if (!session.url) {
       return NextResponse.json(

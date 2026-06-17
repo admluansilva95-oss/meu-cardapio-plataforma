@@ -62,7 +62,7 @@ export function BotaoGerenciarPlano() {
       disabled={loading}
       className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white font-medium rounded-md transition disabled:opacity-50"
     >
-      {loading ? 'Carregando...' : 'Gerenciar Plano / Upgrade'}
+      {loading ? 'Carregando...' : 'Trocar plano / Gerenciar assinatura'}
     </button>
   );
 }

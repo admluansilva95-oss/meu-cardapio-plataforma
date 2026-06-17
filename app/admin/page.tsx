@@ -3077,7 +3077,7 @@ function AdminPageInner() {
               <div className="rounded-3xl border border-zinc-100 bg-white px-5 py-6 shadow-sm sm:px-7 sm:py-8 mb-6">
                 <h2 className="text-lg font-semibold tracking-tight text-zinc-900">Plano e assinatura</h2>
                 <p className="mt-2 text-sm text-[#6e6e73]">
-                  Faça upgrade ou altere seu plano. O Stripe calcula automaticamente o crédito dos dias já pagos de forma proporcional.
+                  Troque entre Essencial e Premium, atualize o cartão ou cancele. O Stripe calcula automaticamente o crédito proporcional dos dias já pagos.
                 </p>
                 <div className="mt-4">
                   <BotaoGerenciarPlano />

@@ -99,8 +99,7 @@ function warnCamposPrecoIgnorados(
 
 const PREFIXO_OBS_BALCAO =
   "=== RETIRADA NO BALCAO ===\n" +
-  "NAO enviar para entrega: cliente retira no estabelecimento.\n" +
-  "Acompanhe na esteira ate disponibilizar para retirada no balcao.\n\n";
+  "Interno (painel): nao despachar entrega — cliente retira no estabelecimento.\n\n";
 
 function isSchemaOrUnknownColumnError(
   err: {

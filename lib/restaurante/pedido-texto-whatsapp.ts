@@ -48,8 +48,9 @@ export function buildPedidoTextoWhatsApp(
   const total = subtotal + taxaAplicada;
 
   const blocos: string[] = [
-    `Olá! Gostaria de fazer um pedido no *${restaurante.nome}*`,
+    `Olá! Gostaria de fazer um pedido no *${restaurante.nome}*.`,
     "",
+    "*Itens do pedido*",
     ...linhasItens,
     "",
   ];
@@ -63,6 +64,8 @@ export function buildPedidoTextoWhatsApp(
     if (prep) {
       blocos.push(`*Preparo estimado:* ${prep}`, "");
     }
+  } else if (tipoEntrega === "entrega") {
+    blocos.push("*Entrega no endereço informado no chat*", "");
   }
   if (linhaExtra) blocos.push(linhaExtra, "");
   if (taxaAplicada > 0) {
@@ -70,6 +73,6 @@ export function buildPedidoTextoWhatsApp(
     blocos.push(`*Taxa de entrega:* ${formatBRL(taxaAplicada)}`);
     blocos.push("");
   }
-  blocos.push(`*Total:* ${formatBRL(total)}`);
+  blocos.push(`*Total do pedido:* ${formatBRL(total)}`);
   return expandLatin1UserText(blocos.join("\n"));
 }
