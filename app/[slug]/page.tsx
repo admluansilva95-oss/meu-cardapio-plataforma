@@ -38,6 +38,7 @@ import {
 } from "@/lib/restaurante/cardapio-public-load";
 import { registrarPedidoVitrineNaApi } from "@/lib/restaurante/registrar-pedido-vitrine-client";
 import { buildWhatsappSendHref } from "@/lib/restaurante/whatsapp-href";
+import { resolveImagemPratoPublicUrl } from "@/lib/restaurante/imagem-prato-public-url";
 import { navigatePreparedTabOrOpen, prepareNewTabForLaterNavigation } from "@/lib/restaurante/open-url-nova-guia";
 import { isRetryableSupabaseError, withRetry } from "@/lib/with-retry";
 import { devClientError } from "@/lib/logging/dev-client-log";
@@ -173,7 +174,7 @@ function mapPratoRow(row: PratoRow): Prato | null {
     nome: row.nome,
     preco: toNumber(row.preco),
     descricao: row.descricao,
-    imagem: row.imagem ?? null,
+    imagem: resolveImagemPratoPublicUrl(row.imagem),
     categoria: row.categoria?.trim() || null,
     status: "ativo",
   };
@@ -181,7 +182,13 @@ function mapPratoRow(row: PratoRow): Prato | null {
 
 function PratoCoverImage(props: { src: string | null; nome: string }) {
   const [failed, setFailed] = useState(false);
-  if (!props.src || failed) {
+  const src = resolveImagemPratoPublicUrl(props.src);
+
+  useEffect(() => {
+    setFailed(false);
+  }, [src]);
+
+  if (!src || failed) {
     return (
       <div className="flex h-full min-h-[10.5rem] w-full flex-col items-center justify-center bg-gradient-to-b from-zinc-100 via-zinc-50 to-zinc-100">
         <UtensilsCrossed className="h-10 w-10 text-zinc-300/95" strokeWidth={1.15} aria-hidden />
@@ -192,7 +199,7 @@ function PratoCoverImage(props: { src: string | null; nome: string }) {
   return (
     // eslint-disable-next-line @next/next/no-img-element
     <img
-      src={props.src}
+      src={src}
       alt=""
       width={640}
       height={480}

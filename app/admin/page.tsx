@@ -77,9 +77,15 @@ import {
 } from "lucide-react";
 import { FuncionamentoSemanalForm } from "@/components/admin/FuncionamentoSemanalForm";
 import { RestauranteLogoUploadField } from "@/components/admin/RestauranteLogoUploadField";
-import { IosToggle } from "@/components/ui/IosToggle";
-import { BotaoGerenciarPlano } from "@/components/BotaoGerenciarPlano";
+import { mensagemWhatsappPedidoProntoEntrega } from "@/lib/restaurante/whatsapp-kanban-messages";
+import {
+  BUCKET_IMAGENS_PRATOS,
+  imagemUrlSeguraParaColuna,
+  resolveImagemPratoPublicUrl,
+} from "@/lib/restaurante/imagem-prato-public-url";
 import { AdminConfigurarEnderecoPublico } from "@/components/admin/AdminConfigurarEnderecoPublico";
+import { BotaoGerenciarPlano } from "@/components/BotaoGerenciarPlano";
+import { IosToggle } from "@/components/ui/IosToggle";
 
 function formatSlugToDisplayName(slug: string): string {
   const s = slug.trim();
@@ -188,7 +194,6 @@ function mapPedidoRow(row: {
 }
 
 /** Deve ser idêntico ao bucket criado no Supabase (Storage) e às policies em `storage.objects`. */
-const BUCKET_IMAGENS_PRATOS = "imagens-pratos" as const;
 const BUCKET_RESTAURANT_LOGOS = "restaurant-logos";
 
 const UPLOAD_STORAGE_MAX_BYTES = Math.floor(4.5 * 1024 * 1024);
@@ -202,14 +207,6 @@ function sanitizarSegmentoPathStorage(id: string, contexto: string): string {
   return s;
 }
 
-/** Evita gravar string literal "undefined"/"null" ou vazia na coluna `imagem`. */
-function imagemUrlSeguraParaColuna(url: string | null | undefined): string | null {
-  if (url == null) return null;
-  const t = String(url).trim();
-  if (!t || t === "undefined" || t === "null") return null;
-  return t;
-}
-
 function extensaoImagemSegura(file: File): string {
   const mime = file.type.toLowerCase();
   if (mime === "image/jpeg" || mime === "image/jpg") return "jpg";
@@ -221,6 +218,26 @@ function extensaoImagemSegura(file: File): string {
     return fromName === "jpeg" ? "jpg" : fromName;
   }
   return "jpg";
+}
+
+const MIME_IMAGEM_PRATO_PERMITIDOS = new Set([
+  "image/jpeg",
+  "image/jpg",
+  "image/png",
+  "image/webp",
+  "image/gif",
+]);
+
+function validarArquivoImagemPrato(file: File): string | null {
+  const mime = file.type.toLowerCase();
+  const ext = extensaoImagemSegura(file);
+  if (mime === "image/heic" || mime === "image/heif" || ext === "heic" || ext === "heif") {
+    return "Fotos HEIC/HEIF (iPhone) não são aceitas aqui. Converta para JPG ou PNG e tente de novo.";
+  }
+  if (mime && !MIME_IMAGEM_PRATO_PERMITIDOS.has(mime)) {
+    return "Use uma imagem JPG, PNG, WebP ou GIF (até ~4,5 MB).";
+  }
+  return null;
 }
 
 /** MIME só por extensão — evita `file.type` com caracteres fora de Latin-1 (ByteString no fetch). */
@@ -281,6 +298,10 @@ async function enviarImagemAoBucketImagensPratos(
     devClientError("Erro no Upload do Storage:", err);
     throw err;
   }
+  const invalido = validarArquivoImagemPrato(file);
+  if (invalido) {
+    throw new Error(invalido);
+  }
   const fileToSend = await fileComNomeAsciiParaUpload(file, "prato");
   const ext = extensaoImagemSegura(fileToSend);
   const pasta = sanitizarSegmentoPathStorage(restauranteId, "Upload de foto do prato");
@@ -310,7 +331,7 @@ async function enviarImagemAoBucketImagensPratos(
     throw err;
   }
   painelLog("upload.prato.ok", { restauranteId, objectPathSuffix: objectPath.slice(-24) });
-  return publicUrl;
+  return resolveImagemPratoPublicUrl(publicUrl) ?? publicUrl;
 }
 
 function caminhoStorageLogoRestaurante(publicUrl: string): string | null {
@@ -384,7 +405,7 @@ function mapPratoRow(row: {
     nome: row.nome,
     preco: toNumber(row.preco),
     descricao: row.descricao,
-    imagem: row.imagem ?? null,
+    imagem: resolveImagemPratoPublicUrl(row.imagem),
     categoria: row.categoria?.trim() || null,
     status: row.status,
   };
@@ -516,8 +537,7 @@ function mensagemParaColuna(p: Pedido, destino: KanbanCol): string {
     if (isPedidoRetiradaBalcao(p)) {
       return `Olá ${p.cliente}, seu pedido está pronto para retirada no balcão. Aguardamos você no estabelecimento. Obrigado pela preferência!`;
     }
-    const m = p.motoboy?.trim() || "nossa equipe";
-    return `Olá ${p.cliente}, seu pedido está pronto e já saiu para entrega com o motoboy ${m}. Obrigado pela preferência!`;
+    return mensagemWhatsappPedidoProntoEntrega(p.cliente, p.motoboy);
   }
   if (destino === "entregue") {
     const ref = formatPedidoId(p.id);
@@ -1201,9 +1221,21 @@ function ModalPrato(props: {
               id="prato-imagem-arquivo"
               key={`${mode}-${initial?.id ?? "novo"}`}
               type="file"
-              accept="image/*"
+              accept="image/jpeg,image/png,image/webp,image/gif"
               onChange={(e) => {
                 const f = e.target.files?.[0] ?? null;
+                if (!f) {
+                  setArquivoImagem(null);
+                  return;
+                }
+                const invalido = validarArquivoImagemPrato(f);
+                if (invalido) {
+                  setFormError(invalido);
+                  e.target.value = "";
+                  setArquivoImagem(null);
+                  return;
+                }
+                setFormError(null);
                 setArquivoImagem(f);
               }}
               className="block w-full text-xs text-zinc-500 file:mr-3 file:rounded-xl file:border-0 file:bg-zinc-100 file:px-3 file:py-2 file:text-xs file:font-semibold file:text-zinc-900 hover:file:bg-zinc-200"
@@ -2418,7 +2450,7 @@ function AdminPageInner() {
 
     try {
       if (payload.id) {
-        const { error } = await supabase
+        const { data: updatedRow, error } = await supabase
           .from("pratos")
           .update({
             nome: nomeDb,
@@ -2429,7 +2461,9 @@ function AdminPageInner() {
             imagem: imagemParaDb,
           })
           .eq("id", payload.id)
-          .eq("restaurante_id", payload.restaurante_id);
+          .eq("restaurante_id", payload.restaurante_id)
+          .select("id, restaurante_id, nome, preco, descricao, imagem, status, categoria")
+          .single();
 
         if (error) {
           devClientError("[pratos DB] Falha no UPDATE:", {
@@ -2440,6 +2474,13 @@ function AdminPageInner() {
             raw: error,
           });
           const msg = mensagemErroSupabasePainel(error);
+          setFetchError(msg);
+          setAdminToast(msg);
+          throw new Error(msg);
+        }
+        if (payload.arquivoImagem && !updatedRow?.imagem?.trim()) {
+          const msg =
+            "A foto foi enviada, mas não ficou salva no cardápio. Confira no Supabase se a coluna `imagem` existe na tabela `pratos` e se o bucket `imagens-pratos` está público.";
           setFetchError(msg);
           setAdminToast(msg);
           throw new Error(msg);
@@ -2460,21 +2501,30 @@ function AdminPageInner() {
             }
           }
         }
-        setPratos((lista) =>
-          lista.map((p) =>
-            p.id === payload.id
-              ? {
-                  ...p,
-                  nome: nomeDb,
-                  preco: precoDb,
-                  descricao: descricaoDb,
-                  categoria: categoriaDb,
-                  status: payload.status,
-                  imagem: imagemParaDb,
-                }
-              : p,
-          ),
-        );
+        const mappedUpdated = updatedRow
+          ? mapPratoRow(updatedRow as Parameters<typeof mapPratoRow>[0])
+          : null;
+        if (mappedUpdated) {
+          setPratos((lista) =>
+            lista.map((p) => (p.id === mappedUpdated.id ? mappedUpdated : p)),
+          );
+        } else {
+          setPratos((lista) =>
+            lista.map((p) =>
+              p.id === payload.id
+                ? {
+                    ...p,
+                    nome: nomeDb,
+                    preco: precoDb,
+                    descricao: descricaoDb,
+                    categoria: categoriaDb,
+                    status: payload.status,
+                    imagem: resolveImagemPratoPublicUrl(imagemParaDb),
+                  }
+                : p,
+            ),
+          );
+        }
       } else {
         const { data, error } = await supabase
           .from("pratos")
@@ -2506,6 +2556,13 @@ function AdminPageInner() {
         if (data == null) {
           const msg =
             "O servidor não devolveu os dados do prato após criar (resposta vazia). Atualize a página ou confira as políticas RLS da tabela `pratos` no Supabase.";
+          setFetchError(msg);
+          setAdminToast(msg);
+          throw new Error(msg);
+        }
+        if (payload.arquivoImagem && !data?.imagem?.trim()) {
+          const msg =
+            "A foto foi enviada, mas não ficou salva no cardápio. Confira no Supabase se a coluna `imagem` existe na tabela `pratos` e se o bucket `imagens-pratos` está público.";
           setFetchError(msg);
           setAdminToast(msg);
           throw new Error(msg);

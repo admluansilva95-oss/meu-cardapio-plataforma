@@ -12,6 +12,7 @@ import {
 } from "@/lib/supabase/query-timeouts";
 import { runApiWithAccessLog } from "@/lib/http/run-api-with-access-log";
 import { getPublicSupabaseProjectUrl } from "@/lib/supabase/normalize-public-supabase-url";
+import { resolveImagemPratoPublicUrl } from "@/lib/restaurante/imagem-prato-public-url";
 
 export const dynamic = "force-dynamic";
 
@@ -169,7 +170,13 @@ export async function GET(request: NextRequest) {
         requestId,
         {
           restaurante,
-          pratos: pratos ?? [],
+          pratos: (pratos ?? []).map((row) => {
+            const r = row as { imagem?: string | null };
+            return {
+              ...r,
+              imagem: resolveImagemPratoPublicUrl(r.imagem),
+            };
+          }),
         },
         200,
       );
