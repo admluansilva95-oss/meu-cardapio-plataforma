@@ -7,16 +7,38 @@ export type AdminOperacionalPainelLateralProps = {
   kpis: PedidoKpis;
   rankingLinhas: readonly PratoRankingLinha[];
   className?: string;
+  /** `sidebar`: coluna estreita ao lado da esteira. `page`: aba dedicada em largura total. */
+  layout?: "sidebar" | "page";
 };
 
 /**
- * Coluna direita (≈30%): resumo financeiro + ranking — usada em Pedidos e Pratos.
+ * Resumo financeiro + ranking — coluna lateral (Pedidos/Pratos legado) ou aba própria.
  */
 export function AdminOperacionalPainelLateral({
   kpis,
   rankingLinhas,
   className = "",
+  layout = "sidebar",
 }: AdminOperacionalPainelLateralProps) {
+  if (layout === "page") {
+    return (
+      <div className={`mx-auto max-w-6xl space-y-6 ${className}`.trim()}>
+        <div className="rounded-3xl border border-zinc-100/80 bg-white px-5 py-6 shadow-[0_8px_30px_-16px_rgba(0,0,0,0.08)] sm:px-7 sm:py-8">
+          <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-zinc-500">
+            Resumo financeiro
+          </p>
+          <p className="mt-1 max-w-2xl text-sm leading-relaxed text-zinc-500">
+            Faturamento, volume e ticket médio com base nos pedidos carregados nesta sessão do painel.
+          </p>
+          <div className="mt-5">
+            <PedidosKpiBar variant="wide" kpis={kpis} className="mb-0" />
+          </div>
+        </div>
+        <PedidosPratosRanking linhas={rankingLinhas} />
+      </div>
+    );
+  }
+
   return (
     <aside
       className={[

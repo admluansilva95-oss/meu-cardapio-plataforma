@@ -68,6 +68,7 @@ import { EntregaComercialSection, taxaFixaInicialDeRestaurante, taxaFixaParaPers
 import { CategoriaPratoField } from "@/components/admin/CategoriaPratoField";
 import {
   Building2,
+  BarChart3,
   ClipboardList,
   ListOrdered,
   Package,
@@ -103,7 +104,7 @@ function resolveRestauranteDisplayNome(nome: string | null | undefined, slug: st
   return formatSlugToDisplayName(slug);
 }
 
-type AdminTab = "pedidos" | "cardapio" | "pratos" | "configuracoes";
+type AdminTab = "pedidos" | "resumo" | "cardapio" | "pratos" | "configuracoes";
 type ConfigPainelSecao = "geral" | "retirada";
 type KanbanCol = "recebidos" | "cozinha" | "pronto" | "entregue";
 type FormaPagamento = "Pix" | "Cartão" | "Dinheiro";
@@ -673,9 +674,15 @@ function AdminSidebar(props: {
   onTab: (t: AdminTab) => void;
 }) {
   const { restaurante, tab, onTab } = props;
-  /** Ordem: pedidos → cardápio → pratos → painel de configuração. */
+  /** Ordem: pedidos → resumo → cardápio → pratos → configuração. */
   const items: { id: AdminTab; label: string; hint: string; Icon: LucideIcon }[] = [
     { id: "pedidos", label: "Pedidos", hint: "Esteira ao vivo", Icon: ClipboardList },
+    {
+      id: "resumo",
+      label: "Resumo financeiro",
+      hint: "Faturamento e ranking",
+      Icon: BarChart3,
+    },
     {
       id: "cardapio",
       label: "Cardápio",
@@ -2728,6 +2735,8 @@ function AdminPageInner() {
                 <h1 className="text-xl font-semibold tracking-tight text-[#1d1d1f]">
                   {tab === "pedidos"
                     ? "Painel de operações"
+                    : tab === "resumo"
+                      ? "Resumo financeiro"
                     : tab === "cardapio"
                       ? "Cardápio na vitrine"
                       : tab === "pratos"
@@ -2763,11 +2772,19 @@ function AdminPageInner() {
                     <span className="text-[#aeaeb2]">·</span>{" "}
                     <span className="font-medium text-[#424245]">{restaurante.nome}</span>
                   </>
+                ) : tab === "resumo" ? (
+                  <>
+                    <span className="text-[#6e6e73]">
+                      Faturamento do dia, últimos 7 dias, ticket médio e ranking dos pratos mais pedidos.
+                    </span>{" "}
+                    <span className="text-[#aeaeb2]">·</span>{" "}
+                    <span className="font-medium text-[#424245]">{restaurante.nome}</span>
+                  </>
                 ) : (
                   <>
                     Tenant: <span className="font-medium text-[#424245]">{restaurante.nome}</span>
                     {tab === "pedidos" && !loading && !silentRefreshing ? (
-                      <span className="ml-2 text-xs text-[#aeaeb2]">· KPIs e esteira ao vivo</span>
+                      <span className="ml-2 text-xs text-[#aeaeb2]">· esteira ao vivo</span>
                     ) : null}
                     {loading || silentRefreshing ? (
                       <span className="ml-2 text-xs text-[#aeaeb2]">· sincronizando…</span>
@@ -2804,7 +2821,7 @@ function AdminPageInner() {
               >
                 Novo prato
               </button>
-            ) : tab === "pedidos" ? (
+            ) : tab === "pedidos" || tab === "resumo" ? (
               <button
                 type="button"
                 disabled={loading || silentRefreshing}
@@ -2819,6 +2836,8 @@ function AdminPageInner() {
                     />
                     Atualizando…
                   </>
+                ) : tab === "resumo" ? (
+                  "Atualizar dados"
                 ) : (
                   "Atualizar pedidos"
                 )}
@@ -2870,124 +2889,127 @@ function AdminPageInner() {
             loading ? (
               <PedidosDashboardSkeleton variant="embedded" />
             ) : (
-              <div className="grid grid-cols-1 gap-6 lg:grid-cols-[minmax(0,7fr)_minmax(260px,3fr)] lg:gap-8 lg:items-start">
-                <div className="order-2 min-w-0 space-y-4 lg:order-1">
-                  <div className="rounded-3xl border border-zinc-200/80 bg-gradient-to-b from-white to-zinc-50/90 p-4 shadow-[0_12px_40px_-24px_rgba(0,0,0,0.12)] ring-1 ring-zinc-900/[0.04] sm:p-5 lg:p-6">
-                    <p className="max-w-3xl text-[11px] leading-relaxed text-zinc-500">
-                      Pedidos fechados no cardápio público entram em{" "}
-                      <span className="font-medium text-zinc-700">Pendente</span> (API{" "}
-                      <code className="rounded bg-zinc-100 px-1 py-0.5 font-mono text-[10px]">/api/pedidos/vitrine</code>{" "}
-                      → tabela <code className="rounded bg-zinc-100 px-1 py-0.5 font-mono text-[10px]">pedidos</code>).
-                      Ao avançar na esteira, abrimos o WhatsApp do{" "}
-                      <span className="font-medium text-zinc-700">cliente</span> com o número que ele informou no
-                      fechamento.                       Na etapa <span className="font-medium text-zinc-700">Pronto</span>, use o botão
-                      <span className="font-medium text-zinc-700"> Finalizar atendimento + WhatsApp</span> ou arraste o
-                      card para <span className="font-medium text-zinc-700">Entregue</span> — nos dois casos abrimos o
-                      WhatsApp do cliente com a mensagem de atendimento finalizado.
-                    </p>
-                    {pedidos.length === 0 ? (
-                      <div className="mt-4">
-                        <PedidosEmptyState />
-                      </div>
-                    ) : (
-                      <div className="mt-4 grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
-                        {colunas.map((col) => (
-                          <section
-                            key={col.id}
-                            onDragOver={(e) => {
-                              e.preventDefault();
-                              e.dataTransfer.dropEffect = "move";
-                              setDragOverCol(col.id);
-                            }}
-                            onDrop={(e) => {
-                              e.preventDefault();
-                              setDragOverCol(null);
-                              if (pedidoBusyId) return;
-                              const id = e.dataTransfer.getData(DRAG_MIME);
-                              if (!id) return;
-                              const arrastado = pedidos.find((p) => p.id === id);
-                              if (arrastado && arrastado.coluna === "pronto" && col.id === "entregue") {
-                                openUrlNovaGuia(
-                                  buildWhatsappSendHref(
-                                    arrastado.telefone,
-                                    mensagemParaColuna(arrastado, "entregue"),
-                                  ),
-                                );
-                              }
-                              void atualizarColunaPedido(id, col.id);
-                            }}
-                            className={[
-                              "flex min-h-[min(70vh,520px)] flex-col rounded-2xl border border-zinc-100 bg-white p-4 shadow-sm transition",
-                              dragOverCol === col.id ? "ring-2 ring-zinc-900/20 border-zinc-300" : "",
-                            ].join(" ")}
+              <div className="min-w-0">
+                <div className="rounded-3xl border border-zinc-200/80 bg-gradient-to-b from-white to-zinc-50/90 p-4 shadow-[0_12px_40px_-24px_rgba(0,0,0,0.12)] ring-1 ring-zinc-900/[0.04] sm:p-5 lg:p-6">
+                  <p className="max-w-4xl text-[11px] leading-relaxed text-zinc-500">
+                    Pedidos fechados no cardápio público entram em{" "}
+                    <span className="font-medium text-zinc-700">Pendente</span>. Ao avançar na esteira, abrimos o
+                    WhatsApp do <span className="font-medium text-zinc-700">cliente</span>. Na etapa{" "}
+                    <span className="font-medium text-zinc-700">Pronto</span>, use{" "}
+                    <span className="font-medium text-zinc-700">Finalizar atendimento + WhatsApp</span> ou arraste para{" "}
+                    <span className="font-medium text-zinc-700">Entregue</span>.
+                  </p>
+                  {pedidos.length === 0 ? (
+                    <div className="mt-4">
+                      <PedidosEmptyState />
+                    </div>
+                  ) : (
+                    <div className="mt-4 grid grid-cols-1 gap-4 md:grid-cols-2 2xl:grid-cols-4">
+                      {colunas.map((col) => (
+                        <section
+                          key={col.id}
+                          onDragOver={(e) => {
+                            e.preventDefault();
+                            e.dataTransfer.dropEffect = "move";
+                            setDragOverCol(col.id);
+                          }}
+                          onDrop={(e) => {
+                            e.preventDefault();
+                            setDragOverCol(null);
+                            if (pedidoBusyId) return;
+                            const id = e.dataTransfer.getData(DRAG_MIME);
+                            if (!id) return;
+                            const arrastado = pedidos.find((p) => p.id === id);
+                            if (arrastado && arrastado.coluna === "pronto" && col.id === "entregue") {
+                              openUrlNovaGuia(
+                                buildWhatsappSendHref(
+                                  arrastado.telefone,
+                                  mensagemParaColuna(arrastado, "entregue"),
+                                ),
+                              );
+                            }
+                            void atualizarColunaPedido(id, col.id);
+                          }}
+                          className={[
+                            "flex min-h-[min(78vh,640px)] flex-col rounded-2xl border border-zinc-100 bg-white p-4 shadow-sm transition",
+                            dragOverCol === col.id ? "ring-2 ring-zinc-900/20 border-zinc-300" : "",
+                          ].join(" ")}
+                        >
+                          <div
+                            className={`mb-4 rounded-xl bg-gradient-to-r ${col.accent} px-3 py-3 ring-1 ring-zinc-100`}
                           >
-                            <div
-                              className={`mb-4 rounded-xl bg-gradient-to-r ${col.accent} px-3 py-3 ring-1 ring-zinc-100`}
-                            >
-                              <div className="flex items-center justify-between gap-2">
-                                <h2 className="text-sm font-semibold tracking-tight text-zinc-900">{col.title}</h2>
-                                <span className="rounded-full bg-zinc-900 px-2.5 py-0.5 text-[11px] font-bold text-white tabular-nums shadow-sm">
-                                  {porColuna[col.id].length}
-                                </span>
-                              </div>
+                            <div className="flex items-center justify-between gap-2">
+                              <h2 className="text-sm font-semibold tracking-tight text-zinc-900">{col.title}</h2>
+                              <span className="rounded-full bg-zinc-900 px-2.5 py-0.5 text-[11px] font-bold text-white tabular-nums shadow-sm">
+                                {porColuna[col.id].length}
+                              </span>
                             </div>
-                            <div className="flex flex-1 flex-col gap-3 overflow-y-auto pr-0.5">
-                              {porColuna[col.id].map((p) => (
-                                <PedidoCard
-                                  key={p.id}
-                                  pedido={p}
-                                  canAdvance={nextColuna(p.coluna) !== null}
-                                  onAdvance={(o) => void avancarPedido(p.id, o)}
-                                  onEdit={() => setPedidoModal(p)}
-                                  onCancel={() => void cancelarPedido(p.id)}
-                                  onImprimir={(pedido) =>
-                                    void imprimirPedidoTermico({
-                                      id: pedido.id,
-                                      cliente: pedido.cliente,
-                                      telefone: pedido.telefone,
-                                      itens: pedido.itens,
-                                      total: pedido.total,
-                                      pagamento: pedido.pagamento,
-                                      observacoes: pedido.observacoes,
-                                      motoboy: pedido.motoboy,
-                                      criado_em: pedido.criado_em,
-                                      nomeEstabelecimento: restaurante.nome,
-                                      enderecoRetiradaBalcao: restaurante.retirada_endereco_balcao ?? null,
-                                    }).catch((err) =>
-                                      setFetchError(
-                                        err instanceof Error ? err.message : "Nao foi possivel enviar para a impressora.",
-                                      ),
-                                    )
-                                  }
-                                  onDragEnd={() => setDragOverCol(null)}
-                                  busy={pedidoBusyId === p.id}
-                                  busyLabel={
-                                    pedidoBusyId === p.id
-                                      ? pedidoBusyKind === "advance"
-                                        ? "Atualizando status…"
-                                        : pedidoBusyKind === "cancel"
-                                          ? "Cancelando…"
-                                          : "Movendo…"
-                                      : undefined
-                                  }
-                                />
-                              ))}
-                              {porColuna[col.id].length === 0 ? (
-                                <p className="rounded-2xl border border-dashed border-zinc-200 bg-zinc-50/80 px-4 py-10 text-center text-xs text-zinc-500">
-                                  Nenhum pedido nesta coluna. Arraste um card de outra coluna ou aguarde novos
-                                  pedidos.
-                                </p>
-                              ) : null}
-                            </div>
-                          </section>
-                        ))}
-                      </div>
-                    )}
-                  </div>
+                          </div>
+                          <div className="flex flex-1 flex-col gap-3 overflow-y-auto pr-0.5">
+                            {porColuna[col.id].map((p) => (
+                              <PedidoCard
+                                key={p.id}
+                                pedido={p}
+                                canAdvance={nextColuna(p.coluna) !== null}
+                                onAdvance={(o) => void avancarPedido(p.id, o)}
+                                onEdit={() => setPedidoModal(p)}
+                                onCancel={() => void cancelarPedido(p.id)}
+                                onImprimir={(pedido) =>
+                                  void imprimirPedidoTermico({
+                                    id: pedido.id,
+                                    cliente: pedido.cliente,
+                                    telefone: pedido.telefone,
+                                    itens: pedido.itens,
+                                    total: pedido.total,
+                                    pagamento: pedido.pagamento,
+                                    observacoes: pedido.observacoes,
+                                    motoboy: pedido.motoboy,
+                                    criado_em: pedido.criado_em,
+                                    nomeEstabelecimento: restaurante.nome,
+                                    enderecoRetiradaBalcao: restaurante.retirada_endereco_balcao ?? null,
+                                  }).catch((err) =>
+                                    setFetchError(
+                                      err instanceof Error ? err.message : "Nao foi possivel enviar para a impressora.",
+                                    ),
+                                  )
+                                }
+                                onDragEnd={() => setDragOverCol(null)}
+                                busy={pedidoBusyId === p.id}
+                                busyLabel={
+                                  pedidoBusyId === p.id
+                                    ? pedidoBusyKind === "advance"
+                                      ? "Atualizando status…"
+                                      : pedidoBusyKind === "cancel"
+                                        ? "Cancelando…"
+                                        : "Movendo…"
+                                    : undefined
+                                }
+                              />
+                            ))}
+                            {porColuna[col.id].length === 0 ? (
+                              <p className="rounded-2xl border border-dashed border-zinc-200 bg-zinc-50/80 px-4 py-10 text-center text-xs text-zinc-500">
+                                Nenhum pedido nesta coluna. Arraste um card de outra coluna ou aguarde novos pedidos.
+                              </p>
+                            ) : null}
+                          </div>
+                        </section>
+                      ))}
+                    </div>
+                  )}
                 </div>
-
-                <AdminOperacionalPainelLateral kpis={kpisPedidos} rankingLinhas={rankingPratos} />
               </div>
+            )
+          ) : null}
+
+          {tab === "resumo" ? (
+            loading ? (
+              <PedidosDashboardSkeleton variant="embedded" />
+            ) : (
+              <AdminOperacionalPainelLateral
+                layout="page"
+                kpis={kpisPedidos}
+                rankingLinhas={rankingPratos}
+              />
             )
           ) : null}
 
@@ -3105,26 +3127,23 @@ function AdminPageInner() {
           ) : null}
 
           {tab === "pratos" ? (
-            <div className="grid grid-cols-1 gap-6 lg:grid-cols-[minmax(0,7fr)_minmax(260px,3fr)] lg:gap-8 lg:items-start">
-              <div className="order-2 min-w-0 space-y-3 lg:order-1">
-                <div className="rounded-3xl border border-zinc-200/80 bg-gradient-to-b from-white to-zinc-50/90 p-4 shadow-[0_12px_40px_-24px_rgba(0,0,0,0.12)] ring-1 ring-zinc-900/[0.04] sm:p-5 lg:p-6">
-                  <p className="text-[11px] font-medium uppercase tracking-wide text-zinc-500">Operação</p>
-                  <p className="mt-1 text-sm font-semibold text-zinc-900">Cardápio e preços</p>
-                  <p className="mt-1 max-w-2xl text-xs leading-relaxed text-zinc-500">
-                    Ao lado: faturamento do dia e ranking com base nos pedidos já carregados — útil para cruzar com o que
-                    vende no cardápio.
-                  </p>
-                  <div className="mt-4 overflow-x-auto">
-                    <AdminPratosTable
-                      pratosRows={pratosRows}
-                      pratoDeletingId={pratoDeletingId}
-                      onEdit={openEditPrato}
-                      onDelete={(p) => void handleDeletePrato(p)}
-                    />
-                  </div>
+            <div className="mx-auto max-w-5xl">
+              <div className="rounded-3xl border border-zinc-200/80 bg-gradient-to-b from-white to-zinc-50/90 p-4 shadow-[0_12px_40px_-24px_rgba(0,0,0,0.12)] ring-1 ring-zinc-900/[0.04] sm:p-5 lg:p-6">
+                <p className="text-[11px] font-medium uppercase tracking-wide text-zinc-500">Operação</p>
+                <p className="mt-1 text-sm font-semibold text-zinc-900">Cardápio e preços</p>
+                <p className="mt-1 max-w-2xl text-xs leading-relaxed text-zinc-500">
+                  Cadastre itens, preços e fotos exibidos no link público. O ranking de vendas está em{" "}
+                  <span className="font-medium text-zinc-700">Resumo financeiro</span>.
+                </p>
+                <div className="mt-4 overflow-x-auto">
+                  <AdminPratosTable
+                    pratosRows={pratosRows}
+                    pratoDeletingId={pratoDeletingId}
+                    onEdit={openEditPrato}
+                    onDelete={(p) => void handleDeletePrato(p)}
+                  />
                 </div>
               </div>
-              <AdminOperacionalPainelLateral kpis={kpisPedidos} rankingLinhas={rankingPratos} />
             </div>
           ) : null}
 
