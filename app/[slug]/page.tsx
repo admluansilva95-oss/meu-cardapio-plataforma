@@ -587,10 +587,7 @@ export default function PublicCardapioPage() {
     }
   }, [slug, restaurante, cartHydrated]);
 
-  const pratosVitrine = useMemo(
-    () => (restaurante ? resolverPratosExibicaoVitrine(pratos, restaurante.id) : []),
-    [pratos, restaurante],
-  );
+  const pratosVitrine = useMemo(() => resolverPratosExibicaoVitrine(pratos), [pratos]);
 
   const categorias = useMemo(() => {
     const secoes = ordenarSecoesCardapio(

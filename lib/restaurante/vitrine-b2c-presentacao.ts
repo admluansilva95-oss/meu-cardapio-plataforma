@@ -39,73 +39,12 @@ export function isCategoriaSaaSVitrine(categoria: string): boolean {
   return textoPareceSaaS(categoria);
 }
 
-/** Cardápio alimentício de exemplo quando só existiam itens de plano no cadastro. */
-export function criarCardapioDemonstracaoB2C(restauranteId: string): Prato[] {
-  const base = restauranteId.trim() || "demo";
-  return [
-    {
-      id: `vitrine-demo-${base}-burger`,
-      restaurante_id: base,
-      nome: "Hambúrguer Artesanal",
-      preco: 32.9,
-      descricao: "Pão brioche, blend 180g, queijo cheddar e molho da casa.",
-      imagem: null,
-      categoria: "Mais Pedidos",
-      status: "ativo",
-    },
-    {
-      id: `vitrine-demo-${base}-batata`,
-      restaurante_id: base,
-      nome: "Batata Frita",
-      preco: 18.9,
-      descricao: "Porção crocante com sal e ervas.",
-      imagem: null,
-      categoria: "Mais Pedidos",
-      status: "ativo",
-    },
-    {
-      id: `vitrine-demo-${base}-file`,
-      restaurante_id: base,
-      nome: "Filé com Fritas",
-      preco: 45.9,
-      descricao: "Filé grelhado, arroz, salada e batatas fritas.",
-      imagem: null,
-      categoria: "Pratos Principais",
-      status: "ativo",
-    },
-    {
-      id: `vitrine-demo-${base}-refri`,
-      restaurante_id: base,
-      nome: "Refrigerante 350 ml",
-      preco: 8.9,
-      descricao: "Lata gelada — consulte sabores disponíveis.",
-      imagem: null,
-      categoria: "Bebidas",
-      status: "ativo",
-    },
-    {
-      id: `vitrine-demo-${base}-suco`,
-      restaurante_id: base,
-      nome: "Suco Natural 500 ml",
-      preco: 12.9,
-      descricao: "Frutas da estação.",
-      imagem: null,
-      categoria: "Bebidas",
-      status: "ativo",
-    },
-  ];
-}
-
 /**
- * Pratos para renderização na vitrine: remove copy SaaS; se só havia planos, usa cardápio demo alimentício.
- * Estado/carrinho/checkout continuam usando os mesmos handlers — ids demo só aparecem nesse fallback.
+ * Pratos para renderização na vitrine: apenas o que veio da API por slug,
+ * ocultando itens com copy de plano/assinatura do SaaS (sem inventar produtos).
  */
-export function resolverPratosExibicaoVitrine(pratos: Prato[], restauranteId: string): Prato[] {
-  const filtrados = pratos.filter((p) => !isConteudoSaaSVitrine(p));
-  if (filtrados.length > 0) return filtrados;
-  const haviaSaaS = pratos.some((p) => isConteudoSaaSVitrine(p));
-  if (haviaSaaS) return criarCardapioDemonstracaoB2C(restauranteId);
-  return [];
+export function resolverPratosExibicaoVitrine(pratos: Prato[]): Prato[] {
+  return pratos.filter((p) => !isConteudoSaaSVitrine(p));
 }
 
 export function filtrarCategoriasVitrineB2C(categorias: string[] | null | undefined): string[] | null {
