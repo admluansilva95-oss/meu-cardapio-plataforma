@@ -11,37 +11,48 @@ export function corrigirRotuloVitrineB2C(texto: string): string {
     .replace(/\bKanban de pedidos\b/gi, "esteira de pedidos");
 }
 
-const PADROES_TEXTO_SAAS =
-  /plano\s+(essencial|premium)|assinatura|R\$\s*49[,.]90|R\$\s*89[,.]90|esteira\s+kanban|kanban\s+de\s+pedidos|at[eé]\s+\d+\s+pedidos\s+por\s+m[eê]s|pedidos\s+ilimitados|gest[aã]o\s+de\s+software|painel\s+admin|card[aá]pio\s+digital\s+profissional|stripe|saas|upgrade\s+de\s+plano|url\s+personalizada|suporte\s+priorit[aá]rio/i;
+const COPY_PLANO_SAAS =
+  /esteira\s+kanban|kanban\s+de\s+pedidos|at[eé]\s+\d+\s+pedidos\s+por\s+m[eê]s|pedidos\s+ilimitados|gest[aã]o\s+de\s+software|upgrade\s+de\s+plano|url\s+personalizada|suporte\s+priorit[aá]rio|assinatura\s+mensal/i;
 
-function textoPareceSaaS(texto: string | null | undefined): boolean {
-  const t = texto?.trim() ?? "";
-  if (!t) return false;
-  return PADROES_TEXTO_SAAS.test(t);
+function nomePareceItemPlanoSaaS(nome: string): boolean {
+  const n = nome.trim();
+  if (!n) return false;
+  if (/^plano\s+(essencial|premium)\b/i.test(n)) return true;
+  if (/^(essencial|premium)$/i.test(n)) return true;
+  return false;
 }
 
-/** Item de cardápio com copy de plano/assinatura do SaaS — não deve aparecer na vitrine B2C. */
+function descricaoPareceCopyPlanoSaaS(descricao: string | null | undefined): boolean {
+  const d = descricao?.trim() ?? "";
+  if (!d) return false;
+  return COPY_PLANO_SAAS.test(d);
+}
+
+/** Item de cardápio com copy explícita de plano/assinatura — ocultar só na vitrine B2C. */
 export function isConteudoSaaSVitrine(prato: Pick<Prato, "nome" | "descricao" | "categoria" | "preco">): boolean {
-  if (textoPareceSaaS(prato.nome) || textoPareceSaaS(prato.descricao) || textoPareceSaaS(prato.categoria)) {
+  if (nomePareceItemPlanoSaaS(prato.nome) || descricaoPareceCopyPlanoSaaS(prato.descricao)) {
     return true;
   }
-  const nome = prato.nome.trim().toLowerCase();
-  if (nome === "essencial" || nome === "premium" || nome.startsWith("plano ")) return true;
-  if (Math.abs(prato.preco - 49.9) < 0.01 || Math.abs(prato.preco - 89.9) < 0.01) {
-    if (textoPareceSaaS(prato.descricao) || /plano|assinatura|kanban|pedidos\s+por/i.test(prato.nome)) {
-      return true;
-    }
+  const precoPlano =
+    Math.abs(prato.preco - 49.9) < 0.01 || Math.abs(prato.preco - 89.9) < 0.01;
+  if (
+    precoPlano &&
+    (nomePareceItemPlanoSaaS(prato.nome) || descricaoPareceCopyPlanoSaaS(prato.descricao))
+  ) {
+    return true;
   }
   return false;
 }
 
 export function isCategoriaSaaSVitrine(categoria: string): boolean {
-  return textoPareceSaaS(categoria);
+  const c = categoria.trim();
+  if (!c) return false;
+  return /^planos?(\s|$)/i.test(c) || /^(essencial|premium)$/i.test(c);
 }
 
 /**
  * Pratos para renderização na vitrine: apenas o que veio da API por slug,
- * ocultando itens com copy de plano/assinatura do SaaS (sem inventar produtos).
+ * ocultando itens claramente de plano/assinatura (sem inventar produtos).
  */
 export function resolverPratosExibicaoVitrine(pratos: Prato[]): Prato[] {
   return pratos.filter((p) => !isConteudoSaaSVitrine(p));

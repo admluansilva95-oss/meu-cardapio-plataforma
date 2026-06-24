@@ -1,3 +1,4 @@
+import { createAdminSupabaseClient } from "@/lib/supabase/admin";
 import { createClient } from "@supabase/supabase-js";
 import { type NextRequest } from "next/server";
 import { isValidSlug } from "@/lib/billing/slug";
@@ -127,7 +128,11 @@ export async function GET(request: NextRequest) {
         SUPABASE_PUBLIC_CARDAPIO_TIMEOUT_MS,
       );
 
-      const { data: pratos, error: pratosErr } = await supabase
+      // Service role evita vitrine vazia quando RLS não libera SELECT anônimo em `pratos`.
+      // A rota já restringe por restaurante_id (slug) e status = ativo.
+      const supabasePratos = createAdminSupabaseClient() ?? supabase;
+
+      const { data: pratos, error: pratosErr } = await supabasePratos
         .from("pratos")
         .select(PRATOS_COLUNAS)
         .eq("restaurante_id", rid)

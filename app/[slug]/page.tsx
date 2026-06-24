@@ -174,7 +174,7 @@ type PratoRow = {
 };
 
 function mapPratoRow(row: PratoRow): Prato | null {
-  if (row.status !== "ativo") return null;
+  if (row.status?.trim() !== "ativo") return null;
   return {
     id: row.id,
     restaurante_id: row.restaurante_id,
@@ -1280,7 +1280,17 @@ export default function PublicCardapioPage() {
       <main className="mx-auto max-w-6xl px-5 pb-24 pt-10 sm:px-8 sm:pb-28 sm:pt-12">
         {pratosVitrine.length === 0 ? (
           <p className="rounded-3xl border border-dashed border-zinc-200/90 bg-white px-6 py-16 text-center text-sm leading-relaxed text-zinc-500 shadow-sm">
-            {nomeExibicao} — nenhum item ativo publicado no momento.
+            {pratos.length > 0 ? (
+              <>
+                {nomeExibicao} — cadastre pratos alimentícios no painel (com status{" "}
+                <span className="font-medium text-zinc-700">Ativo</span>) para publicar o cardápio aqui.
+              </>
+            ) : (
+              <>
+                {nomeExibicao} — nenhum item ativo publicado no momento. No painel, adicione pratos e deixe o
+                status em <span className="font-medium text-zinc-700">Ativo</span>.
+              </>
+            )}
           </p>
         ) : (
           <CardapioListaProdutos
