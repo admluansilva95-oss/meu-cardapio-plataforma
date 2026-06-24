@@ -1080,23 +1080,23 @@ export default function PublicCardapioPage() {
           aria-hidden
         />
         <div className="relative mx-auto max-w-2xl px-5 text-center sm:px-8">
-          <div className="mx-auto flex h-24 w-24 shrink-0 justify-center">
+          <div className="mx-auto flex h-28 w-28 shrink-0 justify-center sm:h-32 sm:w-32">
             {restaurante.logo ? (
               // eslint-disable-next-line @next/next/no-img-element
               <img
                 src={restaurante.logo}
                 alt=""
-                width={96}
-                height={96}
+                width={128}
+                height={128}
                 loading="eager"
                 decoding="async"
-                className="h-full w-full rounded-2xl border border-zinc-200/90 bg-white object-cover shadow-sm ring-1 ring-black/[0.04]"
+                className="h-full w-full rounded-full border border-zinc-200/90 bg-white object-cover shadow-md ring-2 ring-white/80"
               />
             ) : (
               <div
-                className="flex h-full w-full items-center justify-center rounded-2xl border border-zinc-200/90 bg-white text-2xl font-semibold text-zinc-400 shadow-sm ring-1 ring-black/[0.04]"
+                className="flex h-full w-full items-center justify-center rounded-full border border-zinc-200/90 bg-white text-3xl font-semibold text-zinc-400 shadow-md ring-2 ring-white/80 sm:text-[2rem]"
                 style={{
-                  boxShadow: `0 0 0 1px color-mix(in srgb, ${accent} 14%, transparent), 0 10px 32px -20px rgba(0,0,0,0.14)`,
+                  boxShadow: `0 0 0 1px color-mix(in srgb, ${accent} 14%, transparent), 0 12px 36px -18px rgba(0,0,0,0.16)`,
                 }}
               >
                 <span aria-hidden>{restaurante.nome.slice(0, 1).toUpperCase()}</span>
