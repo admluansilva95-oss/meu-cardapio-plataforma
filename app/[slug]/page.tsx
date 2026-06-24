@@ -42,8 +42,6 @@ import { resolveImagemPratoPublicUrl } from "@/lib/restaurante/imagem-prato-publ
 import {
   aplicarCopyVitrineB2CPrato,
   corrigirRotuloVitrineB2C,
-  filtrarCategoriasVitrineB2C,
-  resolverPratosExibicaoVitrine,
 } from "@/lib/restaurante/vitrine-b2c-presentacao";
 import { CardapioListaProdutos } from "@/components/vitrine/CardapioListaProdutos";
 import { navigatePreparedTabOrOpen, prepareNewTabForLaterNavigation } from "@/lib/restaurante/open-url-nova-guia";
@@ -587,18 +585,13 @@ export default function PublicCardapioPage() {
     }
   }, [slug, restaurante, cartHydrated]);
 
-  const pratosVitrine = useMemo(() => resolverPratosExibicaoVitrine(pratos), [pratos]);
-
   const categorias = useMemo(() => {
-    const secoes = ordenarSecoesCardapio(
-      filtrarCategoriasVitrineB2C(restaurante?.cardapio_categorias ?? null),
-      pratosVitrine,
-    );
+    const secoes = ordenarSecoesCardapio(restaurante?.cardapio_categorias ?? null, pratos);
     return secoes.map(({ titulo, lista }) => ({
       titulo: corrigirRotuloVitrineB2C(titulo),
       lista: lista.map((p) => aplicarCopyVitrineB2CPrato(p)),
     }));
-  }, [restaurante?.cardapio_categorias, pratosVitrine]);
+  }, [restaurante?.cardapio_categorias, pratos]);
 
   const relogio = useMemo(() => new Date(agoraTick), [agoraTick]);
   const foraDoHorario = useMemo(() => {
@@ -1248,7 +1241,7 @@ export default function PublicCardapioPage() {
         </div>
       </div>
 
-      {pratosVitrine.length > 0 && categorias.length > 0 ? (
+      {pratos.length > 0 && categorias.length > 0 ? (
         <nav
           className="sticky top-0 z-30 border-b border-zinc-200/55 bg-white/70 py-3 backdrop-blur-xl backdrop-saturate-150 supports-[backdrop-filter]:bg-white/65 sm:py-3.5"
           aria-label="Seções do cardápio"
@@ -1278,19 +1271,9 @@ export default function PublicCardapioPage() {
       ) : null}
 
       <main className="mx-auto max-w-6xl px-5 pb-24 pt-10 sm:px-8 sm:pb-28 sm:pt-12">
-        {pratosVitrine.length === 0 ? (
+        {pratos.length === 0 ? (
           <p className="rounded-3xl border border-dashed border-zinc-200/90 bg-white px-6 py-16 text-center text-sm leading-relaxed text-zinc-500 shadow-sm">
-            {pratos.length > 0 ? (
-              <>
-                {nomeExibicao} — cadastre pratos alimentícios no painel (com status{" "}
-                <span className="font-medium text-zinc-700">Ativo</span>) para publicar o cardápio aqui.
-              </>
-            ) : (
-              <>
-                {nomeExibicao} — nenhum item ativo publicado no momento. No painel, adicione pratos e deixe o
-                status em <span className="font-medium text-zinc-700">Ativo</span>.
-              </>
-            )}
+            {nomeExibicao} — nenhum item ativo publicado no momento.
           </p>
         ) : (
           <CardapioListaProdutos
