@@ -19,8 +19,11 @@ export type Plan = {
 const envPrice = (key: string, fallback: string) =>
   process.env[key]?.trim() || fallback;
 
-/** Teto de pedidos/mês do Essencial (única fonte para copy e futura regra no app). */
-const ESSENCIAL_MONTHLY_ORDER_LIMIT = 150;
+/** Teto de pedidos/mês do Essencial (única fonte para copy e regra no app). */
+export const ESSENCIAL_MONTHLY_ORDER_LIMIT = 150;
+
+/** Percentual do limite em que o painel exibe aviso (80% = 120 pedidos em 150). */
+export const ESSENCIAL_PEDIDOS_AVISO_PERCENT = 80;
 
 export const PLANS: Plan[] = [
   {

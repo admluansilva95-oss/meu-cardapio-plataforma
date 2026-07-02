@@ -1,6 +1,6 @@
 import { getPlanByPriceId, type Plan, type PlanId } from "@/lib/plans";
+import { avaliarLimitePedidosMensal, countPedidosMesAtual } from "@/lib/billing/pedidos-limite-mensal";
 import { createAdminSupabaseClient } from "@/lib/supabase/admin";
-import { logStructured } from "@/lib/logging/structured-log";
 
 export type RestaurantePlanResolution = {
   planId: PlanId | "unknown";
@@ -62,29 +62,7 @@ export async function resolveRestaurantePlan(
   };
 }
 
-export async function countPedidosMesAtual(restauranteId: string): Promise<number | null> {
-  const admin = createAdminSupabaseClient();
-  if (!admin) return null;
-
-  const now = new Date();
-  const start = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1));
-
-  const { count, error } = await admin
-    .from("pedidos")
-    .select("id", { count: "exact", head: true })
-    .eq("restaurante_id", restauranteId)
-    .gte("criado_em", start.toISOString());
-
-  if (error) {
-    logStructured("warn", "billing.pedidos_mes_count_failed", {
-      restauranteId,
-      code: error.code ?? null,
-    });
-    return null;
-  }
-
-  return count ?? 0;
-}
+export { countPedidosMesAtual };
 
 /**
  * Bloqueia novos pedidos da vitrine só quando o plano Essencial excede o teto mensal.
@@ -92,24 +70,19 @@ export async function countPedidosMesAtual(restauranteId: string): Promise<numbe
  */
 export async function assertPodeRegistrarPedidoVitrine(
   restauranteId: string,
-): Promise<{ ok: true } | { ok: false; status: number; error: string }> {
-  const entitlements = await resolveRestaurantePlan(restauranteId);
-  if (entitlements.monthlyOrderLimit == null) {
+): Promise<
+  | { ok: true }
+  | { ok: false; status: number; code: "limite_atingido"; error: string }
+> {
+  const limite = await avaliarLimitePedidosMensal(restauranteId);
+  if (!limite.bloqueiaNovosPedidos) {
     return { ok: true };
   }
 
-  const count = await countPedidosMesAtual(restauranteId);
-  if (count === null) {
-    return { ok: true };
-  }
-
-  if (count >= entitlements.monthlyOrderLimit) {
-    return {
-      ok: false,
-      status: 429,
-      error: `Limite mensal de ${entitlements.monthlyOrderLimit} pedidos do plano Essencial atingido. Entre em contato para fazer upgrade.`,
-    };
-  }
-
-  return { ok: true };
+  return {
+    ok: false,
+    status: 429,
+    code: "limite_atingido",
+    error: "Limite de pedidos do plano atingido",
+  };
 }

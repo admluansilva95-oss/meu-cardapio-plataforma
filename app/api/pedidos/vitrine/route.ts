@@ -519,7 +519,11 @@ export async function POST(request: Request) {
           restauranteId,
           requestId,
         });
-        return jsonWithRequestId(requestId, { error: planGate.error }, planGate.status);
+        return jsonWithRequestId(
+          requestId,
+          { error: "Limite de pedidos do plano atingido", code: "limite_atingido" },
+          429,
+        );
       }
 
       if (row.vitrine_fechada === true) {

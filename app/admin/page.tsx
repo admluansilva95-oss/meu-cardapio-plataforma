@@ -85,6 +85,7 @@ import {
   resolveImagemPratoPublicUrl,
 } from "@/lib/restaurante/imagem-prato-public-url";
 import { AdminConfigurarEnderecoPublico } from "@/components/admin/AdminConfigurarEnderecoPublico";
+import { PainelLimitePedidosAlerta, type LimitePedidosPainelProps } from "@/components/admin/PainelLimitePedidosAlerta";
 import { BotaoGerenciarPlano } from "@/components/BotaoGerenciarPlano";
 import { IosToggle } from "@/components/ui/IosToggle";
 
@@ -1408,6 +1409,7 @@ function AdminPageInner() {
   const [pedidoModalSaving, setPedidoModalSaving] = useState(false);
   const [pratoDeletingId, setPratoDeletingId] = useState<string | null>(null);
   const [serviceRoleConfigured, setServiceRoleConfigured] = useState<boolean | null>(null);
+  const [limitePedidos, setLimitePedidos] = useState<LimitePedidosPainelProps | null>(null);
   /** Atualização leve (ex.: botão “Atualizar pedidos”) sem esconder a esteira inteira. */
   const [silentRefreshing, setSilentRefreshing] = useState(false);
   /** `false` quando o canal Realtime de pedidos falha (rede/timeout) — use “Atualizar pedidos”. */
@@ -1418,6 +1420,8 @@ function AdminPageInner() {
   const slugResolveSeqRef = useRef(0);
   /** Pedido de diagnóstico (service role) por `restaurante.id`. */
   const diagnosticsSeqRef = useRef(0);
+  /** Snapshot de limite mensal Essencial por `restaurante.id`. */
+  const limitePedidosSeqRef = useRef(0);
   /** Inscrição Realtime de pedidos — ignora callbacks de montagens anteriores. */
   const realtimeMountRef = useRef(0);
 
@@ -1864,6 +1868,54 @@ function AdminPageInner() {
       cancelled = true;
     };
   }, [restaurante?.id, supabase]);
+
+  useEffect(() => {
+    if (!restaurante) {
+      setLimitePedidos(null);
+      return;
+    }
+    const seq = ++limitePedidosSeqRef.current;
+    let cancelled = false;
+    void (async () => {
+      try {
+        const {
+          data: { session },
+        } = await supabase.auth.getSession();
+        const token = session?.access_token?.trim();
+        if (!token) return;
+        const res = await fetchAppApiResilient(
+          `/api/restaurante/pedidos-limite?restauranteId=${encodeURIComponent(restaurante.id)}`,
+          sanitizeFetchInit({
+            headers: {
+              Authorization: `Bearer ${latin1SafeString(stripInvisibleFormatting(token))}`,
+            },
+            credentials: "include",
+            cache: "no-store",
+            referrerPolicy: "no-referrer",
+          }),
+        );
+        if (res.status === 401) {
+          await performOwnerLogout(supabase);
+          window.location.assign("/login?reason=session_expired");
+          return;
+        }
+        const parsed = await parseAppApiJsonResponse<{
+          ok?: boolean;
+          limite?: LimitePedidosPainelProps;
+        }>(res);
+        if (!parsed.ok || !parsed.data.ok || !parsed.data.limite) return;
+        if (cancelled || seq !== limitePedidosSeqRef.current) return;
+        setLimitePedidos(parsed.data.limite);
+      } catch {
+        if (!cancelled && seq === limitePedidosSeqRef.current) {
+          setLimitePedidos(null);
+        }
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [restaurante?.id, pedidos.length, supabase]);
 
   const salvarConfiguracoesTenant = useCallback(async () => {
     if (tenantSaving) return;
@@ -2871,6 +2923,8 @@ function AdminPageInner() {
           </div>
         ) : null}
 
+        <PainelLimitePedidosAlerta limite={limitePedidos} variant="inline" />
+
         {fetchError ? (
           <div className="border-b border-amber-200/80 bg-amber-50 px-5 py-3 text-sm text-amber-900 sm:px-8">
             {fetchError}
@@ -2888,6 +2942,8 @@ function AdminPageInner() {
           {tab === "pedidos" ? (
             loading ? (
               <PedidosDashboardSkeleton variant="embedded" />
+            ) : limitePedidos?.estado === "limite_atingido" ? (
+              <PainelLimitePedidosAlerta limite={limitePedidos} variant="paywall" />
             ) : (
               <div className="min-w-0">
                 <div className="rounded-3xl border border-zinc-200/80 bg-gradient-to-b from-white to-zinc-50/90 p-4 shadow-[0_12px_40px_-24px_rgba(0,0,0,0.12)] ring-1 ring-zinc-900/[0.04] sm:p-5 lg:p-6">
