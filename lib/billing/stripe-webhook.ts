@@ -10,6 +10,10 @@ import {
   upsertAssinatura,
 } from "@/lib/billing/assinaturas";
 import { provisionRestauranteAfterPayment } from "@/lib/billing/restaurantes";
+import {
+  sincronizarPlanoUpgradeFromInvoice,
+  sincronizarPlanoUpgradeFromSubscription,
+} from "@/lib/billing/stripe-plano-upgrade";
 import { normalizeSlugInput } from "@/lib/billing/slug";
 
 type DispatchResult = { ok: true } | { ok: false; error: string };
@@ -149,7 +153,13 @@ export async function handleInvoicePaymentSucceeded(
   }
 
   const result = await upsertAssinatura(admin, payload);
-  return result.ok ? { ok: true } : { ok: false, error: result.error };
+  if (!result.ok) {
+    return result;
+  }
+
+  // --- Upgrade de plano (isolado): customer_id → price_id → restaurante.plano_id + assinaturas.price_id ---
+  const upgradeSync = await sincronizarPlanoUpgradeFromInvoice(admin, stripe, invoice);
+  return upgradeSync.ok ? { ok: true } : { ok: false, error: upgradeSync.error };
 }
 
 /**
@@ -244,7 +254,13 @@ export async function handleSubscriptionUpdated(
   }
 
   const result = await upsertAssinatura(admin, buildPayloadFromSubscription(subscription, userId));
-  return result.ok ? { ok: true } : { ok: false, error: result.error };
+  if (!result.ok) {
+    return result;
+  }
+
+  // --- Upgrade de plano (isolado): customer_id → price_id → restaurante.plano_id + assinaturas.price_id ---
+  const upgradeSync = await sincronizarPlanoUpgradeFromSubscription(admin, subscription);
+  return upgradeSync.ok ? { ok: true } : { ok: false, error: upgradeSync.error };
 }
 
 export async function handleSubscriptionDeleted(

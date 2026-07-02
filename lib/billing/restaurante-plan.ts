@@ -1,4 +1,4 @@
-import { getPlanByPriceId, type Plan, type PlanId } from "@/lib/plans";
+import { getPlanById, getPlanByPriceId, type Plan, type PlanId } from "@/lib/plans";
 import { avaliarLimitePedidosMensal, countPedidosMesAtual } from "@/lib/billing/pedidos-limite-mensal";
 import { createAdminSupabaseClient } from "@/lib/supabase/admin";
 
@@ -28,12 +28,25 @@ export async function resolveRestaurantePlan(
 
   const { data: rest, error: restErr } = await admin
     .from("restaurantes")
-    .select("owner_id")
+    .select("owner_id, plano_id")
     .eq("id", restauranteId)
     .maybeSingle();
 
   if (restErr || !rest?.owner_id) {
     return OPEN_ENTITLEMENTS;
+  }
+
+  const planoCache = rest.plano_id;
+  if (planoCache === "essencial" || planoCache === "premium") {
+    const cachedPlan = getPlanById(planoCache);
+    if (cachedPlan) {
+      return {
+        planId: cachedPlan.id,
+        plan: cachedPlan,
+        monthlyOrderLimit: cachedPlan.monthlyOrderLimit,
+        kanbanEnabled: cachedPlan.id === "premium",
+      };
+    }
   }
 
   const { data: sub, error: subErr } = await admin
