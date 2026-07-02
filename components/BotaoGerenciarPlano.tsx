@@ -58,11 +58,24 @@ export function BotaoGerenciarPlano() {
 
   return (
     <button
+      type="button"
       onClick={handleGerenciarPlano}
       disabled={loading}
-      className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white font-medium rounded-md transition disabled:opacity-50"
+      aria-busy={loading}
+      aria-live="polite"
+      className="inline-flex items-center justify-center gap-2 px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white font-medium rounded-md transition disabled:cursor-not-allowed disabled:opacity-50"
     >
-      {loading ? 'Carregando...' : 'Trocar plano / Gerenciar assinatura'}
+      {loading ? (
+        <>
+          <span
+            className="h-4 w-4 animate-spin rounded-full border-2 border-white/30 border-t-white"
+            aria-hidden
+          />
+          Carregando...
+        </>
+      ) : (
+        "Trocar plano / Gerenciar assinatura"
+      )}
     </button>
   );
 }

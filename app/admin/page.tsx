@@ -70,6 +70,7 @@ import {
   Building2,
   BarChart3,
   ClipboardList,
+  CircleHelp,
   ListOrdered,
   Package,
   Palette,
@@ -85,8 +86,10 @@ import {
   resolveImagemPratoPublicUrl,
 } from "@/lib/restaurante/imagem-prato-public-url";
 import { AdminConfigurarEnderecoPublico } from "@/components/admin/AdminConfigurarEnderecoPublico";
-import { PainelLimitePedidosAlerta, type LimitePedidosPainelProps } from "@/components/admin/PainelLimitePedidosAlerta";
+import { PainelAssinaturaInadimplenteAlerta, PainelLimitePedidosAlerta, type LimitePedidosPainelProps } from "@/components/admin/PainelLimitePedidosAlerta";
+import { AdminCentralAjudaModal } from "@/components/admin/AdminCentralAjudaModal";
 import { BotaoGerenciarPlano } from "@/components/BotaoGerenciarPlano";
+import { isAssinaturaInadimplente } from "@/lib/billing/assinatura-status";
 import { IosToggle } from "@/components/ui/IosToggle";
 
 function formatSlugToDisplayName(slug: string): string {
@@ -673,8 +676,9 @@ function AdminSidebar(props: {
   restaurante: Restaurante;
   tab: AdminTab;
   onTab: (t: AdminTab) => void;
+  onOpenCentralAjuda: () => void;
 }) {
-  const { restaurante, tab, onTab } = props;
+  const { restaurante, tab, onTab, onOpenCentralAjuda } = props;
   /** Ordem: pedidos → resumo → cardápio → pratos → configuração. */
   const items: { id: AdminTab; label: string; hint: string; Icon: LucideIcon }[] = [
     { id: "pedidos", label: "Pedidos", hint: "Esteira ao vivo", Icon: ClipboardList },
@@ -747,6 +751,16 @@ function AdminSidebar(props: {
           );
         })}
       </nav>
+      <div className="border-t border-black/[0.06] px-3 py-3 lg:mt-auto">
+        <button
+          type="button"
+          onClick={onOpenCentralAjuda}
+          className="flex w-full items-center gap-2 rounded-xl px-3 py-2.5 text-left text-sm font-semibold text-[#1d1d1f] transition hover:bg-white/70 hover:text-[#0071e3]"
+        >
+          <CircleHelp className="h-4 w-4 shrink-0 text-[#0071e3]" aria-hidden />
+          Central de Ajuda
+        </button>
+      </div>
     </aside>
   );
 }
@@ -1410,6 +1424,8 @@ function AdminPageInner() {
   const [pratoDeletingId, setPratoDeletingId] = useState<string | null>(null);
   const [serviceRoleConfigured, setServiceRoleConfigured] = useState<boolean | null>(null);
   const [limitePedidos, setLimitePedidos] = useState<LimitePedidosPainelProps | null>(null);
+  const [assinaturaStatus, setAssinaturaStatus] = useState<string | null>(null);
+  const [centralAjudaOpen, setCentralAjudaOpen] = useState(false);
   /** Atualização leve (ex.: botão “Atualizar pedidos”) sem esconder a esteira inteira. */
   const [silentRefreshing, setSilentRefreshing] = useState(false);
   /** `false` quando o canal Realtime de pedidos falha (rede/timeout) — use “Atualizar pedidos”. */
@@ -1422,6 +1438,8 @@ function AdminPageInner() {
   const diagnosticsSeqRef = useRef(0);
   /** Snapshot de limite mensal Essencial por `restaurante.id`. */
   const limitePedidosSeqRef = useRef(0);
+  /** Status de assinatura Stripe por sessão autenticada. */
+  const assinaturaStatusSeqRef = useRef(0);
   /** Inscrição Realtime de pedidos — ignora callbacks de montagens anteriores. */
   const realtimeMountRef = useRef(0);
 
@@ -1916,6 +1934,54 @@ function AdminPageInner() {
       cancelled = true;
     };
   }, [restaurante?.id, pedidos.length, supabase]);
+
+  useEffect(() => {
+    if (!restaurante) {
+      setAssinaturaStatus(null);
+      return;
+    }
+    const seq = ++assinaturaStatusSeqRef.current;
+    let cancelled = false;
+    void (async () => {
+      try {
+        const {
+          data: { session },
+        } = await supabase.auth.getSession();
+        const token = session?.access_token?.trim();
+        if (!token) return;
+        const res = await fetchAppApiResilient(
+          "/api/restaurante/assinatura-status",
+          sanitizeFetchInit({
+            headers: {
+              Authorization: `Bearer ${latin1SafeString(stripInvisibleFormatting(token))}`,
+            },
+            credentials: "include",
+            cache: "no-store",
+            referrerPolicy: "no-referrer",
+          }),
+        );
+        if (res.status === 401) {
+          await performOwnerLogout(supabase);
+          window.location.assign("/login?reason=session_expired");
+          return;
+        }
+        const parsed = await parseAppApiJsonResponse<{
+          ok?: boolean;
+          assinatura?: { status?: string | null } | null;
+        }>(res);
+        if (!parsed.ok || !parsed.data.ok) return;
+        if (cancelled || seq !== assinaturaStatusSeqRef.current) return;
+        setAssinaturaStatus(parsed.data.assinatura?.status ?? null);
+      } catch {
+        if (!cancelled && seq === assinaturaStatusSeqRef.current) {
+          setAssinaturaStatus(null);
+        }
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [restaurante?.id, supabase]);
 
   const salvarConfiguracoesTenant = useCallback(async () => {
     if (tenantSaving) return;
@@ -2766,9 +2832,16 @@ function AdminPageInner() {
     );
   }
 
+  const assinaturaInadimplente = isAssinaturaInadimplente(assinaturaStatus);
+
   return (
     <div className="flex min-h-screen bg-zinc-50 font-sans text-zinc-900 antialiased">
-      <AdminSidebar restaurante={restaurante} tab={tab} onTab={setTab} />
+      <AdminSidebar
+        restaurante={restaurante}
+        tab={tab}
+        onTab={setTab}
+        onOpenCentralAjuda={() => setCentralAjudaOpen(true)}
+      />
 
       <main className="flex min-h-0 flex-1 flex-col">
         {tab === "pedidos" && !pedidosRealtimeOk ? (
@@ -2923,6 +2996,7 @@ function AdminPageInner() {
           </div>
         ) : null}
 
+        <PainelAssinaturaInadimplenteAlerta status={assinaturaStatus} variant="inline" />
         <PainelLimitePedidosAlerta limite={limitePedidos} variant="inline" />
 
         {fetchError ? (
@@ -2942,6 +3016,8 @@ function AdminPageInner() {
           {tab === "pedidos" ? (
             loading ? (
               <PedidosDashboardSkeleton variant="embedded" />
+            ) : assinaturaInadimplente ? (
+              <PainelAssinaturaInadimplenteAlerta status={assinaturaStatus} variant="paywall" />
             ) : limitePedidos?.estado === "limite_atingido" ? (
               <PainelLimitePedidosAlerta limite={limitePedidos} variant="paywall" />
             ) : (
@@ -3521,6 +3597,8 @@ function AdminPageInner() {
           ) : null}
         </div>
       </main>
+
+      <AdminCentralAjudaModal open={centralAjudaOpen} onClose={() => setCentralAjudaOpen(false)} />
 
       <ModalPedido
         open={pedidoModal !== null}

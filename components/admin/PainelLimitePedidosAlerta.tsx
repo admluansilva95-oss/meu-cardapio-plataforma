@@ -1,6 +1,7 @@
 "use client";
 
 import type { LimitePedidosEstado } from "@/lib/billing/pedidos-limite-mensal";
+import { isAssinaturaInadimplente } from "@/lib/billing/assinatura-status";
 import { BotaoGerenciarPlano } from "@/components/BotaoGerenciarPlano";
 
 export type LimitePedidosPainelProps = {
@@ -15,6 +16,60 @@ type PainelLimitePedidosAlertaProps = {
   /** Paywall na aba Pedidos quando o limite mensal foi atingido. */
   variant?: "inline" | "paywall";
 };
+
+type PainelAssinaturaInadimplenteAlertaProps = {
+  status: string | null | undefined;
+  /** Paywall na aba Pedidos quando a cobrança falhou (past_due / unpaid). */
+  variant?: "inline" | "paywall";
+};
+
+export function PainelAssinaturaInadimplenteAlerta({
+  status,
+  variant = "inline",
+}: PainelAssinaturaInadimplenteAlertaProps) {
+  if (!isAssinaturaInadimplente(status)) return null;
+
+  if (variant === "paywall") {
+    return (
+      <div
+        role="alertdialog"
+        aria-labelledby="paywall-inadimplencia-titulo"
+        className="flex min-h-[min(420px,60vh)] flex-col items-center justify-center rounded-3xl border border-orange-200/90 bg-gradient-to-b from-orange-50 to-white px-6 py-12 text-center shadow-[0_12px_40px_-24px_rgba(234,88,12,0.25)]"
+      >
+        <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-orange-600/90">
+          Pagamento pendente
+        </p>
+        <h2
+          id="paywall-inadimplencia-titulo"
+          className="mt-3 max-w-lg text-xl font-semibold tracking-tight text-orange-950 sm:text-2xl"
+        >
+          Acesso Suspenso
+        </h2>
+        <p className="mt-3 max-w-md text-sm leading-relaxed text-orange-900/90">
+          Não conseguimos processar a renovação do seu plano no cartão cadastrado. Para reativar seu
+          sistema e voltar a receber pedidos, atualize seus dados de pagamento.
+        </p>
+        <div className="mt-8">
+          <BotaoGerenciarPlano />
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div
+      role="alert"
+      className="border-b border-orange-200/90 bg-orange-50 px-5 py-3 text-sm leading-relaxed text-orange-950 sm:px-8"
+    >
+      <span className="font-semibold">Acesso Suspenso:</span> Não conseguimos processar a renovação do
+      seu plano no cartão cadastrado. Para reativar seu sistema e voltar a receber pedidos, atualize
+      seus dados de pagamento.
+      <div className="mt-3">
+        <BotaoGerenciarPlano />
+      </div>
+    </div>
+  );
+}
 
 export function PainelLimitePedidosAlerta({
   limite,

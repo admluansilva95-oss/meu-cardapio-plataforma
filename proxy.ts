@@ -111,7 +111,7 @@ export async function proxy(request: NextRequest) {
       .from("assinaturas")
       .select("id")
       .eq("user_id", user.id)
-      .in("status", ["active", "trialing"])
+      .in("status", ["active", "trialing", "past_due", "unpaid"])
       .limit(1);
     assinaturasValidas = res.data;
     assinaturasError = res.error as PostgrestLikeError | null;

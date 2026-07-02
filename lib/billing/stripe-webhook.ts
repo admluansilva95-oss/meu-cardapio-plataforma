@@ -225,10 +225,6 @@ export async function handleInvoicePaymentFailed(
   }
 
   const payload = buildPayloadFromSubscription(subscription, userId);
-  if (payload.status === "active" || payload.status === "trialing") {
-    payload.status = "past_due";
-  }
-
   const result = await upsertAssinatura(admin, payload);
   return result.ok ? { ok: true } : { ok: false, error: result.error };
 }
